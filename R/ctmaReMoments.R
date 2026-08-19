@@ -17,14 +17,14 @@
 #' @param probs Two probabilities defining the lower and upper uncertainty
 #'   limits.
 #' @param weighting Study weighting for empirical population means and
-#'   between-study SDs: code{"equal"} or code{"inverse_variance"}.
-#' @param SEweighting Optional logical compatibility shortcut. code{TRUE}
-#'   selects inverse-variance weighting and code{FALSE} selects equal
-#'   weighting. When supplied, it overrides code{weighting}.
+#'   between-study SDs: \code{"equal"} or \code{"inverse_variance"}.
+#' @param SEweighting Optional logical compatibility shortcut. \code{TRUE}
+#'   selects inverse-variance weighting and \code{FALSE} selects equal
+#'   weighting. When supplied, it overrides \code{weighting}.
 #' @param SEsource Source label and validation policy for study-specific SEs:
-#'   code{"auto"}, code{"posterior"}, or code{"hessian"}. All SEs are
+#'   \code{"auto"}, \code{"posterior"}, or \code{"hessian"}. All SEs are
 #'   calculated as the SD across the transformed study draws in
-#'   code{stanfit$rawposterior}. With code{"auto"}, the function uses the
+#'   \code{stanfit$rawposterior}. With \code{"auto"}, the function uses the
 #'   original fit's optimization flag to identify posterior versus
 #'   Hessian/optimization-based draws when possible.
 #' @param cores Number of cores used by \code{ctsem::ctExtract()} when

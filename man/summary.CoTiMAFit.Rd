@@ -2,18 +2,26 @@
 % Please edit documentation in R/ctmaSummary.R
 \name{summary.CoTiMAFit}
 \alias{summary.CoTiMAFit}
-\title{summary.CoTiMAFit}
+\title{Summary method for CoTiMA fit objects}
 \usage{
-\method{summary}{CoTiMAFit}(object, ...)
+\method{summary}{CoTiMAFit}(object, ..., probs = c(0.025, 0.5, 0.975))
 }
 \arguments{
-\item{object}{one CoTiMAFit object or more as ctmaFitList(object1, object2, ...)}
+\item{object}{A fitted object inheriting from class \code{"CoTiMAFit"}.}
 
-\item{...}{further arguments to be passed through to summary()}
+\item{...}{Further arguments passed to the applicable summary method.}
+
+\item{probs}{Numeric vector containing the lower, median, and upper
+probabilities used for random-effects posterior summaries.}
 }
 \value{
-returns a printed summary of a 'CoTiMA' fit object
+For a conventional CoTiMA fit, the stored \code{object$summary} is printed
+and returned. For a hierarchical study-level random-effects fit, a list
+containing population, study-specific, raw-scale and transformed-scale
+heterogeneity, correlation, and Time-0 parameter summaries is returned.
 }
 \description{
-defines summary for 'CoTiMA' fit objects
+Provides the standard summary for conventional CoTiMA fit objects and
+redirects moment-based and hierarchical study-level random-effects fits to
+their corresponding summary methods.
 }

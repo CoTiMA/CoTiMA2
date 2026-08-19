@@ -48,7 +48,12 @@ Imports:
     methods
 Suggests:
     testthat (>= 3.0.0),
-    rstan (>= 2.32.0)
+    rstan (>= 2.32.0),
+    JuliaCall,
+    posterior,
+    knitr
+VignetteBuilder: knitr
+SystemRequirements: Julia (>= 1.10) for the optional Julia estimation backend
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0
 RoxygenNote: 7.3.3
