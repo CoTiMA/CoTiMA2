@@ -26,7 +26,12 @@ ctmaRePrep(
 )
 }
 \arguments{
-\item{model}{A pooled fitted ctsem model extracted from a CoTiMA full fit.}
+\item{model}{Either the unfitted \code{CoTiMAFit} object returned by
+\code{ctmaFit(..., fit = FALSE)}, a \code{ctmaJuliaFit} retaining such an
+originating object, or a ctsem model setup containing generated Stan code
+and data. For unfitted CoTiMA input, \code{ctsem::ctFit()} is called
+internally with \code{fit = FALSE}; no intermediate ctsem setup is
+required. Julia raw estimates are used for automatic initialization.}
 
 \item{study_id}{Optional study identifier at the subject or observation row
 level.}
@@ -86,7 +91,10 @@ for equicorrelated blocks.}
 \value{
 An object of class \code{"CoTiMARePrep"} and
   \code{"ctmaStudyREModel"}, containing patched Stan code, Stan data,
-  parameter mappings, study labels, covariance blocks, and initialization.
+  parameter mappings, study labels, covariance blocks, initialization, and
+  the full generated ctsem model setup in \code{ctsemModelSetup}. When an
+  unfitted CoTiMA object was supplied, it is retained in
+  \code{CoTiMASetup}.
 }
 \description{
 Adds study-level random effects to selected ctsem DRIFT, DIFFUSION, and

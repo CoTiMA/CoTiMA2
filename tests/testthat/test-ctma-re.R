@@ -7,6 +7,35 @@ test_that("CoTiMA-RE covariance aliases are normalized", {
     "Unknown covariance structure")
 })
 
+test_that("unfitted CoTiMA wrappers are distinguished from ctsem setups", {
+  wrapper <- structure(list(
+    data = data.frame(id = 1),
+    ctModel = list(pars = data.frame())
+  ), class = "CoTiMAFit")
+  expect_true(CoTiMA:::.ctma_is_unfitted_cotima(wrapper))
+
+  ctsem_setup <- list(
+    data = wrapper$data,
+    ctModel = wrapper$ctModel,
+    standata = list(),
+    stanmodeltext = "parameters {} model {}"
+  )
+  expect_false(CoTiMA:::.ctma_is_unfitted_cotima(ctsem_setup))
+  expect_identical(
+    CoTiMA:::.ctma_generate_ctsem_setup(ctsem_setup, verbose = FALSE),
+    ctsem_setup
+  )
+})
+
+test_that("ctmaReFit exposes the optional Julia backend controls", {
+  arguments <- names(formals(ctmaReFit))
+  expect_true(all(c("backend", "backendArgs") %in% arguments))
+  expect_identical(eval(formals(ctmaReFit)$backend), c("stan", "julia"))
+  expect_true(file.exists(system.file(
+    "julia", "CtsemJulia.jl", package = "CoTiMA"
+  )))
+})
+
 test_that("automatic matrix blocks count correlation parameters correctly", {
   spec <- data.frame(
     re = 1:8,
@@ -87,3 +116,46 @@ test_that("optimizer output receives a leading draw dimension", {
   expect_identical(dim(result$matrix), c(1L, 2L, 2L))
 })
 
+test_that("transformed random-effect SD respects the parameter transform", {
+  alpha <- c(-0.5, 0.2)
+  tau <- c(0.3, 0.7)
+
+  expect_equal(
+    CoTiMA:::.ctma_transformed_re_sd(alpha, tau, "param"),
+    tau,
+    tolerance = 1e-10
+  )
+
+  # If X is normal, exp(X) is lognormal with this analytic SD.
+  expected <- sqrt(
+    (exp(tau^2) - 1) * exp(2 * alpha + tau^2)
+  )
+  expect_equal(
+    CoTiMA:::.ctma_transformed_re_sd(alpha, tau, "exp(param)"),
+    expected,
+    tolerance = 1e-8
+  )
+})
+
+test_that("pseudo-process T0 parameters are recognized as random intercept variation", {
+  pars <- data.frame(
+    matrix = c("T0MEANS", "T0MEANS", "T0VAR", "T0VAR", "T0VAR"),
+    row = c(1L, 2L, 1L, 2L, 2L),
+    col = c(1L, 1L, 1L, 1L, 2L),
+    param = c("MeanV1", "MeanV1_cint", "T0var_V1",
+              "Cov_T0eta1_cint1", "Cov_cint1"),
+    stringsAsFactors = FALSE
+  )
+
+  ri <- CoTiMA:::.ctma_ri_pseudo_indices(pars)
+  expect_identical(ri, 2L)
+  expect_null(CoTiMA:::.ctma_ri_t0_interpretation(1L, 1L, ri))
+  expect_match(
+    CoTiMA:::.ctma_ri_t0_interpretation(2L, 2L, ri),
+    "variance of a person-level random-intercept"
+  )
+  expect_match(
+    CoTiMA:::.ctma_ri_t0_interpretation(2L, 1L, ri),
+    "substantive initial state"
+  )
+})

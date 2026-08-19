@@ -19,7 +19,9 @@ ctmaReFit(
   optimizer_uncertainty = c("none", "hessian", "surrogate", "is", "bootstrap",
     "fullbootstrap", "sandwich", "opg"),
   compile_args = list(),
-  fit_args = list()
+  fit_args = list(),
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -56,6 +58,14 @@ iterations.}
 
 \item{fit_args}{Named arguments passed to \code{rstan::sampling()} or
 \code{rstan::optimizing()}.}
+
+\item{backend}{Estimation backend: \code{"stan"} (default) or the initial
+experimental \code{"julia"} backend.}
+
+\item{backendArgs}{Named overrides for Julia controls such as
+\code{julia_threads}, \code{warmup}, \code{samples}, \code{metric},
+\code{target_accept}, \code{max_depth}, \code{parallel_chains}, and
+\code{threads_per_chain}.}
 }
 \value{
 A \code{"CoTiMAFit"} object with subtype

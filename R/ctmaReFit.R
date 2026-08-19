@@ -109,6 +109,53 @@
   if (is.na(j)) NULL else x[[j]]
 }
 
+.ctma_is_unfitted_cotima <- function(model) {
+  inherits(model, "CoTiMAFit") &&
+    is.list(model) &&
+    !is.null(model$data) &&
+    !is.null(model$ctModel) &&
+    is.null(model$standata) &&
+    is.null(model$stanmodeltext)
+}
+
+.ctma_generate_ctsem_setup <- function(model, verbose = TRUE) {
+  if (!.ctma_is_unfitted_cotima(model)) return(model)
+
+  if (isTRUE(verbose)) .ctma_print_message(paste0(
+    "ctmaRePrep() recognized the object returned by ctmaFit(fit = FALSE). ",
+    "ctsem::ctFit(fit = FALSE) is now used internally to generate the ",
+    "Stan code and data required for the study-level random-effects model; ",
+    "you do not need to create an intermediate ctsemSetup object."
+  ))
+
+  stored_args <- .ctma_named_ci(model$argumentList, "CoTiMAStanctArgs")
+  arg <- function(name, default) {
+    value <- .ctma_named_ci(stored_args, name)
+    if (is.null(value)) default else value
+  }
+  same_initial <- .ctma_named_ci(model$argumentList, "sameInitialTimes")
+  if (is.null(same_initial)) same_initial <- FALSE
+
+  setup <- ctsem::ctFit(
+    datalong = model$data,
+    model = model$ctModel,
+    fit = FALSE,
+    optimize = FALSE,
+    priors = TRUE,
+    intoverstates = arg("intoverstates", TRUE),
+    binomial = arg("binomial", FALSE),
+    intoverpop = arg("intoverpop", "auto"),
+    stationary = arg("stationary", FALSE),
+    sameInitialTimes = same_initial,
+    savesubjectmatrices = arg("savesubjectmatrices", FALSE),
+    verbose = 0
+  )
+  # Preserve CoTiMA-side settings (including any manually attached
+  # randomEffect specification) alongside ctsem's generated representation.
+  setup$argumentList <- model$argumentList
+  setup
+}
+
 .ctma_infer_study_id <- function(model, study_dummy_ti = NULL,
     verbose = TRUE) {
   ti_names <- model$ctstanmodelbase$TIpredNames
@@ -206,6 +253,31 @@
     reDIFFUSION = .ctma_named_ci(block, "reDIFFUSION"),
     reT0VAR = .ctma_named_ci(block, "reT0VAR")
   )
+}
+
+# CoTiMA represents random intercepts requested through randomIntercepts =
+# "MANIFEST" or "CINT" as zero-drift pseudo processes.  Their T0 means are
+# named, for example, MeanV1_cint.  The corresponding T0 (co)variances are
+# therefore person-level random-intercept distribution parameters even though
+# ctsem does not mark the T0VAR row itself as indvarying.
+.ctma_ri_pseudo_indices <- function(basepars) {
+  required <- c("matrix", "row", "param")
+  if (!all(required %in% names(basepars))) return(integer())
+  is_t0mean <- !is.na(basepars$matrix) & basepars$matrix == "T0MEANS"
+  labels <- as.character(basepars$param)
+  is_cint <- !is.na(labels) & grepl("_cint$", labels, ignore.case = TRUE)
+  sort(unique(as.integer(basepars$row[is_t0mean & is_cint])))
+}
+
+.ctma_ri_t0_interpretation <- function(row, col, ri_indices) {
+  row_ri <- row %in% ri_indices
+  col_ri <- col %in% ri_indices
+  if (!row_ri && !col_ri) return(NULL)
+  if (row == col && row_ri)
+    return("study-varying variance of a person-level random-intercept pseudo process")
+  if (row_ri && col_ri)
+    return("study-varying covariance between person-level random-intercept pseudo processes")
+  "study-varying covariance between a person-level random-intercept pseudo process and a substantive initial state"
 }
 
 .ctma_study_id <- function(model, study_id = NULL, study_id_ti = NULL) {
@@ -383,6 +455,7 @@
     T0VAR = .ctma_bool_matrix(reT0VAR, nl, "reT0VAR")
   )
   basepars <- model$ctstanmodelbase$pars
+  ri_pseudo_indices <- .ctma_ri_pseudo_indices(basepars)
   ms <- model$setup$matsetup
   matrix_code <- c(DRIFT = 3L, DIFFUSION = 4L, T0VAR = 8L)
   niv <- as.integer(model$standata$nindvarying)
@@ -437,11 +510,16 @@
           ps <- model$setup$popsetup
           zps <- which(!is.na(ps$parname) & ps$parname == label & ps$param > 0L)
           raw_index <- if (length(zps)) ps$param[zps[1L]] else ms$param[mz[1L]]
+          ri_interpretation <- .ctma_ri_t0_interpretation(
+            r, cc, ri_pseudo_indices
+          )
           ans[[q]] <- data.frame(
             re = q, matrix = mat, row = r, col = cc, parameter = label,
             type = 1L, index = raw_index, t0_row = 0L, t0_col = 0L,
-            person_varying = FALSE,
-            interpretation = "study-varying T0 parameter without person-level T0 variation",
+            person_varying = !is.null(ri_interpretation),
+            interpretation = if (!is.null(ri_interpretation))
+              ri_interpretation else
+              "study-varying T0 parameter without person-level T0 variation",
             transform = basepars$transform[bp[1L]], stringsAsFactors = FALSE
           )
           next
@@ -808,7 +886,12 @@
 #' T0VAR parameters. Effects are inserted on ctsem's unconstrained parameter
 #' scale before parameter-specific transformations are applied.
 #'
-#' @param model A pooled fitted ctsem model extracted from a CoTiMA full fit.
+#' @param model Either the unfitted \code{CoTiMAFit} object returned by
+#'   \code{ctmaFit(..., fit = FALSE)}, a \code{ctmaJuliaFit} retaining such an
+#'   originating object, or a ctsem model setup containing generated Stan code
+#'   and data. For unfitted CoTiMA input, \code{ctsem::ctFit()} is called
+#'   internally with \code{fit = FALSE}; no intermediate ctsem setup is
+#'   required. Julia raw estimates are used for automatic initialization.
 #' @param study_id Optional study identifier at the subject or observation row
 #'   level.
 #' @param study_id_ti Optional name or index of a time-independent predictor
@@ -850,7 +933,10 @@
 #'
 #' @return An object of class \code{"CoTiMARePrep"} and
 #'   \code{"ctmaStudyREModel"}, containing patched Stan code, Stan data,
-#'   parameter mappings, study labels, covariance blocks, and initialization.
+#'   parameter mappings, study labels, covariance blocks, initialization, and
+#'   the full generated ctsem model setup in \code{ctsemModelSetup}. When an
+#'   unfitted CoTiMA object was supplied, it is retained in
+#'   \code{CoTiMASetup}.
 #' @export
 #' @seealso \code{\link{ctmaReFit}}, \code{\link{ctmaReMLFit}}
 #'
@@ -892,8 +978,60 @@ ctmaRePrep <- function(
   if (!is.numeric(init_jitter) || length(init_jitter) != 1L ||
       !is.finite(init_jitter) || init_jitter < 0)
     stop("init_jitter must be one finite non-negative number.")
+
+  julia_fit <- if (inherits(model, "ctmaJuliaFit")) model else NULL
+  if (!is.null(julia_fit)) {
+    if (is.null(julia_fit$source_object)) stop(
+      "This ctmaJuliaFit object does not retain its originating CoTiMA/ctsem ",
+      "object. For an existing fit, attach it with ",
+      "juliaFit$source_object <- originalFitFalse; future ctmaJuliaFit() ",
+      "results retain it automatically."
+    )
+    model <- julia_fit$source_object
+  }
+  cotima_setup <- if (.ctma_is_unfitted_cotima(model)) model else NULL
+  model <- .ctma_generate_ctsem_setup(model, verbose = verbose)
   if (!is.list(model) || is.null(model$stanmodeltext) || is.null(model$standata))
-    stop("model must be the object returned by CoTiMA/ctsem with fit = FALSE.")
+    stop(
+      "model must be returned by ctmaFit(..., fit = FALSE), or be a ctsem ",
+      "model setup containing stanmodeltext and standata."
+    )
+
+  if (!is.null(julia_fit)) {
+    # Read the canonical stored vector directly.  Depending on coef() here
+    # makes ctmaRePrep() sensitive to whether coef.ctmaJuliaFit has already
+    # been registered by sourcing/loading the Julia fitting code.
+    julia_raw <- julia_fit$coefficients$raw
+    if (is.null(julia_raw) && exists("coef.ctmaJuliaFit", mode = "function"))
+      julia_raw <- coef(julia_fit, type = "raw")
+    if (is.null(julia_raw)) stop(
+      "The ctmaJuliaFit object contains no stored raw coefficient vector."
+    )
+    julia_raw <- as.numeric(julia_raw)
+    # A setup created by ctsem::ctFit(fit = FALSE) normally has no rawest
+    # because no optimizer has run. Derive the raw layout from the generated
+    # setup rather than mistaking the absent vector for a zero-parameter model.
+    raw_parameter_groups <- getFromNamespace(
+      "ctFitgetparnamesfromraw", "ctsem"
+    )(model)
+    expected <- sum(lengths(raw_parameter_groups))
+    if (length(julia_raw) != expected || any(!is.finite(julia_raw))) stop(
+      "The Julia fit contains ", length(julia_raw),
+      " raw estimates, but the regenerated ctsem setup expects ", expected,
+      ". The Julia fit and its source object are incompatible."
+    )
+    if (is.null(model$stanfit)) model$stanfit <- list()
+    model$stanfit$rawest <- julia_raw
+    # This is an optimized Julia point estimate, not a posterior draw. Leave
+    # rawposterior empty so automatic initialization reports and treats its
+    # source correctly.
+    model$stanfit$rawposterior <- NULL
+    if (isTRUE(verbose)) .ctma_print_message(paste0(
+      "ctmaRePrep() recognized a ctmaJuliaFit object. Its originating model ",
+      "and data were recovered, and the Julia raw estimates will initialize ",
+      "the hierarchical population parameters."
+    ))
+  }
 
   stored <- .ctma_stored_re(model)
   if (is.null(reDRIFT)) reDRIFT <- stored$reDRIFT
@@ -970,6 +1108,7 @@ ctmaRePrep <- function(
   }
 
   mean_and_person <- spec$type == 1L & spec$person_varying
+  mean_and_person <- mean_and_person & spec$matrix != "T0VAR"
   if (any(mean_and_person)) warning(
     "The following parameters vary at both levels: ",
     paste(spec$parameter[mean_and_person], collapse = ", "),
@@ -1062,6 +1201,8 @@ ctmaRePrep <- function(
 
   structure(list(
     original = model,
+    ctsemModelSetup = model,
+    CoTiMASetup = cotima_setup,
     stanmodeltext = .ctma_patch_stan(
       model$stanmodeltext, covariance, parameterization, covariance_blocks
     ),
@@ -1079,6 +1220,250 @@ ctmaRePrep <- function(
     remove_study_fixed_effects = remove_study_fixed_effects,
     priors = list(sd_prior = sd_prior, lkj_eta = lkj_eta)
   ), class = c("CoTiMARePrep", "ctmaStudyREModel"))
+}
+
+.ctma_re_julia_parameter_names <- function(prepared) {
+  template <- prepared$init_template
+  nbase <- length(template$unconstrained_base)
+  nparams <- as.integer(prepared$standata$nparams)
+  ntipred <- as.integer(prepared$standata$ntipredeffects)
+  groups <- tryCatch(
+    getFromNamespace("ctFitgetparnamesfromraw", "ctsem")(
+      prepared$ctsemModelSetup
+    ),
+    error = function(e) NULL
+  )
+  base_names <- if (!is.null(groups)) unlist(Map(
+    function(group, parameter) paste0(group, "[", parameter, "]"),
+    rep(names(groups), lengths(groups)), unname(unlist(groups))
+  ), use.names = FALSE) else character()
+  if (length(base_names) != nbase) {
+    base_names <- c(
+      paste0("rawpopmeans[", seq_len(nparams), "]"),
+      paste0("tipredeffectparams[", seq_len(ntipred), "]"),
+      if (nbase > nparams + ntipred)
+        paste0("base_parameter[", seq_len(nbase - nparams - ntipred), "]")
+    )
+  }
+
+  spec <- prepared$specification
+  re_label <- make.unique(make.names(paste(
+    spec$matrix, spec$row, spec$col, spec$parameter, sep = "_"
+  )))
+  study_label <- make.unique(make.names(paste0(
+    "study_", as.character(prepared$study_labels)
+  )))
+  sd_names <- paste0("log_studyre_sd[", re_label, "]")
+  z_names <- unlist(lapply(study_label, function(study) paste0(
+    "studyre_z[", re_label, ",", study, "]"
+  )), use.names = FALSE)
+  make.unique(c(base_names, sd_names, z_names))
+}
+
+.ctma_re_julia_bayes <- function(prepared, chains, iter, seed, init_jitter,
+    verbose, backendArgs) {
+  if (!requireNamespace("JuliaCall", quietly = TRUE)) stop(
+    "Package 'JuliaCall' is required for backend='julia'."
+  )
+  if (!requireNamespace("posterior", quietly = TRUE)) stop(
+    "Package 'posterior' is required for Julia Bayesian diagnostics."
+  )
+  if (!identical(prepared$parameterization, "noncentered") ||
+      !identical(prepared$covariance, "independent") ||
+      any(prepared$specification$type != 1L)) stop(
+    "The initial Julia ctmaReFit backend supports only independent, ",
+    "noncentered type-1 DRIFT/raw study effects."
+  )
+  if (is.null(prepared$init_template)) stop(
+    "Julia ctmaReFit currently requires init='auto' with a usable pooled fit."
+  )
+  if (is.null(backendArgs)) backendArgs <- list()
+  if (!is.list(backendArgs) || (length(backendArgs) &&
+      is.null(names(backendArgs)))) stop("backendArgs must be a named list.")
+  defaults <- list(
+    julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA"),
+    initialize = TRUE,
+    julia_home = path.expand("~/.juliaup/bin"),
+    julia_threads = 1L,
+    blas_threads = 1L,
+    warmup = as.integer(iter %/% 2L),
+    samples = as.integer(iter - iter %/% 2L),
+    target_accept = 0.9,
+    max_depth = 8L,
+    metric = "dense",
+    chunksize = 7L,
+    parallel_chains = 1L,
+    threads_per_chain = NULL,
+    nuts_progress = isTRUE(verbose)
+  )
+  a <- utils::modifyList(defaults, backendArgs)
+  if (!nzchar(a$julia_file)) stop(
+    "The packaged Julia backend was not found. Reinstall CoTiMA from a ",
+    "source package containing inst/julia/CtsemJulia.jl, or supply ",
+    "backendArgs$julia_file explicitly."
+  )
+  if (is.null(a$threads_per_chain)) a$threads_per_chain <- a$julia_threads
+  a$metric <- match.arg(tolower(a$metric), c("diagonal", "dense"))
+  integer_names <- c("julia_threads", "blas_threads", "warmup", "samples",
+    "max_depth", "chunksize", "parallel_chains", "threads_per_chain")
+  a[integer_names] <- lapply(a[integer_names], function(x) as.integer(x)[1L])
+  if (any(vapply(a[integer_names], function(x) is.na(x) || x < 1L,
+                 logical(1L)))) stop("Julia integer controls must be positive.")
+  if (a$parallel_chains > chains) {
+    warning(
+      "backendArgs$parallel_chains exceeds 'chains'; using ", chains,
+      " concurrent chain workers.", call. = FALSE
+    )
+    a$parallel_chains <- as.integer(chains)
+  }
+  requested_cpus <- a$parallel_chains * a$threads_per_chain
+  available_cpus <- suppressWarnings(parallel::detectCores(logical = TRUE))
+  if (is.finite(available_cpus) && requested_cpus > available_cpus) warning(
+    "Julia chain parallelism requests ", requested_cpus, " CPU threads (",
+    a$parallel_chains, " parallel chains x ", a$threads_per_chain,
+    " threads per chain), but only ", available_cpus,
+    " logical cores were detected. Reduce parallel_chains or ",
+    "threads_per_chain to avoid oversubscription.", call. = FALSE
+  )
+  if (!file.exists(a$julia_file)) stop("Cannot find CtsemJulia.jl at ", a$julia_file)
+
+  template <- prepared$init_template
+  q <- as.integer(prepared$standata$nstudyre)
+  k <- as.integer(prepared$standata$nstudies)
+  tau <- as.numeric(template$studyre_sd)
+  z <- t(template$studyre_effect /
+    matrix(tau, k, q, byrow = TRUE))
+  theta <- c(template$unconstrained_base, log(tau), as.numeric(z))
+  parameter_names <- .ctma_re_julia_parameter_names(prepared)
+  if (length(parameter_names) != length(theta)) stop(
+    "Internal Julia study-RE parameter naming length mismatch: ",
+    length(parameter_names), " names for ", length(theta), " parameters."
+  )
+
+  active <- tryCatch(
+    isTRUE(get(".julia", envir = asNamespace("JuliaCall"))$initialized),
+    error = function(e) FALSE
+  )
+  if (isTRUE(a$initialize) && !active) {
+    old_threads <- Sys.getenv("JULIA_NUM_THREADS", unset = NA_character_)
+    Sys.setenv(JULIA_NUM_THREADS = as.character(a$julia_threads))
+    on.exit(if (is.na(old_threads)) Sys.unsetenv("JULIA_NUM_THREADS") else
+      Sys.setenv(JULIA_NUM_THREADS = old_threads), add = TRUE)
+    JuliaCall::julia_setup(
+      JULIA_HOME = a$julia_home, installJulia = FALSE,
+      install = FALSE, useRCall = FALSE, force = FALSE
+    )
+  } else if (!active) stop(
+    "JuliaCall is not initialized; use backendArgs=list(initialize=TRUE)."
+  )
+  active_threads <- as.integer(JuliaCall::julia_eval("Threads.nthreads()"))[1L]
+  if (active_threads != a$julia_threads) stop(
+    "The active Julia session has ", active_threads,
+    " thread(s), but backendArgs$julia_threads requests ", a$julia_threads,
+    ". Restart R to change Julia's thread count."
+  )
+  if (a$parallel_chains == 1L && active_threads != a$threads_per_chain) stop(
+    "Sequential Julia chains use the active Julia thread pool (",
+    active_threads, " thread(s)), but backendArgs$threads_per_chain requests ",
+    a$threads_per_chain, ". Set threads_per_chain = julia_threads or restart R."
+  )
+  JuliaCall::julia_assign("ctma_re_project", dirname(a$julia_file))
+  JuliaCall::julia_assign("ctma_re_julia_file", normalizePath(a$julia_file))
+  JuliaCall::julia_eval("import Pkg; Pkg.activate(ctma_re_project)")
+  JuliaCall::julia_source(a$julia_file)
+  JuliaCall::julia_assign("ctma_re_sd", prepared$standata)
+  JuliaCall::julia_assign("ctma_re_theta", theta)
+  JuliaCall::julia_eval(sprintf(
+    "LinearAlgebra.BLAS.set_num_threads(%d)", a$blas_threads
+  ))
+
+  if (isTRUE(verbose)) .ctma_print_message(sprintf(
+    paste0("Julia NUTS: %d chain(s), %d warmup and %d retained draws per ",
+      "chain; %s metric; %d concurrent chain process(es), %d subject ",
+      "thread(s) per chain."),
+    chains, a$warmup, a$samples, a$metric, a$parallel_chains,
+    a$threads_per_chain
+  ))
+  timing <- system.time(JuliaCall::julia_eval(sprintf(
+    paste0("ctma_re_bayes=CtsemJulia.ctsem_nuts_parallel(",
+      "ctma_re_theta,ctma_re_sd;",
+      "samples=%d,warmup=%d,chains=%d,target_accept=%.17g,max_depth=%d,",
+      "chunksize=%d,seed=%d,init_jitter=%.17g,progress=%s,metric=:%s,",
+      "study_re=true,parallel_chains=%d,threads_per_chain=%d,",
+      "blas_threads=%d,source_file=ctma_re_julia_file,",
+      "project_dir=ctma_re_project)"),
+    a$samples, a$warmup, as.integer(chains), a$target_accept, a$max_depth,
+    a$chunksize, as.integer(seed), as.numeric(init_jitter),
+    if (isTRUE(a$nuts_progress)) "true" else "false", a$metric,
+    a$parallel_chains, a$threads_per_chain, a$blas_threads
+  )))
+  raw <- JuliaCall::julia_eval("ctma_re_bayes.draws")
+  dimnames(raw) <- list(
+    draw = NULL,
+    variable = parameter_names,
+    chain = paste0("chain", seq_len(dim(raw)[3L]))
+  )
+  diagnostics <- list(
+    acceptance_rate = JuliaCall::julia_eval("ctma_re_bayes.acceptance_rate"),
+    tree_depth = JuliaCall::julia_eval("ctma_re_bayes.tree_depth"),
+    n_steps = JuliaCall::julia_eval("ctma_re_bayes.n_steps"),
+    divergent = JuliaCall::julia_eval("ctma_re_bayes.divergent"),
+    warmup_divergent = JuliaCall::julia_eval("ctma_re_bayes.warmup_divergent"),
+    step_size = JuliaCall::julia_eval("ctma_re_bayes.step_size")
+  )
+  diagnostics <- lapply(diagnostics, function(x) {
+    if (is.matrix(x) && ncol(x) == chains)
+      colnames(x) <- paste0("chain", seq_len(chains))
+    x
+  })
+  nd <- dim(raw)[1L] * dim(raw)[3L]
+  flat <- do.call(rbind, lapply(seq_len(dim(raw)[3L]), function(ch)
+    raw[, , ch, drop = FALSE][, , 1L]))
+  nbase <- length(template$unconstrained_base)
+  nparams <- as.integer(prepared$standata$nparams)
+  zdraw <- flat[, nbase + q + seq_len(q * k), drop = FALSE]
+  taudraw <- exp(flat[, nbase + seq_len(q), drop = FALSE])
+  re_names <- sub("^log_", "", parameter_names[nbase + seq_len(q)])
+  study_names <- as.character(prepared$study_labels)
+  z_array <- array(NA_real_, c(nd, q, k), dimnames = list(
+    draw = NULL, re = re_names, study = study_names
+  ))
+  effects <- array(NA_real_, c(nd, k, q), dimnames = list(
+    draw = NULL, study = study_names, re = re_names
+  ))
+  for (i in seq_len(nd)) {
+    zi <- matrix(zdraw[i, ], q, k)
+    z_array[i, , ] <- zi
+    effects[i, , ] <- t(taudraw[i, ] * zi)
+  }
+  colnames(flat) <- parameter_names
+  colnames(taudraw) <- re_names
+  draws <- list(
+    rawpopmeans = flat[, seq_len(nparams), drop = FALSE],
+    tipredeffectparams = flat[, nparams + seq_len(
+      as.integer(prepared$standata$ntipredeffects)), drop = FALSE],
+    studyre_z = z_array,
+    studyre_sd = taudraw,
+    studyre_effect = effects
+  )
+  posterior_array <- aperm(raw, c(1L, 3L, 2L))
+  psummary <- posterior::summarise_draws(
+    posterior::as_draws_array(posterior_array)
+  )
+  structure(list(
+    prepared = prepared,
+    stanmodel = NULL,
+    estimation = "bayes",
+    optimizer_uncertainty = "posterior",
+    method = "sample",
+    optimizer = "AdvancedHMC::NUTS",
+    backend = "julia",
+    backendArgs = a,
+    engine_fit = list(raw_draws = raw, parameter_names = parameter_names,
+      diagnostics = diagnostics, posterior_summary = psummary, timing = timing),
+    draws = draws,
+    objective = NULL
+  ), class = c("CoTiMAFit", "CoTiMAStudyREFit", "ctmaStudyREFit"))
 }
 
 #' Fit a hierarchical study-level random-effects CoTiMA model
@@ -1108,10 +1493,18 @@ ctmaRePrep <- function(
 #' @param compile_args Named arguments passed to \code{rstan::stan_model()}.
 #' @param fit_args Named arguments passed to \code{rstan::sampling()} or
 #'   \code{rstan::optimizing()}.
+#' @param backend Estimation backend: \code{"stan"} (default) or the initial
+#'   experimental \code{"julia"} backend.
+#' @param backendArgs Named overrides for Julia controls such as
+#'   \code{julia_threads}, \code{warmup}, \code{samples}, \code{metric},
+#'   \code{target_accept}, \code{max_depth}, \code{parallel_chains}, and
+#'   \code{threads_per_chain}.
 #'
 #' @return A \code{"CoTiMAFit"} object with subtype
 #'   \code{"CoTiMAStudyREFit"}. Apply \code{summary()} for population,
 #'   heterogeneity, correlation, and study-specific estimates.
+#' @importFrom stats coef
+#' @importFrom utils getFromNamespace
 #' @export
 #' @seealso \code{\link{ctmaRePrep}}, \code{\link{ctmaReMLFit}}
 #'
@@ -1136,7 +1529,9 @@ ctmaReFit <- function(
     optimizer_uncertainty = c("none", "hessian", "surrogate", "is",
       "bootstrap", "fullbootstrap", "sandwich", "opg"),
     compile_args = list(),
-    fit_args = list()) {
+    fit_args = list(),
+    backend = c("stan", "julia"),
+    backendArgs = list()) {
 
   # `method` is retained as a backward-compatible alias. Previously,
   # method="sample" meant Bayesian sampling and method="optimize" meant MAP.
@@ -1144,6 +1539,7 @@ ctmaReFit <- function(
     method <- match.arg(method, c("optimize", "sample"))
     estimation <- if (method == "sample") "bayes" else "map"
   } else estimation <- match.arg(estimation)
+  backend <- match.arg(tolower(backend), c("stan", "julia"))
   optimizer_uncertainty <- match.arg(optimizer_uncertainty)
   if (is.null(init)) init <- prepared$init
   if (is.null(init_jitter)) init_jitter <- prepared$init_jitter
@@ -1161,6 +1557,20 @@ ctmaReFit <- function(
     )
   if (!inherits(prepared, "ctmaStudyREModel"))
     stop("prepared must be returned by ctmaRePrep().")
+  if (backend == "julia") {
+    if (estimation != "bayes") stop(
+      "The initial Julia ctmaReFit backend supports estimation='bayes' only."
+    )
+    if (length(compile_args) || length(fit_args)) warning(
+      "compile_args and fit_args are Stan-specific and ignored by backend='julia'.",
+      call. = FALSE
+    )
+    return(.ctma_re_julia_bayes(
+      prepared = prepared, chains = as.integer(chains), iter = as.integer(iter),
+      seed = as.integer(seed), init_jitter = init_jitter,
+      verbose = verbose, backendArgs = backendArgs
+    ))
+  }
   if (!requireNamespace("rstan", quietly = TRUE)) stop("Package 'rstan' is required.")
 
   started <- Sys.time()
@@ -1289,7 +1699,7 @@ ctmaReFit <- function(
 
 # Diagnostic marker: useful for detecting an older function definition that
 # is still present in an interactive R session after this file was updated.
-attr(ctmaReFit, "script_version") <- "2026-08-11.20"
+attr(ctmaReFit, "script_version") <- "2026-08-19.25"
 
 .ctma_draw_summary <- function(x, probs = c(.025, .5, .975)) {
   c(mean = mean(x), stats::quantile(x, probs, names = FALSE))
