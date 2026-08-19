@@ -28,6 +28,8 @@ test_that("the packaged Julia project declares the backend dependencies", {
   backend <- readLines(backend_file, warn = FALSE)
 
   expect_true(any(grepl("AdvancedHMC", project, fixed = TRUE)))
+  expect_true(any(grepl("ForwardDiff", project, fixed = TRUE)))
+  expect_true(any(grepl("Optim", project, fixed = TRUE)))
   expect_true(any(grepl("using ForwardDiff", backend, fixed = TRUE)))
   expect_true(any(grepl("using Optim", backend, fixed = TRUE)))
 })
