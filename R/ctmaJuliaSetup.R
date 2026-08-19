@@ -17,7 +17,9 @@
 #'   `julia` directory installed with CoTiMA.
 #' @param bootstrap_juliacall Install/check the Julia packages
 #'   `Suppressor` and `RCall` in Julia's default environment and rebuild
-#'   `RCall` against the current R installation.
+#'   `RCall` against the current R installation. The function deliberately
+#'   does not broadly precompile the default Julia environment because that
+#'   can trigger unrelated packages.
 #' @param instantiate Instantiate the CoTiMA Julia project without automatic
 #'   precompilation.
 #' @param precompile Precompile the CoTiMA Julia project.
@@ -108,15 +110,15 @@ ctmaJuliaSetup <- function(
       "for package in [\"Suppressor\", \"RCall\"];",
       "Base.find_package(package) === nothing && Pkg.add(package);",
       "end;",
-      "Pkg.build(\"RCall\");",
-      "Pkg.precompile()"
+      "Pkg.build(\"RCall\")"
     )
     add_command(
       "Bootstrap JuliaCall dependencies",
       c("--startup-file=no", "-e", shQuote(bootstrap_code)),
       c(
         paste0("R_HOME=", shQuote(r_home)),
-        paste0("JULIA_NUM_PRECOMPILE_TASKS=", precompile_tasks)
+        paste0("JULIA_NUM_PRECOMPILE_TASKS=", precompile_tasks),
+        "JULIA_PKG_PRECOMPILE_AUTO=0"
       )
     )
   }

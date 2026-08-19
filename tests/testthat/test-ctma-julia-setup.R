@@ -38,6 +38,8 @@ test_that("ctmaJuliaSetup constructs a portable dry-run plan", {
   expect_length(result$commands, 3L)
   expect_match(result$commands[[1L]], "Suppressor")
   expect_match(result$commands[[1L]], "RCall")
+  expect_match(result$commands[[1L]], "JULIA_PKG_PRECOMPILE_AUTO=0")
+  expect_false(grepl("Pkg.precompile", result$commands[[1L]], fixed = TRUE))
   expect_match(result$commands[[2L]], "allow_autoprecomp=false", fixed = TRUE)
   expect_match(result$commands[[3L]], "JULIA_NUM_PRECOMPILE_TASKS=1")
 })

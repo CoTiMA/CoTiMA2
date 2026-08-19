@@ -30,7 +30,9 @@ used only when `julia` is omitted.}
 
 \item{bootstrap_juliacall}{Install/check the Julia packages
 `Suppressor` and `RCall` in Julia's default environment and rebuild
-`RCall` against the current R installation.}
+`RCall` against the current R installation. The function deliberately
+does not broadly precompile the default Julia environment because that
+can trigger unrelated packages.}
 
 \item{instantiate}{Instantiate the CoTiMA Julia project without automatic
 precompilation.}

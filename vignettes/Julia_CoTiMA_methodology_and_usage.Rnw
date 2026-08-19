@@ -691,15 +691,15 @@ which is safer on high-core-count machines and in memory-limited sessions.
 bootstrapCode <- paste(
   "import Pkg;",
   "Pkg.add([\"Suppressor\", \"RCall\"]);",
-  "Pkg.build(\"RCall\");",
-  "Pkg.precompile()"
+  "Pkg.build(\"RCall\")"
 )
 system2(
   juliaExecutable,
   c("--startup-file=no", "-e", shQuote(bootstrapCode)),
   env = c(
     paste0("R_HOME=", shQuote(R.home())),
-    "JULIA_NUM_PRECOMPILE_TASKS=1"
+    "JULIA_NUM_PRECOMPILE_TASKS=1",
+    "JULIA_PKG_PRECOMPILE_AUTO=0"
   )
 )
 @
@@ -744,6 +744,11 @@ same value as \code{backendArgs$julia_home} to Julia-based
 \code{ctmaReFit()}, when \code{Sys.which("julia")} remains empty.  A failed
 JuliaCall initialization also requires an R restart; the embedded Julia
 runtime cannot be repaired or replaced reliably inside that R process.
+If \code{Suppressor} and \code{RCall} were already installed successfully,
+\code{ctmaJuliaSetup(bootstrap_juliacall=FALSE)} skips the default-environment
+bootstrap and proceeds directly to the isolated CoTiMA project.  This is also
+the appropriate recovery when an unrelated package such as Conda fails while
+the default Julia environment is being processed.
 
 \section{Recommended staged validation strategy}
 
