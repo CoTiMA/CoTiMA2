@@ -643,6 +643,18 @@ at \url{https://julialang.org/install/}.  Julia itself is not included in the
 CoTiMA R package.  After installing or updating Julia, fully restart RStudio so
 that it can inherit the changed executable search path.
 
+For most users, the recommended one-time R command is simply:
+
+<<automatic-julia-setup>>=
+juliaSetup <- ctmaJuliaSetup()
+# Restart R afterward, then use:
+juliaSetup$julia_home
+@
+
+The remaining code in this section documents the individual discovery and
+bootstrap operations performed by \code{ctmaJuliaSetup()}, and provides
+manual alternatives for diagnosing an unusual installation.
+
 Do not assume that Julia is stored in a fixed directory.  First ask the
 operating system for the executable and, if necessary, check Juliaup's common
 user-level locations.  The following helper also accommodates Juliaup's
