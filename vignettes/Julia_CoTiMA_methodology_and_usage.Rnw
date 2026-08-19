@@ -634,6 +634,105 @@ saveRDS(mlFit, "julia_ml_fit.rds")
 saveRDS(bayesFit, "julia_bayes_fit.rds")
 @
 
+\section{Portable Julia installation and first-time setup}
+
+The most portable installation strategy uses \emph{Juliaup}, Julia's official
+version manager, on Windows, macOS, and Linux.  Installation commands differ
+slightly by operating system, so users should follow the current instructions
+at \url{https://julialang.org/install/}.  Julia itself is not included in the
+CoTiMA R package.  After installing or updating Julia, fully restart RStudio so
+that it can inherit the changed executable search path.
+
+Do not assume that Julia is stored in a fixed directory.  First ask the
+operating system for the executable and, if necessary, check Juliaup's common
+user-level locations.  The following helper also accommodates Juliaup's
+versioned Linux directory, as encountered on some Ubuntu installations.
+
+<<find-julia>>=
+findJulia <- function() {
+  located <- unname(Sys.which("julia"))
+  if (nzchar(located)) return(normalizePath(located))
+
+  candidates <- c(
+    path.expand("~/.juliaup/bin/julia"),
+    path.expand("~/.juliaup/bin/julia.exe"),
+    Sys.glob(path.expand("~/.julia/juliaup/julia-*/bin/julia"))
+  )
+  candidates <- candidates[file.exists(candidates)]
+  if (!length(candidates)) stop(
+    "Julia was not found. Install Juliaup, restart RStudio, and retry."
+  )
+  normalizePath(tail(candidates, 1L))
+}
+
+juliaExecutable <- findJulia()
+juliaHome <- dirname(juliaExecutable)
+system2(juliaExecutable, "--version")
+@
+
+JuliaCall's setup code needs the Julia packages \code{Suppressor} and
+\code{RCall} in Julia's default environment, before CoTiMA activates its own
+project.  The following one-time bootstrap keeps precompilation to one worker,
+which is safer on high-core-count machines and in memory-limited sessions.
+
+<<bootstrap-juliacall>>=
+bootstrapCode <- paste(
+  "import Pkg;",
+  "Pkg.add([\"Suppressor\", \"RCall\"]);",
+  "Pkg.build(\"RCall\");",
+  "Pkg.precompile()"
+)
+system2(
+  juliaExecutable,
+  c("--startup-file=no", "-e", shQuote(bootstrapCode)),
+  env = c(
+    paste0("R_HOME=", shQuote(R.home())),
+    "JULIA_NUM_PRECOMPILE_TASKS=1"
+  )
+)
+@
+
+Next instantiate the Julia project installed with CoTiMA.  Instantiation and
+precompilation are deliberately separated: this produces clearer errors and
+avoids excessive parallel precompilation.
+
+<<instantiate-cotima-julia>>=
+juliaProject <- system.file("julia", package = "CoTiMA")
+stopifnot(nzchar(juliaProject))
+
+instantiateCode <- paste(
+  "import Pkg;",
+  "Pkg.instantiate(; allow_autoprecomp=false);",
+  "Pkg.status()"
+)
+system2(
+  juliaExecutable,
+  c(
+    "--startup-file=no",
+    paste0("--project=", shQuote(juliaProject)),
+    "-e", shQuote(instantiateCode)
+  ),
+  env = "JULIA_PKG_PRECOMPILE_AUTO=0"
+)
+
+system2(
+  juliaExecutable,
+  c(
+    "--startup-file=no",
+    paste0("--project=", shQuote(juliaProject)),
+    "-e", shQuote("import Pkg; Pkg.precompile()")
+  ),
+  env = "JULIA_NUM_PRECOMPILE_TASKS=1"
+)
+@
+
+Restart R once more after this bootstrap.  Pass
+\code{julia_home=dirname(juliaExecutable)} to \code{ctmaJuliaFit()}, or the
+same value as \code{backendArgs$julia_home} to Julia-based
+\code{ctmaReFit()}, when \code{Sys.which("julia")} remains empty.  A failed
+JuliaCall initialization also requires an R restart; the embedded Julia
+runtime cannot be repaired or replaced reliably inside that R process.
+
 \section{Recommended staged validation strategy}
 
 For a new class of model:
