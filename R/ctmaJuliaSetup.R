@@ -15,11 +15,12 @@
 #'   used only when `julia` is omitted.
 #' @param project Optional path to the Julia project. The default is the
 #'   `julia` directory installed with CoTiMA.
-#' @param bootstrap_juliacall Install/check the Julia packages
-#'   `Suppressor` and `RCall` in Julia's default environment and rebuild
-#'   `RCall` against the current R installation. The function deliberately
-#'   does not broadly precompile the default Julia environment because that
-#'   can trigger unrelated packages.
+#' @param bootstrap_juliacall JuliaCall dependency policy. The default
+#'   `"auto"` installs `Suppressor` or `RCall` only when missing and builds
+#'   RCall only when newly installed. `TRUE` also forces an RCall rebuild;
+#'   `FALSE` skips this bootstrap. The function deliberately does not broadly
+#'   precompile the default Julia environment because that can trigger
+#'   unrelated packages.
 #' @param instantiate Instantiate the CoTiMA Julia project without automatic
 #'   precompilation.
 #' @param precompile Precompile the CoTiMA Julia project.
@@ -49,7 +50,7 @@ ctmaJuliaSetup <- function(
     julia = NULL,
     julia_home = NULL,
     project = NULL,
-    bootstrap_juliacall = TRUE,
+    bootstrap_juliacall = "auto",
     instantiate = TRUE,
     precompile = TRUE,
     precompile_tasks = 1L,
@@ -63,8 +64,17 @@ ctmaJuliaSetup <- function(
     }
     value
   }
-  bootstrap_juliacall <- scalar_flag(
-    bootstrap_juliacall, "bootstrap_juliacall"
+  if (is.character(bootstrap_juliacall) &&
+      length(bootstrap_juliacall) == 1L &&
+      identical(tolower(bootstrap_juliacall), "auto")) {
+    bootstrap_mode <- "auto"
+  } else if (is.logical(bootstrap_juliacall) &&
+             length(bootstrap_juliacall) == 1L &&
+             !is.na(bootstrap_juliacall)) {
+    bootstrap_mode <- if (bootstrap_juliacall) "force" else "skip"
+  } else stop(
+    "'bootstrap_juliacall' must be \"auto\", TRUE, or FALSE.",
+    call. = FALSE
   )
   instantiate <- scalar_flag(instantiate, "instantiate")
   precompile <- scalar_flag(precompile, "precompile")
@@ -104,12 +114,18 @@ ctmaJuliaSetup <- function(
     )
   }
 
-  if (bootstrap_juliacall) {
-    bootstrap_code <- paste(
+  if (bootstrap_mode != "skip") {
+    bootstrap_code <- if (bootstrap_mode == "auto") paste(
       "import Pkg;",
-      "for package in [\"Suppressor\", \"RCall\"];",
-      "Base.find_package(package) === nothing && Pkg.add(package);",
-      "end;",
+      "required = [\"Suppressor\", \"RCall\"];",
+      "missing = filter(package -> Base.find_package(package) === nothing, required);",
+      "isempty(missing) || Pkg.add(missing);",
+      "\"RCall\" in missing && Pkg.build(\"RCall\")"
+    ) else paste(
+      "import Pkg;",
+      "required = [\"Suppressor\", \"RCall\"];",
+      "missing = filter(package -> Base.find_package(package) === nothing, required);",
+      "isempty(missing) || Pkg.add(missing);",
       "Pkg.build(\"RCall\")"
     )
     add_command(
@@ -207,11 +223,11 @@ ctmaJuliaSetup <- function(
     project = project,
     commands = lapply(commands, render_command),
     results = results,
-    restart_required = bootstrap_juliacall
+      restart_required = bootstrap_mode != "skip"
   ), class = "ctmaJuliaSetup")
   if (verbose) {
     cat("\nJulia setup completed successfully.\n")
-    if (bootstrap_juliacall) cat(
+    if (bootstrap_mode != "skip") cat(
       "Restart R before initializing JuliaCall, then use julia_home = ",
       shQuote(julia_home), ".\n", sep = ""
     )

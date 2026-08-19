@@ -17,7 +17,9 @@
 #' @param initialize Whether to initialise JuliaCall when it is not already
 #'   active. An embedded Julia runtime cannot be restarted inside the same R
 #'   process; if its thread count differs from `julia_threads`, restart R.
-#' @param julia_home Julia executable directory passed to `julia_setup()`.
+#' @param julia_home Optional Julia executable directory passed to
+#'   `julia_setup()`. When omitted, CoTiMA uses the same platform-aware Julia
+#'   discovery as `ctmaJuliaSetup()`.
 #' @param validate Whether to compare the Julia likelihood at the retained raw
 #'   estimates with `stanfit$optimfit$value`, when available.
 #' @param tolerance Maximum absolute Julia-minus-Stan difference accepted by
@@ -100,7 +102,7 @@ ctmaJuliaFit <- function(
     study = 1L,
     julia_file = NULL,
     initialize = TRUE,
-    julia_home = path.expand("~/.juliaup/bin"),
+    julia_home = NULL,
     validate = TRUE,
     tolerance = 1e-6,
     optimize = FALSE,
@@ -222,6 +224,7 @@ ctmaJuliaFit <- function(
 
   julia_is_active <- .ctmaJuliaSessionInitialized()
   if (isTRUE(initialize) && !julia_is_active) {
+    julia_home <- dirname(.ctmaJuliaFindExecutable(julia_home = julia_home))
     old_julia_threads <- Sys.getenv("JULIA_NUM_THREADS", unset = NA_character_)
     Sys.setenv(JULIA_NUM_THREADS = as.character(julia_threads))
     on.exit({

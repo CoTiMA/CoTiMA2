@@ -8,7 +8,7 @@ ctmaJuliaSetup(
   julia = NULL,
   julia_home = NULL,
   project = NULL,
-  bootstrap_juliacall = TRUE,
+  bootstrap_juliacall = "auto",
   instantiate = TRUE,
   precompile = TRUE,
   precompile_tasks = 1L,
@@ -28,11 +28,12 @@ used only when `julia` is omitted.}
 \item{project}{Optional path to the Julia project. The default is the
 `julia` directory installed with CoTiMA.}
 
-\item{bootstrap_juliacall}{Install/check the Julia packages
-`Suppressor` and `RCall` in Julia's default environment and rebuild
-`RCall` against the current R installation. The function deliberately
-does not broadly precompile the default Julia environment because that
-can trigger unrelated packages.}
+\item{bootstrap_juliacall}{JuliaCall dependency policy. The default
+`"auto"` installs `Suppressor` or `RCall` only when missing and builds
+RCall only when newly installed. `TRUE` also forces an RCall rebuild;
+`FALSE` skips this bootstrap. The function deliberately does not broadly
+precompile the default Julia environment because that can trigger
+unrelated packages.}
 
 \item{instantiate}{Instantiate the CoTiMA Julia project without automatic
 precompilation.}

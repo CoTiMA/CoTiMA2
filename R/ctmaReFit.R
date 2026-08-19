@@ -1283,7 +1283,7 @@ ctmaRePrep <- function(
   defaults <- list(
     julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA"),
     initialize = TRUE,
-    julia_home = path.expand("~/.juliaup/bin"),
+    julia_home = NULL,
     julia_threads = 1L,
     blas_threads = 1L,
     warmup = as.integer(iter %/% 2L),
@@ -1345,6 +1345,9 @@ ctmaRePrep <- function(
     error = function(e) FALSE
   )
   if (isTRUE(a$initialize) && !active) {
+    a$julia_home <- dirname(.ctmaJuliaFindExecutable(
+      julia_home = a$julia_home
+    ))
     old_threads <- Sys.getenv("JULIA_NUM_THREADS", unset = NA_character_)
     Sys.setenv(JULIA_NUM_THREADS = as.character(a$julia_threads))
     on.exit(if (is.na(old_threads)) Sys.unsetenv("JULIA_NUM_THREADS") else

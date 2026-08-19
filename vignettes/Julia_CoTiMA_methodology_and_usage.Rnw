@@ -314,7 +314,8 @@ warmup than a diagonal metric, especially when there are many parameters.
     not active.  Julia cannot be restarted with a different thread count in
     the same R process.
   \item[\code{julia_home}] Directory used by JuliaCall to locate Julia.  The
-    default targets a standard \code{juliaup} installation.
+    default automatically searches the system path and common Juliaup
+    installation locations; supply it only for an unusual installation.
   \item[\code{validate}] Compare Julia's likelihood with the retained Stan
     likelihood when the latter is available.
   \item[\code{tolerance}] Maximum accepted absolute Julia--Stan likelihood
@@ -647,8 +648,7 @@ For most users, the recommended one-time R command is simply:
 
 <<automatic-julia-setup>>=
 juliaSetup <- ctmaJuliaSetup()
-# Restart R afterward, then use:
-juliaSetup$julia_home
+# Restart R afterward. Fitting functions rediscover Julia automatically.
 @
 
 The remaining code in this section documents the individual discovery and
@@ -738,12 +738,13 @@ system2(
 )
 @
 
-Restart R once more after this bootstrap.  Pass
-\code{julia_home=dirname(juliaExecutable)} to \code{ctmaJuliaFit()}, or the
-same value as \code{backendArgs$julia_home} to Julia-based
-\code{ctmaReFit()}, when \code{Sys.which("julia")} remains empty.  A failed
-JuliaCall initialization also requires an R restart; the embedded Julia
-runtime cannot be repaired or replaced reliably inside that R process.
+Restart R once more after this bootstrap.  \code{ctmaJuliaFit()} and
+Julia-based \code{ctmaReFit()} use the same discovery routine as
+\code{ctmaJuliaSetup()}, even when \code{Sys.which("julia")} remains empty.
+An explicit \code{julia_home} is therefore needed only for an unusual
+installation.  A failed JuliaCall initialization also requires an R restart;
+the embedded Julia runtime cannot be repaired or replaced reliably inside
+that R process.
 If \code{Suppressor} and \code{RCall} were already installed successfully,
 \code{ctmaJuliaSetup(bootstrap_juliacall=FALSE)} skips the default-environment
 bootstrap and proceeds directly to the isolated CoTiMA project.  This is also

@@ -9,7 +9,7 @@ ctmaJuliaFit(
   study = 1L,
   julia_file = NULL,
   initialize = TRUE,
-  julia_home = path.expand("~/.juliaup/bin"),
+  julia_home = NULL,
   validate = TRUE,
   tolerance = 1e-06,
   optimize = FALSE,
@@ -63,7 +63,9 @@ the default looks for `inst/julia/CtsemJulia.jl` via `system.file()`.}
 active. An embedded Julia runtime cannot be restarted inside the same R
 process; if its thread count differs from `julia_threads`, restart R.}
 
-\item{julia_home}{Julia executable directory passed to `julia_setup()`.}
+\item{julia_home}{Optional Julia executable directory passed to
+`julia_setup()`. When omitted, CoTiMA uses the same platform-aware Julia
+discovery as `ctmaJuliaSetup()`.}
 
 \item{validate}{Whether to compare the Julia likelihood at the retained raw
 estimates with `stanfit$optimfit$value`, when available.}
