@@ -262,6 +262,8 @@ ctmaReMLFit <- function(
     optim_args = list(),
     verbose = TRUE) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReMLFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
   if (!inherits(prepared, "ctmaStudyREModel")) stop(
     "prepared must be returned by ctmaRePrep()."

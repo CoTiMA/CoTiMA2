@@ -61,6 +61,8 @@ ctmaJuliaSetup <- function(
     dry_run = FALSE,
     verbose = TRUE) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaJuliaSetup")
+  on.exit(.ctma_timer(), add = TRUE)
 
   scalar_flag <- function(value, name) {
     if (!is.logical(value) || length(value) != 1L || is.na(value)) {

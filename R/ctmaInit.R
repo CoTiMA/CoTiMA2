@@ -125,6 +125,8 @@ ctmaInit <- function(
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaInit")
+  on.exit(.ctma_timer(), add = TRUE)
 
 
   #start.time <- Sys.time()
@@ -132,7 +134,7 @@ ctmaInit <- function(
   #original.options <- options("scipen"); original.options
   original.options <- getOption("scipen"); original.options
   options(scipen = 999); options("scipen") # turn scientific notation off.
-  on.exit(options(scipen = original.options))  # scientific notation as user's original
+  on.exit(options(scipen = original.options), add = TRUE)  # restore and retain timing handler
 
   catchWarnings <- FALSE
   if (catchWarnings) { # function definition to handle possible errors and warnings during fitting
@@ -299,7 +301,7 @@ ctmaInit <- function(
     # CHD changed on 19 Sep 2022
     if (doPar > 1) {
       myCluster <- parallel::makeCluster(coresToUse)
-      on.exit(parallel::stopCluster(myCluster))
+      on.exit(parallel::stopCluster(myCluster), add = TRUE)
       doParallel::registerDoParallel(myCluster)
       '%dopar%' <- foreach::'%dopar%'
     }

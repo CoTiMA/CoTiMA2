@@ -972,6 +972,8 @@ ctmaRePrep <- function(
     lkj_eta = 2,
     verbose = TRUE) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaRePrep")
+  on.exit(.ctma_timer(), add = TRUE)
 
   covariance <- .ctma_covariance_name(covariance[1L])
   parameterization_requested <- match.arg(parameterization)
@@ -1542,6 +1544,8 @@ ctmaReFit <- function(
     backend = c("stan", "julia"),
     backendArgs = list()) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
   # `method` is retained as a backward-compatible alias. Previously,
   # method="sample" meant Bayesian sampling and method="optimize" meant MAP.

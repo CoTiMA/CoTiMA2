@@ -180,6 +180,8 @@ ctmaFit <- function(
 )
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
   cotima_call <- match.call()
   requested_fit <- if (is.null(fit)) TRUE else isTRUE(as.logical(fit)[1L])

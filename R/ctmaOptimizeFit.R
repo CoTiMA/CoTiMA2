@@ -128,6 +128,8 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
 )
 {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaOptimizeFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   if (identical(backend, "julia")) {

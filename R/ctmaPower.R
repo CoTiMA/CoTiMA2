@@ -98,6 +98,8 @@ ctmaPower <- function(
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaPower")
+  on.exit(.ctma_timer(), add = TRUE)
 
   { ### CHECKS
 

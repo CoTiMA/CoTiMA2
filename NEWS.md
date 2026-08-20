@@ -1,3 +1,8 @@
+# CoTiMA2 0.9.92
+
+- Reports wall-clock execution time when each principal workflow exits,
+  including exits caused by an error.
+
 # CoTiMA2 0.9.91
 
 - Establishes the experimental CoTiMA 2.0 development line under the separate

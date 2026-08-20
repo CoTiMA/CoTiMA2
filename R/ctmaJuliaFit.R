@@ -141,6 +141,8 @@ ctmaJuliaFit <- function(
     julia_threads = 1L,
     blas_threads = 1L) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaJuliaFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
   julia_threads_was_supplied <- !missing(julia_threads)
   transformed_was_supplied <- !missing(transformed)
@@ -1175,6 +1177,8 @@ vcov.ctmaJuliaFit <- function(object, ...) {
 ctAddJuliaSamples <- function(
     fit, setup, nsamples = 1000L, cores = 2L, seed = NULL, digits = 4L) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctAddJuliaSamples")
+  on.exit(.ctma_timer(), add = TRUE)
   if (!inherits(fit, "ctmaJuliaFit")) {
     stop("'fit' must inherit from 'ctmaJuliaFit'.", call. = FALSE)
   }

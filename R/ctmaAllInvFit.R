@@ -63,6 +63,8 @@ ctmaAllInvFit <- function(
 )
 {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaAllInvFit")
+  on.exit(.ctma_timer(), add = TRUE)
 
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"

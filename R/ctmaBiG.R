@@ -67,6 +67,8 @@ ctmaBiG <- function(
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaBiG")
+  on.exit(.ctma_timer(), add = TRUE)
 
   ### check if fit object is specified
   if (is.null(ctmaInitFit)){

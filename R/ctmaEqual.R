@@ -41,6 +41,8 @@ ctmaEqual <- function(
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaEqual")
+  on.exit(.ctma_timer(), add = TRUE)
 
   # use same fitting params as used to fit ctmaInvariantFit
   CoTiMAStanctArgs <- ctmaInvariantFit$argumentList$CoTiMAStanctArgs

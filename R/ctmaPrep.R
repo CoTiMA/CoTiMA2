@@ -112,6 +112,8 @@ ctmaPrep <- function(selectedStudies=NULL,
                      excludedStudies=NULL)
 {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaPrep")
+  on.exit(.ctma_timer(), add = TRUE)
 
   ctma <- globalenv()
 

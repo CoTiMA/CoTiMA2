@@ -26,6 +26,8 @@ ctmaRedHet <- function(activateRPB=FALSE,
                        undoTimeScaling=TRUE)
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaRedHet")
+  on.exit(.ctma_timer(), add = TRUE)
 
   {
     # check if correct fit objects are specified ######################

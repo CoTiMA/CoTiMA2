@@ -32,6 +32,8 @@ ctmaPub <- function(getPubObj=NULL, primaryStudyList=NULL,
                     yearsToExclude=0, recency=5, targetYear=NULL,
                     indFUN="sum", colFUN="mean", addAsMod=FALSE) {
   .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaPub")
+  on.exit(.ctma_timer(), add = TRUE)
 
   if ( (!(indFUN %in% c("mean", "sum", "max", "min", "var"))) |
        (!(colFUN %in% c("mean", "sum", "max", "min", "var"))) ) {
