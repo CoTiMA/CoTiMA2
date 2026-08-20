@@ -227,6 +227,63 @@ test_that("ctmaAllInvFit validates controls before requiring a fit", {
   )
 })
 
+test_that("ctmaPower resolves partial nested Stan controls", {
+  result <- CoTiMA:::.ctmaResolvePowerStanArgs(
+    overrides = list(
+      scaleTime = 0.5,
+      verbose = 2,
+      control = list(adapt_delta = 0.95),
+      optimcontrol = list(finishsamples = 250)
+    ),
+    iter = 900,
+    finishsamples = 500
+  )
+
+  expect_identical(result$scaleTime, 0.5)
+  expect_identical(result$verbose, 2)
+  expect_identical(result$iter, 900)
+  expect_identical(result$control$adapt_delta, 0.95)
+  expect_identical(
+    result$control$max_treedepth,
+    CoTiMAStanctArgs$control$max_treedepth
+  )
+  expect_identical(result$optimcontrol$finishsamples, 500)
+  expect_identical(
+    result$optimcontrol$carefulfit,
+    CoTiMAStanctArgs$optimcontrol$carefulfit
+  )
+})
+
+test_that("ctmaPower direct scale and verbose controls take precedence", {
+  result <- CoTiMA:::.ctmaResolvePowerStanArgs(
+    overrides = list(scaleTime = 0.5, verbose = 2),
+    scaleTime = 2,
+    verbose = 0,
+    verbose_was_supplied = TRUE
+  )
+  expect_identical(result$scaleTime, 2)
+  expect_identical(result$verbose, 0)
+})
+
+test_that("ctmaPower validates controls before requiring a fit", {
+  expect_error(
+    ctmaPower(
+      ctmaInitFit = NULL,
+      statisticalPower = 0.8,
+      CoTiMAStanctArgs = list(control = list(adapt_delta = 0.9))
+    ),
+    "A fitted CoTiMA object.*has to be supplied"
+  )
+  expect_error(
+    ctmaPower(
+      ctmaInitFit = NULL,
+      statisticalPower = 0.8,
+      CoTiMAStanctArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+})
+
 test_that("parallel fit selection uses the greatest finite log-posterior", {
   attempt <- function(value) {
     list(

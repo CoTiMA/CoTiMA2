@@ -30,7 +30,8 @@ ctmaPower(
   chains = NULL,
   verbose = NULL,
   customPar = FALSE,
-  scaleTime = NULL
+  scaleTime = NULL,
+  CoTiMAStanctArgs = NULL
 )
 }
 \arguments{
@@ -85,6 +86,9 @@ ctmaPower(
 \item{customPar}{logical. If set TRUE (default) leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)}
 
 \item{scaleTime}{scale time (interval) - sometimes desirable to improve fitting}
+
+\item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting
+controls. Partial and nested lists are supported.}
 }
 \value{
 ctmaPower returns a list containing some arguments supplied, a fitted model with all (!) parameters invariant across primary
