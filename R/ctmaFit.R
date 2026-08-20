@@ -55,11 +55,19 @@
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit – for debugging
 #' @param WEC (default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
 #' @param WECnt (default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
-#' @param backend estimation backend. \code{"stan"} remains the default.
-#'   The Julia route is introduced separately after package-level validation.
+#' @param backend estimation backend. \code{"stan"} remains the default;
+#'   \code{"julia"} prepares the same ctsem model and data and then calls the
+#'   validated Julia ML or Bayesian engine.
 #' @param backendArgs named backend-specific controls. With the default Stan
 #'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
-#'   completed from \code{ctmaBackendDefaults("stan")}.
+#'   completed from \code{ctmaBackendDefaults("stan")}. With the Julia
+#'   backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
+#'   "ctmaFit")}. For Julia, \code{optimize = TRUE} selects ML and
+#'   \code{optimize = FALSE} selects Bayesian NUTS. A supplied \code{iter}
+#'   becomes \code{maxiters} for ML and is split equally between warmup and
+#'   retained draws for Bayesian estimation; explicit \code{chains} is passed
+#'   to Bayesian estimation. Julia-specific controls in \code{backendArgs}
+#'   remain the preferred way to configure the engine.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores
@@ -172,13 +180,22 @@ ctmaFit <- function(
 )
 {  # begin function definition (until end of file)
 
+  cotima_call <- match.call()
+  requested_fit <- if (is.null(fit)) TRUE else isTRUE(as.logical(fit)[1L])
+  requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) {
+    "ML"
+  } else "Bayes"
   backend_resolution <- .ctmaResolveFitBackend(
     backend = backend,
     backendArgs = backendArgs,
-    legacy_stan_args = CoTiMAStanctArgs
+    legacy_stan_args = CoTiMAStanctArgs,
+    estimation = requested_estimation
   )
   backend <- backend_resolution$backend
   CoTiMAStanctArgs <- backend_resolution$stan_args
+  resolved_backend_args <- backend_resolution$backend_args
+  julia_fit_requested <- identical(backend, "julia") && requested_fit
+  if (julia_fit_requested) fit <- FALSE
 
   catchWarnings <- FALSE
   if (catchWarnings) { # function definition to handle possible errors and warnings during fitting
@@ -259,6 +276,9 @@ ctmaFit <- function(
         verbose = verbose,
         verbose_was_supplied = !missing(verbose)
       )
+      if (identical(backend, "stan")) {
+        resolved_backend_args <- CoTiMAStanctArgs
+      }
     }
 
     {
@@ -2078,7 +2098,7 @@ ctmaFit <- function(
                         randomIntercepts=randomInterceptsSettings,
                         CoTiMAStanctArgs=CoTiMAStanctArgs,
                         backend=backend,
-                        backendArgs=CoTiMAStanctArgs,
+                        backendArgs=resolved_backend_args,
                         T0var=T0var,
                         priors=priors,
                         binaries=binaries,
@@ -2133,7 +2153,7 @@ ctmaFit <- function(
                         sameInitialTimes = sameInitialTimes,
                         CoTiMAStanctArgs = CoTiMAStanctArgs,
                         backend = backend,
-                        backendArgs = CoTiMAStanctArgs
+                        backendArgs = resolved_backend_args
                       ))
     #} else {
     #  results <- list(summary = list(message=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),
@@ -2247,6 +2267,32 @@ ctmaFit <- function(
 
     results$excelSheets <- wb
   } #end if (fit == TRUE) {
+
+  if (julia_fit_requested) {
+    if (!is.null(inits)) resolved_backend_args$inits <- inits
+    if (!is.null(finishsamples)) {
+      resolved_backend_args$transformed_draws <- as.integer(finishsamples)
+    }
+    if (!is.null(iter)) {
+      if (identical(requested_estimation, "ML")) {
+        resolved_backend_args$maxiters <- as.integer(iter)
+      } else {
+        resolved_backend_args$warmup <- as.integer(iter %/% 2L)
+        resolved_backend_args$samples <- as.integer(iter - iter %/% 2L)
+      }
+    }
+    if (!is.null(chains) && identical(requested_estimation, "Bayes")) {
+      resolved_backend_args$chains <- as.integer(chains)
+    }
+    julia_result <- .ctmaJuliaFitFromSetup(
+      setup = results,
+      estimation = requested_estimation,
+      backend_args = resolved_backend_args
+    )
+    julia_result$cotima_call <- cotima_call
+    julia_result$backend <- backend
+    return(invisible(julia_result))
+  }
 
   invisible(results)
 

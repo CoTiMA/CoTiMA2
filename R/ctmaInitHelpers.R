@@ -161,8 +161,10 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
 }
 
 .ctmaResolveFitBackend <- function(backend = c("stan", "julia"),
-    backendArgs = list(), legacy_stan_args = NULL) {
+    backendArgs = list(), legacy_stan_args = NULL,
+    estimation = c("ML", "Bayes")) {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
+  estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
   if (is.null(backendArgs)) backendArgs <- list()
   if (!is.list(backendArgs) ||
       (length(backendArgs) && (is.null(names(backendArgs)) ||
@@ -185,12 +187,21 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
         call. = FALSE
       )
     }
-    stop(
-      "backend = 'julia' is not yet routed through ctmaFit(). Create the ",
-      "model with ctmaFit(..., fit = FALSE) and pass that object to ",
-      "ctmaJuliaFit() for the current validated Julia workflow.",
-      call. = FALSE
+    julia_args <- .ctmaMergeBackendArgs(
+      ctmaBackendDefaults(
+        backend = "julia",
+        estimation = estimation,
+        workflow = "ctmaFit"
+      ),
+      backendArgs,
+      path = "backendArgs"
     )
+    return(list(
+      backend = backend,
+      estimation = estimation,
+      stan_args = NULL,
+      backend_args = julia_args
+    ))
   }
 
   selected <- if (length(backendArgs)) {
@@ -200,7 +211,19 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
       path = "backendArgs"
     )
   } else legacy_stan_args
-  list(backend = backend, stan_args = selected)
+  list(
+    backend = backend,
+    estimation = estimation,
+    stan_args = selected,
+    backend_args = selected
+  )
+}
+
+.ctmaJuliaFitFromSetup <- function(setup, estimation, backend_args) {
+  do.call(
+    ctmaJuliaFit,
+    c(list(object = setup, estimation = estimation), backend_args)
+  )
 }
 
 ctmaSelectBestParallelFit <- function(attempts) {

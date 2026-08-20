@@ -201,17 +201,47 @@ test_that("ctmaFit accepts either new or legacy Stan controls", {
   )
 })
 
-test_that("ctmaFit reports the staged Julia routing boundary", {
-  expect_error(
-    CoTiMA:::.ctmaResolveFitBackend("julia"),
-    "not yet routed through ctmaFit"
+test_that("ctmaFit resolves Julia ML and Bayesian controls", {
+  ml <- CoTiMA:::.ctmaResolveFitBackend("julia", estimation = "ML")
+  bayes <- CoTiMA:::.ctmaResolveFitBackend(
+    "julia",
+    backendArgs = list(chains = 2L, metric = "dense"),
+    estimation = "Bayes"
   )
+
+  expect_identical(ml$backend, "julia")
+  expect_identical(ml$estimation, "ml")
+  expect_true(ml$backend_args$uncertainty)
+  expect_true(ml$backend_args$transformed)
+  expect_identical(bayes$estimation, "bayes")
+  expect_identical(bayes$backend_args$chains, 2L)
+  expect_identical(bayes$backend_args$metric, "dense")
   expect_error(
     CoTiMA:::.ctmaResolveFitBackend(
       "julia", legacy_stan_args = list(iter = 1000)
     ),
     "cannot be used with backend = 'julia'"
   )
+})
+
+test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
+  testthat::local_mocked_bindings(
+    ctmaJuliaFit = function(object, estimation, ...) {
+      list(object = object, estimation = estimation, controls = list(...))
+    },
+    .package = "CoTiMA"
+  )
+  setup <- structure(list(marker = "prepared"), class = "CoTiMAFit")
+  result <- CoTiMA:::.ctmaJuliaFitFromSetup(
+    setup = setup,
+    estimation = "ML",
+    backend_args = list(maxiters = 321L, julia_threads = 2L)
+  )
+
+  expect_identical(result$object, setup)
+  expect_identical(result$estimation, "ML")
+  expect_identical(result$controls$maxiters, 321L)
+  expect_identical(result$controls$julia_threads, 2L)
 })
 
 test_that("ctmaFit backendArgs work through the public entry point", {
@@ -233,7 +263,7 @@ test_that("ctmaFit backendArgs work through the public entry point", {
   )
   expect_error(
     ctmaFit(ctmaInitFit = NULL, backend = "julia"),
-    "ctmaJuliaFit"
+    "A fitted CoTiMA object has to be supplied"
   )
 })
 

@@ -17,7 +17,8 @@
 #'   \code{workflow = "ctmaReFit"} currently supports Julia defaults only for
 #'   \code{"Bayes"}. This argument is ignored for the compatibility Stan list.
 #' @param workflow Public workflow for which defaults are requested. The
-#'   current Julia workflows are \code{"ctmaJuliaFit"} and \code{"ctmaReFit"}.
+#'   current Julia workflows are \code{"ctmaJuliaFit"}, \code{"ctmaFit"}, and
+#'   \code{"ctmaReFit"}.
 #'
 #' @return A fresh named list of backend-specific defaults.
 #' @export
@@ -29,7 +30,7 @@
 ctmaBackendDefaults <- function(
     backend = c("stan", "julia"),
     estimation = NULL,
-    workflow = c("ctmaJuliaFit", "ctmaReFit")) {
+    workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaReFit")) {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
 
   # Preserve the established Stan defaults exactly during migration. Assigning
@@ -90,7 +91,7 @@ ctmaBackendDefaults <- function(
   if (identical(estimation, "none")) return(common)
 
   if (identical(estimation, "ml")) {
-    return(c(common, list(
+    result <- c(common, list(
       uncertainty = FALSE,
       maxiters = 100L,
       gradient_tolerance = 1e-3,
@@ -106,7 +107,12 @@ ctmaBackendDefaults <- function(
       transformed = FALSE,
       transformed_draws = 1000L,
       transformed_cores = 1L
-    )))
+    ))
+    if (identical(workflow, "ctmaFit")) {
+      result$uncertainty <- TRUE
+      result$transformed <- TRUE
+    }
+    return(result)
   }
 
   c(common, list(

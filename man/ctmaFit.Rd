@@ -164,12 +164,20 @@ for compatibility; use \code{backendArgs} in new code. Do not supply both.}
 
 \item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
 
-\item{backend}{estimation backend. \code{"stan"} remains the default.
-The Julia route is introduced separately after package-level validation.}
+\item{backend}{estimation backend. \code{"stan"} remains the default;
+\code{"julia"} prepares the same ctsem model and data and then calls the
+validated Julia ML or Bayesian engine.}
 
 \item{backendArgs}{named backend-specific controls. With the default Stan
 backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
-completed from \code{ctmaBackendDefaults("stan")}.}
+completed from \code{ctmaBackendDefaults("stan")}. With the Julia
+backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
+"ctmaFit")}. For Julia, \code{optimize = TRUE} selects ML and
+\code{optimize = FALSE} selects Bayesian NUTS. A supplied \code{iter}
+becomes \code{maxiters} for ML and is split equally between warmup and
+retained draws for Bayesian estimation; explicit \code{chains} is passed
+to Bayesian estimation. Julia-specific controls in \code{backendArgs}
+remain the preferred way to configure the engine.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,

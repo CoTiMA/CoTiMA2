@@ -10,6 +10,7 @@ test_that("Julia defaults are workflow and estimation specific", {
   ml <- ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
   bayes <- ctmaBackendDefaults("julia", "Bayes", "ctmaJuliaFit")
   re_bayes <- ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
+  package_ml <- ctmaBackendDefaults("julia", "ML", "ctmaFit")
 
   expect_identical(ml$carefulFit, TRUE)
   expect_identical(ml$multistart, 1L)
@@ -19,6 +20,8 @@ test_that("Julia defaults are workflow and estimation specific", {
   expect_false("maxiters" %in% names(bayes))
   expect_identical(re_bayes$metric, "dense")
   expect_identical(re_bayes$progress_every, 25L)
+  expect_true(package_ml$uncertainty)
+  expect_true(package_ml$transformed)
 
   expect_error(
     ctmaBackendDefaults("julia", "ML", "ctmaReFit"),
