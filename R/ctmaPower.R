@@ -30,6 +30,9 @@
 #' @param scaleTime scale time (interval) - sometimes desirable to improve fitting
 #' @param CoTiMAStanctArgs optional named list overriding Stan/ctsem fitting
 #'   controls. Partial and nested lists are supported.
+#' @param backend estimation backend used for internal invariant models,
+#'   \code{"stan"} (default) or \code{"julia"}.
+#' @param backendArgs named list of controls for the selected backend.
 
 #'
 #' @importFrom RPushbullet pbPost
@@ -93,7 +96,9 @@ ctmaPower <- function(
     verbose=NULL,
     customPar=FALSE,
     scaleTime=NULL,
-    CoTiMAStanctArgs=NULL
+    CoTiMAStanctArgs=NULL,
+    backend=c("stan", "julia"),
+    backendArgs=list()
 )
 
 {  # begin function definition (until end of file)
@@ -104,17 +109,36 @@ ctmaPower <- function(
   { ### CHECKS
 
     scale_time_was_supplied <- !missing(scaleTime) && !is.null(scaleTime)
-    CoTiMAStanctArgs <- .ctmaResolvePowerStanArgs(
-      overrides = CoTiMAStanctArgs,
-      scaleTime = scaleTime,
-      optimize = optimize,
-      priors = priors,
-      finishsamples = finishsamples,
-      chains = chains,
-      iter = iter,
-      verbose = verbose,
-      verbose_was_supplied = !missing(verbose)
+    requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) "ML" else "Bayes"
+    backend_resolution <- .ctmaResolveFitBackend(
+      backend = backend, backendArgs = backendArgs,
+      legacy_stan_args = CoTiMAStanctArgs,
+      estimation = requested_estimation, workflow = "ctmaAllInvFit"
     )
+    backend <- backend_resolution$backend
+    resolved_backend_args <- backend_resolution$backend_args
+    CoTiMAStanctArgs <- .ctmaResolvePowerStanArgs(
+      overrides = if (identical(backend, "stan")) backend_resolution$stan_args else NULL,
+      scaleTime = scaleTime, optimize = optimize, priors = priors,
+      finishsamples = finishsamples, chains = chains, iter = iter,
+      verbose = verbose, verbose_was_supplied = !missing(verbose)
+    )
+    if (identical(backend, "julia")) {
+      resolved_backend_args <- .ctmaInitJuliaFinishsamples(
+        finishsamples, backendArgs, resolved_backend_args
+      )
+      if (!is.null(iter)) {
+        if (identical(requested_estimation, "ML")) {
+          resolved_backend_args$maxiters <- as.integer(iter)
+        } else {
+          resolved_backend_args$warmup <- as.integer(iter %/% 2L)
+          resolved_backend_args$samples <- as.integer(iter - iter %/% 2L)
+        }
+      }
+      if (!is.null(chains) && identical(requested_estimation, "Bayes")) {
+        resolved_backend_args$chains <- as.integer(chains)
+      }
+    }
     scaleTime <- CoTiMAStanctArgs$scaleTime
     verbose <- CoTiMAStanctArgs$verbose
 
@@ -173,9 +197,15 @@ ctmaPower <- function(
   #######################################################################################################################
   {
     resource_resolution <- .ctmaResolveCores(
-      coresToUse, backend = "stan", workflow = "ctmaPower"
+      coresToUse, backend = backend, workflow = "ctmaPower"
     )
     coresToUse <- resource_resolution$resolved
+    if (identical(backend, "julia")) {
+      julia_resources <- .ctmaInitJuliaResources(
+        coresToUse, requested_estimation, backendArgs, resolved_backend_args
+      )
+      resolved_backend_args <- julia_resources$backend_args
+    }
   }
 
   #######################################################################################################################
@@ -344,7 +374,12 @@ ctmaPower <- function(
       #dataTmp3[, "time"] <- dataTmp3[, "time"] * CoTiMAStanctArgs$scaleTime
       dataTmp3[, "time"] <- dataTmp3[, "time"] * scaleTime
       # eliminate rows where ALL latents are NA
-      dataTmp3 <- dataTmp3[, ][ apply(dataTmp3[, paste0("V", 1:n.latent)], 1, function(x) sum(is.na(x)) != n.latent ), ]
+      observed_columns <- dataTmp3[, paste0("V", 1:n.latent), drop = FALSE]
+      dataTmp3 <- dataTmp3[
+        apply(observed_columns, 1, function(x) sum(is.na(x)) != n.latent),
+        ,
+        drop = FALSE
+      ]
       datalong_all <- dataTmp3
       datalong_all <- datalong_all[, -grep("TI", colnames(datalong_all))]
     }
@@ -371,7 +406,11 @@ ctmaPower <- function(
     # CHD changed Nov 2022
     #results <- readRDS(file=x1)
     allInvModelFit <- readRDS(file=x1)
-    allInvModelFitSummary <- summary(allInvModelFit, digits=digits)
+    allInvModelFitSummary <- if (!is.null(allInvModelFit$summary$parmatrices)) {
+      allInvModelFit$summary
+    } else {
+      summary(allInvModelFit, digits=digits)
+    }
   } else {
     allInvModelFit <- ctmaAllInvFit(ctmaInitFit=ctmaInitFit,
                                     activeDirectory=activeDirectory,
@@ -387,10 +426,16 @@ ctmaPower <- function(
                                     iter=iter,
                                     chains=chains,
                                     verbose=verbose,
-                                    customPar=customPar)
+                                    customPar=customPar,
+                                    backend=backend,
+                                    backendArgs=resolved_backend_args)
     Msg <- "\nComputing results summary of all invariant model. \n"
     message(Msg)
-    allInvModelFitSummary <- summary(allInvModelFit, digits=digits)
+    allInvModelFitSummary <- if (!is.null(allInvModelFit$summary$parmatrices)) {
+      allInvModelFit$summary
+    } else {
+      summary(allInvModelFit, digits=digits)
+    }
   }
 
   # SAVE
@@ -994,6 +1039,9 @@ ctmaPower <- function(
   allInvModelFit$resultsSummary <- allInvModelFitSummary
 
   results <- list(activeDirectory=activeDirectory,
+                  backend=backend,
+                  backendArgs=resolved_backend_args,
+                  resource_resolution=resource_resolution,
                   plot.type=c("power"), model.type="ct", #model.type="mx",
                   coresToUse=coresToUse, n.studies=1,
                   n.latent=n.latent,
@@ -1003,6 +1051,17 @@ ctmaPower <- function(
                   modelResults=list(DRIFT=DRIFT, DIFFUSION=DIFFUSION, T0VAR=T0VAR, CINT=NULL),
                   parameterNames=ctmaInitFit$parameterNames,
                   scaleTime=scaleTime,
+                  argumentList=list(
+                    backend=backend,
+                    backendArgs=resolved_backend_args,
+                    CoTiMAStanctArgs=if (identical(backend, "stan")) CoTiMAStanctArgs else NULL,
+                    finishsamples=finishsamples,
+                    iter=iter,
+                    chains=chains,
+                    optimize=optimize,
+                    priors=priors,
+                    coresToUse=coresToUse
+                  ),
                   summary=list(model="Analysis of Statistical Power and Required Sample Sizes",
                                estimates=list("Estimates of Model with all Effects Invariant"=round(homAll_effects, digits),
                                               "Requested Statistical Power"=statisticalPower,

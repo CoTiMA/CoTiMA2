@@ -31,7 +31,9 @@ ctmaPower(
   verbose = NULL,
   customPar = FALSE,
   scaleTime = NULL,
-  CoTiMAStanctArgs = NULL
+  CoTiMAStanctArgs = NULL,
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -89,6 +91,11 @@ ctmaPower(
 
 \item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting
 controls. Partial and nested lists are supported.}
+
+\item{backend}{estimation backend used for internal invariant models,
+\code{"stan"} (default) or \code{"julia"}.}
+
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
 ctmaPower returns a list containing some arguments supplied, a fitted model with all (!) parameters invariant across primary

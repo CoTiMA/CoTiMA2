@@ -1,3 +1,10 @@
+# CoTiMA2 0.9.98
+
+- Added `backend` and `backendArgs` to `ctmaPower()`. Its internal invariant
+  model now uses either Stan (default) or Julia consistently, including
+  resource allocation, finish-sample mapping, and stored backend metadata.
+- Fixed one-variable long-data filtering in `ctmaPower()`.
+
 # CoTiMA2 0.9.97
 
 - Added a central backend-aware core resolver. Stan/R worker counts are

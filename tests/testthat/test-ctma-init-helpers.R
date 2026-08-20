@@ -441,6 +441,30 @@ test_that("ctmaPower validates controls before requiring a fit", {
   )
 })
 
+test_that("ctmaPower exposes and validates backend controls", {
+  expect_identical(eval(formals(ctmaPower)$backend), c("stan", "julia"))
+  expect_true("backendArgs" %in% names(formals(ctmaPower)))
+
+  expect_error(
+    ctmaPower(
+      ctmaInitFit = NULL,
+      statisticalPower = 0.8,
+      backend = "julia",
+      backendArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown backendArgs: not_a_control"
+  )
+  expect_error(
+    ctmaPower(
+      ctmaInitFit = NULL,
+      statisticalPower = 0.8,
+      backend = "julia",
+      CoTiMAStanctArgs = list()
+    ),
+    "cannot be used with backend = 'julia'"
+  )
+})
+
 test_that("ctmaOptimizeFit merges defaults, inherited controls, and overrides", {
   result <- CoTiMA2:::.ctmaResolveOptimizeStanArgs(
     inherited = list(
