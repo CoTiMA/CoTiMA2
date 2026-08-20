@@ -154,12 +154,13 @@ ctmaBackendDefaults <- function(
   invisible(TRUE)
 }
 
-.ctmaMergeBackendArgs <- function(defaults, overrides = NULL) {
+.ctmaMergeBackendArgs <- function(defaults, overrides = NULL,
+    path = "backendArgs") {
   if (!is.list(defaults) || is.null(names(defaults)) ||
       anyNA(names(defaults)) || any(names(defaults) == "")) {
     stop("Backend defaults must be a fully named list.", call. = FALSE)
   }
-  .ctmaValidateBackendArgs(defaults, overrides)
+  .ctmaValidateBackendArgs(defaults, overrides, path = path)
   if (is.null(overrides)) return(defaults)
   utils::modifyList(defaults, overrides, keep.null = TRUE)
 }

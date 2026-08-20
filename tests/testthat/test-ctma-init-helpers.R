@@ -38,6 +38,64 @@ test_that("Stan control overrides reject unnamed and unknown values", {
   )
 })
 
+test_that("ctmaInit resolves legacy Stan controls recursively by name", {
+  result <- CoTiMA:::.ctmaResolveInitStanArgs(
+    overrides = list(
+      verbose = 2,
+      iter = 750,
+      optimcontrol = list(finishsamples = 250)
+    )
+  )
+
+  expect_identical(result$verbose, 2)
+  expect_identical(result$iter, 750)
+  expect_identical(result$optimcontrol$finishsamples, 250)
+  expect_identical(
+    result$optimcontrol$carefulfit,
+    CoTiMAStanctArgs$optimcontrol$carefulfit
+  )
+})
+
+test_that("explicit ctmaInit arguments override the legacy Stan list", {
+  result <- CoTiMA:::.ctmaResolveInitStanArgs(
+    overrides = list(
+      scaleTI = FALSE,
+      iter = 400,
+      verbose = 1,
+      optimcontrol = list(finishsamples = 100)
+    ),
+    scaleTI = TRUE,
+    iter = 900,
+    verbose = 3,
+    finishsamples = 500
+  )
+
+  expect_true(result$scaleTI)
+  expect_identical(result$iter, 900)
+  expect_identical(result$verbose, 3)
+  expect_identical(result$optimcontrol$finishsamples, 500)
+})
+
+test_that("ctmaInit backend merge detects misordered and unknown controls", {
+  result <- CoTiMA:::.ctmaResolveInitStanArgs(list(
+    verbose = 4,
+    iter = 321
+  ))
+  expect_identical(result$verbose, 4)
+  expect_identical(result$iter, 321)
+
+  expect_error(
+    CoTiMA:::.ctmaResolveInitStanArgs(list(not_a_control = TRUE)),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+  expect_error(
+    CoTiMA:::.ctmaResolveInitStanArgs(list(
+      optimcontrol = list(not_a_control = TRUE)
+    )),
+    "Unknown CoTiMAStanctArgs\\$optimcontrol: not_a_control"
+  )
+})
+
 test_that("parallel fit selection uses the greatest finite log-posterior", {
   attempt <- function(value) {
     list(

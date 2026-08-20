@@ -325,19 +325,17 @@ ctmaInit <- function(
       invariantDrift <- FALSE
       moderatedDrift <- NULL
 
-      tmp1 <- names(CoTiMA::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgs); tmp1
-      tmp2 <- CoTiMA::CoTiMAStanctArgs
-      if (!(is.null(CoTiMAStanctArgs))) tmp2[tmp1] <- CoTiMAStanctArgs
-      CoTiMAStanctArgs <- tmp2
-
-      if (!(is.null(scaleTI))) CoTiMAStanctArgs$scaleTI <- scaleTI
-      if (!(is.null(scaleTime))) CoTiMAStanctArgs$scaleTime <- scaleTime
-      if (!(is.null(optimize))) CoTiMAStanctArgs$optimize <- optimize
-      if (!(is.null(priors))) CoTiMAStanctArgs$priors <- priors # added Aug 2023
-      if (!(is.null(finishsamples))) CoTiMAStanctArgs$optimcontrol$finishsamples <- finishsamples
-      if (!(is.null(chains))) CoTiMAStanctArgs$chains <- chains
-      if (!(is.null(iter))) CoTiMAStanctArgs$iter <- iter
-      if (!(is.null(verbose))) CoTiMAStanctArgs$verbose <- verbose
+      CoTiMAStanctArgs <- .ctmaResolveInitStanArgs(
+        overrides = CoTiMAStanctArgs,
+        scaleTI = scaleTI,
+        scaleTime = scaleTime,
+        optimize = optimize,
+        priors = priors,
+        finishsamples = finishsamples,
+        chains = chains,
+        iter = iter,
+        verbose = verbose
+      )
     }
 
     # correction of misspecified user input

@@ -21,6 +21,35 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   utils::modifyList(defaults, overrides, keep.null = TRUE)
 }
 
+# Resolve ctmaInit()'s legacy Stan list through the backend infrastructure.
+# Explicit top-level ctmaInit() arguments retain precedence over values in the
+# legacy list, matching the historical interface.
+.ctmaResolveInitStanArgs <- function(overrides = NULL, scaleTI = NULL,
+    scaleTime = NULL, optimize = NULL, priors = NULL, finishsamples = NULL,
+    chains = NULL, iter = NULL, verbose = NULL) {
+  resolved <- .ctmaMergeBackendArgs(
+    ctmaBackendDefaults(backend = "stan"),
+    overrides,
+    path = "CoTiMAStanctArgs"
+  )
+
+  direct <- list(
+    scaleTI = scaleTI,
+    scaleTime = scaleTime,
+    optimize = optimize,
+    priors = priors,
+    chains = chains,
+    iter = iter,
+    verbose = verbose
+  )
+  supplied <- !vapply(direct, is.null, logical(1L))
+  resolved[names(direct)[supplied]] <- direct[supplied]
+  if (!is.null(finishsamples)) {
+    resolved$optimcontrol$finishsamples <- finishsamples
+  }
+  resolved
+}
+
 ctmaSelectBestParallelFit <- function(attempts) {
   successful <- vapply(attempts, function(x) isTRUE(x$ok), logical(1))
 
