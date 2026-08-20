@@ -96,6 +96,19 @@
   )
 }
 
+.ctmaInitJuliaFinishsamples <- function(
+    finishsamples, backendArgs, resolved_backend_args) {
+  if (is.null(finishsamples) || "transformed_draws" %in% names(backendArgs)) {
+    return(resolved_backend_args)
+  }
+  finishsamples <- suppressWarnings(as.integer(finishsamples)[1L])
+  if (is.na(finishsamples) || finishsamples < 2L) {
+    stop("'finishsamples' must be an integer of at least 2.", call. = FALSE)
+  }
+  resolved_backend_args$transformed_draws <- finishsamples
+  resolved_backend_args
+}
+
 ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   if (is.null(overrides)) {
     return(defaults)

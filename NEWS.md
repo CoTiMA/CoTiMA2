@@ -1,3 +1,8 @@
+# CoTiMA2 0.9.96
+
+- `ctmaInit(finishsamples=...)` now maps to Julia's `transformed_draws`
+  unless `backendArgs$transformed_draws` is supplied explicitly.
+
 # CoTiMA2 0.9.95
 
 - Resolves negative `coresToUse` values before allocating Julia resources;

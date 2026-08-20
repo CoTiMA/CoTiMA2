@@ -19,7 +19,11 @@
 #' @param doPar parallel and multiple fitting if single studies. A value > 1 will fit each study doPar times in parallel mode during which no output is generated (screen remains silent). Useful to obtain best fit.
 #' @param drift labels for drift effects. Have to be either of the character strings of the type V1toV2 (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)
 #' @param experimental used for debugging puposes (default = FALSE)
-#' @param finishsamples number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).
+#' @param finishsamples number of samples to draw (either from Hessian-based
+#'   covariance or the posterior distribution) for final results computation
+#'   (default = 1000). With the Julia backend this sets
+#'   \code{backendArgs$transformed_draws}, unless that control is supplied
+#'   explicitly in \code{backendArgs}.
 #' @param fit TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})
 #' @param indVarying control for unobserved heterogeneity by having randomly (inter-individually) varying manifest means
 #' @param indVaryingT0 deprecated. Automatically set to NULL.
@@ -153,6 +157,13 @@ ctmaInit <- function(
   backend <- backend_resolution$backend
   resolved_backend_args <- backend_resolution$backend_args
   CoTiMAStanctArgs <- backend_resolution$stan_args
+  if (identical(backend, "julia")) {
+    resolved_backend_args <- .ctmaInitJuliaFinishsamples(
+      finishsamples = finishsamples,
+      backendArgs = backendArgs,
+      resolved_backend_args = resolved_backend_args
+    )
+  }
   if (identical(backend, "julia") && doPar > 1L) {
     stop(
       "ctmaInit(backend='julia') currently requires doPar = 1. Use Julia's ",

@@ -652,3 +652,37 @@ test_that("ctmaInit automatically allocates Julia resources from coresToUse", {
   expect_identical(explicit$backend_args$julia_threads, 1L)
   expect_identical(explicit$backend_args$parallel_starts, 1L)
 })
+
+test_that("ctmaInit maps finishsamples to Julia transformed draws", {
+  defaults <- list(transformed_draws = 1000L, seed = NULL)
+
+  mapped <- CoTiMA2:::.ctmaInitJuliaFinishsamples(
+    finishsamples = 10000,
+    backendArgs = list(),
+    resolved_backend_args = defaults
+  )
+  expect_identical(mapped$transformed_draws, 10000L)
+
+  explicit <- CoTiMA2:::.ctmaInitJuliaFinishsamples(
+    finishsamples = 10000,
+    backendArgs = list(transformed_draws = 25000L),
+    resolved_backend_args = list(transformed_draws = 25000L, seed = NULL)
+  )
+  expect_identical(explicit$transformed_draws, 25000L)
+
+  unchanged <- CoTiMA2:::.ctmaInitJuliaFinishsamples(
+    finishsamples = NULL,
+    backendArgs = list(),
+    resolved_backend_args = defaults
+  )
+  expect_identical(unchanged$transformed_draws, 1000L)
+
+  expect_error(
+    CoTiMA2:::.ctmaInitJuliaFinishsamples(
+      finishsamples = 1,
+      backendArgs = list(),
+      resolved_backend_args = defaults
+    ),
+    "integer of at least 2"
+  )
+})
