@@ -66,16 +66,18 @@ ctmaAllInvFit <- function(
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"
 
-  if (is.null(verbose) & (optimize == FALSE) )  {verbose <- 0} else {verbose <- CoTiMAStanctArgs$verbose}
-
-  { # adaptations to account for new arguments introduces
-
-    #if (is.null(T0var)) T0var <- 'auto'
-    #if (is.null(cint)) cint <- 0
-    #if (is.null(fit)) fit <- TRUE
-    #if (is.null(WEC)) WEC <- FALSE
-    if (is.null(CoTiMAStanctArgs)) CoTiMAStanctArgs <- CoTiMA::CoTiMAStanctArgs
-  }
+  CoTiMAStanctArgs <- .ctmaResolveAllInvStanArgs(
+    overrides = CoTiMAStanctArgs,
+    scaleTime = scaleTime,
+    optimize = optimize,
+    priors = priors,
+    finishsamples = finishsamples,
+    chains = chains,
+    iter = iter,
+    verbose = verbose,
+    verbose_was_supplied = !missing(verbose)
+  )
+  verbose <- CoTiMAStanctArgs$verbose
 
 
   # check if fit object is specified
@@ -83,23 +85,6 @@ ctmaAllInvFit <- function(
     if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
     ErrorMsg <- "\nA fitted CoTiMA object has to be supplied to plot something. \nGood luck for the next try!"
     stop(ErrorMsg)
-  }
-
-  { # fitting params
-    # Added 10. Oct 2022 (17. Aug 2022 in Init fit similar)
-    tmp1 <- names(CoTiMA::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgs); tmp1
-    tmp2 <- CoTiMA::CoTiMAStanctArgs
-    if (!(is.null(CoTiMAStanctArgs))) tmp2[tmp1] <- CoTiMAStanctArgs
-    CoTiMAStanctArgs <- tmp2
-
-    if (!(is.null(scaleTime))) CoTiMAStanctArgs$scaleTime <- scaleTime
-    if (!(is.null(optimize))) CoTiMAStanctArgs$optimize <- optimize
-    #if  (!(is.null(nopriors))) CoTiMAStanctArgs$nopriors <- nopriors # changed Jan 2024
-    if (!(is.null(priors))) CoTiMAStanctArgs$priors <- priors # added Jan 2024
-    if (!(is.null(finishsamples))) CoTiMAStanctArgs$optimcontrol$finishsamples <- finishsamples
-    if (!(is.null(chains))) CoTiMAStanctArgs$chains <- chains
-    if (!(is.null(iter))) CoTiMAStanctArgs$iter <- iter
-    if (!(is.null(verbose))) CoTiMAStanctArgs$verbose <- verbose
   }
 
   #######################################################################################################################
