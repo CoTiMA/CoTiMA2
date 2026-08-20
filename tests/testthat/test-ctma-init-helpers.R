@@ -284,6 +284,72 @@ test_that("ctmaPower validates controls before requiring a fit", {
   )
 })
 
+test_that("ctmaOptimizeFit merges defaults, inherited controls, and overrides", {
+  result <- CoTiMA:::.ctmaResolveOptimizeStanArgs(
+    inherited = list(
+      verbose = 2,
+      iter = 700,
+      control = list(adapt_delta = 0.9),
+      optimcontrol = list(finishsamples = 300)
+    ),
+    overrides = list(
+      iter = 900,
+      control = list(max_treedepth = 12L)
+    ),
+    finishsamples = 500
+  )
+
+  expect_identical(result$verbose, 2)
+  expect_identical(result$iter, 900)
+  expect_identical(result$control$adapt_delta, 0.9)
+  expect_identical(result$control$max_treedepth, 12L)
+  expect_identical(result$optimcontrol$finishsamples, 500)
+  expect_identical(
+    result$optimcontrol$carefulfit,
+    CoTiMAStanctArgs$optimcontrol$carefulfit
+  )
+})
+
+test_that("ctmaOptimizeFit rejects unknown stored and supplied controls", {
+  expect_error(
+    CoTiMA:::.ctmaResolveOptimizeStanArgs(
+      inherited = list(not_a_control = TRUE)
+    ),
+    "Unknown stored CoTiMAStanctArgs: not_a_control"
+  )
+  expect_error(
+    CoTiMA:::.ctmaResolveOptimizeStanArgs(
+      overrides = list(not_a_control = TRUE)
+    ),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+})
+
+test_that("ctmaOptimizeFit recognizes only finite fit criteria", {
+  valid <- list(summary = list(minus2ll = 123.4))
+  nonfinite <- list(summary = list(minus2ll = Inf))
+  missing <- list(summary = list())
+  failed <- simpleError("failed")
+
+  expect_identical(CoTiMA:::.ctmaOptimizeFitValue(valid), 123.4)
+  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(nonfinite)))
+  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(missing)))
+  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(failed)))
+})
+
+test_that("ctmaOptimizeFit validates backend controls before input objects", {
+  expect_error(
+    ctmaOptimizeFit(
+      CoTiMAStanctArgs = list(control = list(adapt_delta = 0.9))
+    ),
+    "ctmaFitFit or ctmaIniFit"
+  )
+  expect_error(
+    ctmaOptimizeFit(CoTiMAStanctArgs = list(not_a_control = TRUE)),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+})
+
 test_that("parallel fit selection uses the greatest finite log-posterior", {
   attempt <- function(value) {
     list(

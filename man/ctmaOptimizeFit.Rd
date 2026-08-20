@@ -71,15 +71,21 @@ ctmaOptimizeFit(
 
 \item{randomRI}{logical (default = FALSE). randomly varies between "randomIntercepts='MANIFEST'" and "randomIntercepts='CINT'"}
 
-\item{randomScaleTI}{logical (default = FALSE). Overrides arguments used for scaleTI and randomly sets scaleTI either TRUE or FALSE}
+\item{randomScaleTI}{logical (default = FALSE). If TRUE, randomly sets
+\code{scaleTI} to TRUE or FALSE for every \code{ctmaInit()} or
+\code{ctmaFit()} attempt.}
 
-\item{randomScaleTime}{lower and upper limit (default = c(1,1)) of uniform distribution from which timeScale argument for ctmaInit is uniformly shuffled (integer)}
+\item{randomScaleTime}{two finite positive numbers giving the lower and
+upper limits (default = c(1,1)) of the uniform distribution from which
+\code{scaleTime} is drawn for each attempt. Draws are rounded to two
+decimal places.}
 
 \item{saveModelFits}{save the fit of each Fit attempt (default = FALSE).}
 
 \item{shuffleStudyList}{(default = FALSE) randomly re-arranges studies in primaryStudyList. We encountered a few cases where this mattered, even though it should not. Only works if ctmaFit is optimized.}
 
-\item{reFits}{how many reFits should be done}
+\item{reFits}{positive integer giving the number of complete refitting
+attempts.}
 
 \item{scaleTime}{scale time (interval) - sometimes desirable to improve fitting}
 
@@ -90,9 +96,12 @@ ctmaOptimizeFit(
 \item{ctStanFitArgs}{list of arguments passed forward to ctStanFit except datalong, ctstanmodel, cores & verbose  (default=NULL)}
 }
 \value{
-returns a list with bestFit (= the best fit achieved), all_minus2ll (= all -2ll values for all fitted models), and summary, which
-is printed if the summary function is applied to the returned object, and which shows the summary information of the ctsem model with the
-best fit.
+Returns a list with \code{bestFit}, the successful fit with the
+  smallest finite \code{minus2ll}; \code{all_minus2ll}, containing one value
+  per attempt and \code{NA} for failed or non-finite attempts; the settings
+  used across attempts; and captured \code{warnings} and \code{errors}.
+  If no attempt succeeds, the function stops with an error summarizing the
+  captured fitting errors.
 
 %dopar%' <- foreach::'%dopar%' deprecated
 }

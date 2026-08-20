@@ -26,9 +26,15 @@
 #' @param randomIV logical (default = FALSE). randomly varies between "indVarying='MANIFEST'" and "indVarying='CINT'"
 #' @param randomPar logical (default = FALSE). Overrides arguments used for customPar and randomly sets customPar either TRUE or FALSE
 #' @param randomRI logical (default = FALSE). randomly varies between "randomIntercepts='MANIFEST'" and "randomIntercepts='CINT'"
-#' @param randomScaleTime lower and upper limit (default = c(1,1)) of uniform distribution from which timeScale argument for ctmaInit is uniformly shuffled (integer)
-#' @param randomScaleTI logical (default = FALSE). Overrides arguments used for scaleTI and randomly sets scaleTI either TRUE or FALSE
-#' @param reFits how many reFits should be done
+#' @param randomScaleTime two finite positive numbers giving the lower and
+#'   upper limits (default = c(1,1)) of the uniform distribution from which
+#'   \code{scaleTime} is drawn for each attempt. Draws are rounded to two
+#'   decimal places.
+#' @param randomScaleTI logical (default = FALSE). If TRUE, randomly sets
+#'   \code{scaleTI} to TRUE or FALSE for every \code{ctmaInit()} or
+#'   \code{ctmaFit()} attempt.
+#' @param reFits positive integer giving the number of complete refitting
+#'   attempts.
 #' @param saveModelFits save the fit of each Fit attempt (default = FALSE).
 #' @param scaleTI scale TI predictors - not recommended until version 0.5.3.1. Does not change aggregated results anyways, just interpretation of effects for dummies representing primary studies.
 #' @param scaleTime scale time (interval) - sometimes desirable to improve fitting
@@ -53,9 +59,12 @@
 #'
 #' @export ctmaOptimizeFit
 #'
-#' @return returns a list with bestFit (= the best fit achieved), all_minus2ll (= all -2ll values for all fitted models), and summary, which
-#' is printed if the summary function is applied to the returned object, and which shows the summary information of the ctsem model with the
-#' best fit.
+#' @return Returns a list with \code{bestFit}, the successful fit with the
+#'   smallest finite \code{minus2ll}; \code{all_minus2ll}, containing one value
+#'   per attempt and \code{NA} for failed or non-finite attempts; the settings
+#'   used across attempts; and captured \code{warnings} and \code{errors}.
+#'   If no attempt succeeds, the function stops with an error summarizing the
+#'   captured fitting errors.
 #'
 ctmaOptimizeFit <- function(activateRPB=FALSE,
                             activeDirectory=NULL,
@@ -140,23 +149,20 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
       }
     }
 
-    # Dealing with CoTiMAStanctArgs
+    # Resolve stored and user-supplied Stan controls by name. User overrides
+    # take precedence over settings inherited from the supplied CoTiMA fit.
     if (is.null(ctStanFit)) {
-      CoTiMAStanctArgsTmp <- CoTiMAStanctArgs
-      if( (!(is.null(ctmaFitFit))) & (is.null(CoTiMAStanctArgs)) ) {
-        CoTiMAStanctArgs <- ctmaFitFit$argumentList$CoTiMAStanctArgs
+      inherited_stan_args <- NULL
+      if (!is.null(ctmaFitFit)) {
+        inherited_stan_args <- ctmaFitFit$argumentList$CoTiMAStanctArgs
+      } else if (!is.null(ctmaInitFit)) {
+        inherited_stan_args <- ctmaInitFit$argumentList$CoTiMAStanctArgs
       }
-      if( (is.null(ctmaFitFit)) & (is.null(CoTiMAStanctArgs)) & (!(is.null(ctmaInitFit))) ) {
-        CoTiMAStanctArgs <- ctmaInitFit$argumentList$CoTiMAStanctArgs
-      }
-      if (!(is.null(CoTiMAStanctArgsTmp))) {
-        tmp1 <- which(names(CoTiMA::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgsTmp)); tmp1
-        tmp2 <- CoTiMA::CoTiMAStanctArgs
-        tmp2[tmp1] <- CoTiMAStanctArgsTmp
-        CoTiMAStanctArgs <- tmp2
-      }
-      if (is.null(CoTiMAStanctArgsTmp)) CoTiMAStanctArgs <- CoTiMA::CoTiMAStanctArgs
-      if (!(is.null(finishsamples))) CoTiMAStanctArgs$optimcontrol$finishsamples <- finishsamples
+      CoTiMAStanctArgs <- .ctmaResolveOptimizeStanArgs(
+        overrides = CoTiMAStanctArgs,
+        inherited = inherited_stan_args,
+        finishsamples = finishsamples
+      )
     }
 
   }
@@ -167,8 +173,16 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
 
   if (!(is.null(scaleTime))) {
     randomScaleTime[1] <- randomScaleTime[2] <- scaleTime
-    Msg <- paste0("You provded the argumend scaleTime. This will override the randomScaleTime argument, and both values of the randomScaleTime argument will be set to, ", scaleTime, ".\n")
+    Msg <- paste0("You provided scaleTime. This overrides randomScaleTime; ",
+      "both randomScaleTime limits are set to ", scaleTime, ".\n")
     message(Msg)
+  }
+
+  if (!is.numeric(randomScaleTime) || length(randomScaleTime) != 2L ||
+      anyNA(randomScaleTime) || any(!is.finite(randomScaleTime)) ||
+      any(randomScaleTime <= 0)) {
+    stop("randomScaleTime must contain two finite positive numbers.",
+      call. = FALSE)
   }
 
   if (randomScaleTime[2] < randomScaleTime[1]) {
@@ -204,6 +218,17 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     stop(ErrorMsg)
   }
 
+  if (length(reFits) != 1L || is.na(reFits) || reFits < 1L ||
+      reFits != as.integer(reFits)) {
+    stop("reFits must be a positive integer.", call. = FALSE)
+  }
+  reFits <- as.integer(reFits)
+
+  if (!is.logical(randomScaleTI) || length(randomScaleTI) != 1L ||
+      is.na(randomScaleTI)) {
+    stop("randomScaleTI must be TRUE or FALSE.", call. = FALSE)
+  }
+
 
   # Moderator Checks Moved to Sectioon where ctmaInit is optimized (not relevant if ctmaFit is optimized) # CHD Auf 2023
 
@@ -215,8 +240,6 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     if (is.null(primaryStudies))  stop(ErrorMsg)
     ErrorMsg <- "argument problemStudy is missing"
     if (is.null(problemStudy)) stop(ErrorMsg)
-    ErrorMsg <- "argument reFits is missing"
-    if (is.null(reFits)) stop(ErrorMsg)
     ErrorMsg <- "argument activeDirectory is missing"
     if (is.null(activeDirectory)) stop(ErrorMsg)
 
@@ -293,7 +316,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     currentLL <- 10^20; currentLL
     all_minus2ll <- c()
     all_scaleTime <- all_customPar <- c()
-    all_scaleTI <- scaleTI
+    all_scaleTI <- logical()
     all_usedStudyList <- primaryStudies
     all_randomIV <- all_randomRI <- c()
     warns <- errs <- list()
@@ -316,7 +339,15 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
       }
       all_scaleTime <- c(all_scaleTime, scaleTime)
       all_customPar <- c(all_customPar, customPar)
-      all_randomIV <- c(all_randomIV)
+
+      if (randomScaleTI == TRUE) {
+        scaleTI <- sample(c(TRUE, FALSE), size = 1L)
+        message("Argument scaleTI is set to: ", scaleTI, ".")
+      } else if (is.null(scaleTI)) {
+        scaleTI <- ctmaInitFit$argumentList$scaleTI
+        if (is.null(scaleTI)) scaleTI <- CoTiMAStanctArgs$scaleTI
+      }
+      all_scaleTI <- c(all_scaleTI, scaleTI)
 
       if (randomRI == TRUE) {
         tmp1 <- round(stats::runif(1, min=1, max=2), 0); tmp1
@@ -384,26 +415,31 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                verbose=verbose,
                                #randomIntercepts=ctmaInitFit$argumentList$randomInterceptsSettings,
                                randomIntercepts=randomIntercepts),
-                      error = function(e) problem <- TRUE
+                      error = function(e) {
+                        problem <<- TRUE
+                        errs[[i]] <<- e
+                        NULL
+                      }
       )
 
 
-      if ( (problem == FALSE) & is.list(fit) ) {
-        all_minus2ll <- c(all_minus2ll, fit$summary$minus2ll)
+      fit_value <- .ctmaOptimizeFitValue(fit)
+      if (!problem && is.finite(fit_value)) {
+        all_minus2ll <- c(all_minus2ll, fit_value)
 
         if (saveModelFits != FALSE) {
           saveRDS(fit, paste0(activeDirectory, saveModelFits, " ", i, " .rds"))
         }
 
-        if (fit$summary$minus2ll < currentLL) {
-          currentLL <- fit$summary$minus2ll
+        if (fit_value < currentLL) {
+          currentLL <- fit_value
           bestFit <- fit
           usedStudyList <- ctmaInitFit$primaryStudyList
           usedTimeScale <- scaleTime
           usedScaleTI <- scaleTI
         }
       } else {
-        all_minus2ll <- c(all_minus2ll, -999)
+        all_minus2ll <- c(all_minus2ll, NA_real_)
       }
 
 
@@ -476,11 +512,11 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
       #
       all_customPar <- c(all_customPar, customPar)
       if (randomScaleTI == TRUE) {
-        tmp1 <- round(stats::runif(1, min=1, max=2), 0); tmp1
-        scaleTI <- c(TRUE, FALSE)[tmp1]
+        scaleTI <- sample(c(TRUE, FALSE), size = 1L)
       } else {
         if (is.null(scaleTI)) scaleTI <- ctmaFitFit$argumentList$scaleTI
       }
+      all_scaleTI <- c(all_scaleTI, scaleTI)
       #
       if (randomIV == TRUE) {
         tmp1 <- round(stats::runif(1, min=1, max=2), 0); tmp1
@@ -622,18 +658,22 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        fit=ctmaFitFit$argumentList$fit
         ),
         warning = function(w) {warns[[i]] <<- w}),
-        error = function(e) {errs[[i]] <<- e}
+        error = function(e) {
+          errs[[i]] <<- e
+          NULL
+        }
       )
 
-      if (is.list(fit)) { # do not do in case fit was not successfull CHD 14. Jan 2026
-        all_minus2ll <- c(all_minus2ll, fit$summary$minus2ll)
+      fit_value <- .ctmaOptimizeFitValue(fit)
+      all_minus2ll <- c(all_minus2ll, fit_value)
+      if (is.finite(fit_value)) {
 
         if (saveModelFits != FALSE) {
           saveRDS(fit, paste0(activeDirectory, saveModelFits, " ", i, " .rds"))
         }
 
-        if (fit$summary$minus2ll < currentLL) {
-          currentLL <- fit$summary$minus2ll
+        if (fit_value < currentLL) {
+          currentLL <- fit_value
           bestFit <- fit
           usedStudyList <- ctmaInitFit$primaryStudyList
           usedTimeScale <- scaleTime
@@ -649,6 +689,8 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     all_scaleTime <- all_customPar <- c()
     all_scaleTI <- "Available only if CoTiMA models are optimized."
     all_usedStudyList <- "Available only if CoTiMA models are optimized."
+    all_randomIV <- all_randomRI <-
+      "Available only if CoTiMA models are optimized."
     warns <- errs <- list()
     for (i in 1:reFits) {
       #i <- 1
@@ -738,38 +780,65 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                 vb = ctStanFitArgs$vb
         ),
         warning = function(w) {warns[[i]] <<- w}),
-        error = function(e) {errs[[i]] <<- e}
+        error = function(e) {
+          errs[[i]] <<- e
+          NULL
+        }
       )
-      fit$summary <- summary(fit)
-      fit$summary$minus2ll <- fit$summary$logposterior * -2
-
-      all_minus2ll <- c(all_minus2ll, fit$summary$minus2ll)
-
-      if (saveModelFits != FALSE) {
-        saveRDS(fit, paste0(activeDirectory, saveModelFits, " ", i, " .rds"))
+      if (is.list(fit) && !inherits(fit, "condition")) {
+        fit$summary <- summary(fit)
+        fit$summary$minus2ll <- fit$summary$logposterior * -2
       }
+      fit_value <- .ctmaOptimizeFitValue(fit)
+      all_minus2ll <- c(all_minus2ll, fit_value)
 
-      if (fit$summary$minus2ll < currentLL) {
-        currentLL <- fit$summary$minus2ll
-        bestFit <- fit
-        usedStudyList <- "Available only if CoTiMA models are optimized."
-        usedTimeScale <- scaleTime
-        usedScaleTI <- "Available only if CoTiMA models are optimized."
+      if (is.finite(fit_value)) {
+        if (saveModelFits != FALSE) {
+          saveRDS(fit, paste0(activeDirectory, saveModelFits, " ", i, " .rds"))
+        }
+
+        if (fit_value < currentLL) {
+          currentLL <- fit_value
+          bestFit <- fit
+          usedStudyList <- "Available only if CoTiMA models are optimized."
+          usedTimeScale <- scaleTime
+          usedScaleTI <- "Available only if CoTiMA models are optimized."
+        }
       }
     }
     resultsSummary <- "Available only if CoTiMA models are optimized."
-  } else {
+  } else if (exists("bestFit", inherits = FALSE)) {
     resultsSummary <- bestFit$studyFitList[[1]]$resultsSummary
   }
 
+  if (!exists("bestFit", inherits = FALSE)) {
+    error_messages <- vapply(errs, function(e) {
+      if (inherits(e, "condition")) conditionMessage(e) else as.character(e)
+    }, character(1L))
+    detail <- if (length(error_messages)) paste0(
+      " Errors: ", paste(unique(error_messages), collapse = " | ")
+    ) else ""
+    stop(
+      "All ", reFits, " optimization attempts failed or returned a ",
+      "non-finite fit criterion.", detail,
+      call. = FALSE
+    )
+  }
+
+  if (is.null(ctStanFit)) {
+    result_used_studies <- ctmaFitToPrep(bestFit, reUseEmprawData = TRUE)
+    result_time_scale <- bestFit$argumentList$scaleTime
+    result_scale_ti <- bestFit$argumentList$scaleTI
+  } else {
+    result_used_studies <- usedStudyList
+    result_time_scale <- usedTimeScale
+    result_scale_ti <- usedScaleTI
+  }
+
   results <- list(bestFit=bestFit, all_minus2ll=all_minus2ll, summary=bestFit$summary,
-                  #usedStudyList=ctmaInitFit$primaryStudyList,
-                  usedStudyList=ctmaFitToPrep(bestFit, reUseEmprawData=TRUE),
-                  #usedTimeScale=usedTimeScale,
-                  usedTimeScale=bestFit$argumentList$scaleTime,
-                  #usedScaleTI=usedScaleTI,
-                  usedScaleTI=bestFit$argumentList$scaleTI,
-                  #resultsSummary=bestFit$studyFitList[[1]]$resultsSummary
+                  usedStudyList=result_used_studies,
+                  usedTimeScale=result_time_scale,
+                  usedScaleTI=result_scale_ti,
                   randomIV = randomIV,
                   randomRI = randomRI,
                   resultsSummary=resultsSummary,
@@ -778,7 +847,9 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                   all_scaleTI = all_scaleTI,
                   all_randomIV = all_randomIV,
                   all_randomRI = all_randomRI,
-                  all_usedStudyList = all_usedStudyList
+                  all_usedStudyList = all_usedStudyList,
+                  warnings = warns,
+                  errors = errs
 
   )
   class(results) <- "CoTiMAFit"

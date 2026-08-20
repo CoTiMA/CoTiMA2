@@ -132,6 +132,34 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   resolved
 }
 
+.ctmaResolveOptimizeStanArgs <- function(overrides = NULL,
+    inherited = NULL, finishsamples = NULL) {
+  defaults <- ctmaBackendDefaults(backend = "stan")
+  base <- .ctmaMergeBackendArgs(
+    defaults,
+    inherited,
+    path = "stored CoTiMAStanctArgs"
+  )
+  resolved <- .ctmaMergeBackendArgs(
+    base,
+    overrides,
+    path = "CoTiMAStanctArgs"
+  )
+  if (!is.null(finishsamples)) {
+    resolved$optimcontrol$finishsamples <- finishsamples
+  }
+  resolved
+}
+
+.ctmaOptimizeFitValue <- function(fit) {
+  if (!is.list(fit) || inherits(fit, "condition")) return(NA_real_)
+  value <- fit$summary$minus2ll
+  if (!is.numeric(value) || length(value) != 1L || !is.finite(value)) {
+    return(NA_real_)
+  }
+  as.numeric(value)
+}
+
 ctmaSelectBestParallelFit <- function(attempts) {
   successful <- vapply(attempts, function(x) isTRUE(x$ok), logical(1))
 

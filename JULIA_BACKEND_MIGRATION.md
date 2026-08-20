@@ -8,10 +8,10 @@ builds. Stan remains the default backend throughout the migration.
 | Stage | Scope | Status |
 |---|---|---|
 | 1 | Add backend defaults, recursive validation, merge helpers, and tests without changing fitting behavior | Complete |
-| 2 | Replace fragile legacy Stan-list merges internally, one function at a time | In progress: `ctmaInit()`, `ctmaFit()`, `ctmaAllInvFit()`, and `ctmaPower()` complete |
+| 2 | Replace fragile legacy Stan-list merges internally, one function at a time | Complete for `ctmaInit()`, `ctmaFit()`, `ctmaAllInvFit()`, `ctmaPower()`, and `ctmaOptimizeFit()` |
 | 3 | Add `backend` and `backendArgs` to `ctmaFit()` while retaining all old calls | Pending |
 | 4 | Route validated Julia ML/Bayesian estimation through `ctmaFit()` | Pending |
-| 5 | Repair `ctmaOptimizeFit()` workflow issues and make it backend-aware | Pending |
+| 5 | Repair `ctmaOptimizeFit()` workflow issues and make it backend-aware | Workflow correctness repaired; backend routing pending |
 | 6 | Migrate additional CoTiMA fitting functions individually | Pending |
 | 7 | Deprecate `CoTiMAStanctArgs` with a compatibility translator | Pending |
 | 8 | Remove the duplicate data object only after the transition period | Pending |
