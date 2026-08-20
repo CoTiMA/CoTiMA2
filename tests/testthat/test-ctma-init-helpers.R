@@ -10,7 +10,7 @@ test_that("Stan control overrides are merged by name and recursively", {
     optimcontrol = list(is = NULL)
   )
 
-  result <- CoTiMA:::ctmaMergeStanctArgs(defaults, overrides)
+  result <- CoTiMA2:::ctmaMergeStanctArgs(defaults, overrides)
 
   expect_identical(result$iter, 500)
   expect_identical(result$verbose, 2)
@@ -20,26 +20,26 @@ test_that("Stan control overrides are merged by name and recursively", {
 })
 
 test_that("default importance-sampling controls are NULL", {
-  expect_null(CoTiMA::CoTiMAStanctArgs$optimcontrol$is)
-  expect_null(CoTiMA::CoTiMAStanctArgs$optimcontrol$isitersize)
-  expect_null(CoTiMA::CoTiMAStanctArgs$optimcontrol$isESS)
+  expect_null(CoTiMA2::CoTiMAStanctArgs$optimcontrol$is)
+  expect_null(CoTiMA2::CoTiMAStanctArgs$optimcontrol$isitersize)
+  expect_null(CoTiMA2::CoTiMAStanctArgs$optimcontrol$isESS)
 })
 
 test_that("Stan control overrides reject unnamed and unknown values", {
   defaults <- list(iter = 1000)
 
   expect_error(
-    CoTiMA:::ctmaMergeStanctArgs(defaults, list(500)),
+    CoTiMA2:::ctmaMergeStanctArgs(defaults, list(500)),
     "fully named list"
   )
   expect_error(
-    CoTiMA:::ctmaMergeStanctArgs(defaults, list(unknown = 1)),
+    CoTiMA2:::ctmaMergeStanctArgs(defaults, list(unknown = 1)),
     "Unknown CoTiMAStanctArgs: unknown"
   )
 })
 
 test_that("ctmaInit resolves legacy Stan controls recursively by name", {
-  result <- CoTiMA:::.ctmaResolveInitStanArgs(
+  result <- CoTiMA2:::.ctmaResolveInitStanArgs(
     overrides = list(
       verbose = 2,
       iter = 750,
@@ -57,7 +57,7 @@ test_that("ctmaInit resolves legacy Stan controls recursively by name", {
 })
 
 test_that("explicit ctmaInit arguments override the legacy Stan list", {
-  result <- CoTiMA:::.ctmaResolveInitStanArgs(
+  result <- CoTiMA2:::.ctmaResolveInitStanArgs(
     overrides = list(
       scaleTI = FALSE,
       iter = 400,
@@ -77,7 +77,7 @@ test_that("explicit ctmaInit arguments override the legacy Stan list", {
 })
 
 test_that("ctmaInit backend merge detects misordered and unknown controls", {
-  result <- CoTiMA:::.ctmaResolveInitStanArgs(list(
+  result <- CoTiMA2:::.ctmaResolveInitStanArgs(list(
     verbose = 4,
     iter = 321
   ))
@@ -85,11 +85,11 @@ test_that("ctmaInit backend merge detects misordered and unknown controls", {
   expect_identical(result$iter, 321)
 
   expect_error(
-    CoTiMA:::.ctmaResolveInitStanArgs(list(not_a_control = TRUE)),
+    CoTiMA2:::.ctmaResolveInitStanArgs(list(not_a_control = TRUE)),
     "Unknown CoTiMAStanctArgs: not_a_control"
   )
   expect_error(
-    CoTiMA:::.ctmaResolveInitStanArgs(list(
+    CoTiMA2:::.ctmaResolveInitStanArgs(list(
       optimcontrol = list(not_a_control = TRUE)
     )),
     "Unknown CoTiMAStanctArgs\\$optimcontrol: not_a_control"
@@ -97,7 +97,7 @@ test_that("ctmaInit backend merge detects misordered and unknown controls", {
 })
 
 test_that("ctmaFit resolves partial legacy Stan controls recursively", {
-  result <- CoTiMA:::.ctmaResolveFitStanArgs(
+  result <- CoTiMA2:::.ctmaResolveFitStanArgs(
     overrides = list(
       verbose = 2,
       control = list(adapt_delta = 0.95),
@@ -119,7 +119,7 @@ test_that("ctmaFit resolves partial legacy Stan controls recursively", {
 })
 
 test_that("ctmaFit direct controls have defined precedence", {
-  inherited <- CoTiMA:::.ctmaResolveFitStanArgs(
+  inherited <- CoTiMA2:::.ctmaResolveFitStanArgs(
     overrides = list(verbose = 2, iter = 400, priors = TRUE),
     optimize = TRUE,
     priors = FALSE,
@@ -130,7 +130,7 @@ test_that("ctmaFit direct controls have defined precedence", {
   expect_identical(inherited$iter, 900)
   expect_false(inherited$priors)
 
-  explicit <- CoTiMA:::.ctmaResolveFitStanArgs(
+  explicit <- CoTiMA2:::.ctmaResolveFitStanArgs(
     overrides = list(verbose = 2),
     verbose = 0,
     verbose_was_supplied = TRUE
@@ -140,11 +140,11 @@ test_that("ctmaFit direct controls have defined precedence", {
 
 test_that("ctmaFit rejects unknown legacy Stan controls", {
   expect_error(
-    CoTiMA:::.ctmaResolveFitStanArgs(list(not_a_control = TRUE)),
+    CoTiMA2:::.ctmaResolveFitStanArgs(list(not_a_control = TRUE)),
     "Unknown CoTiMAStanctArgs: not_a_control"
   )
   expect_error(
-    CoTiMA:::.ctmaResolveFitStanArgs(list(
+    CoTiMA2:::.ctmaResolveFitStanArgs(list(
       control = list(not_a_control = TRUE)
     )),
     "Unknown CoTiMAStanctArgs\\$control: not_a_control"
@@ -171,30 +171,30 @@ test_that("ctmaFit applies backend validation before fitting", {
 test_that("ctmaFit keeps Stan as its default backend", {
   expect_identical(eval(formals(ctmaFit)$backend), c("stan", "julia"))
 
-  resolved <- CoTiMA:::.ctmaResolveFitBackend()
+  resolved <- CoTiMA2:::.ctmaResolveFitBackend()
   expect_identical(resolved$backend, "stan")
   expect_null(resolved$stan_args)
 })
 
 test_that("ctmaFit accepts either new or legacy Stan controls", {
-  modern <- CoTiMA:::.ctmaResolveFitBackend(
+  modern <- CoTiMA2:::.ctmaResolveFitBackend(
     backendArgs = list(control = list(adapt_delta = 0.9))
   )
-  legacy <- CoTiMA:::.ctmaResolveFitBackend(
+  legacy <- CoTiMA2:::.ctmaResolveFitBackend(
     legacy_stan_args = list(control = list(adapt_delta = 0.8))
   )
   expect_identical(modern$stan_args$control$adapt_delta, 0.9)
   expect_identical(legacy$stan_args$control$adapt_delta, 0.8)
 
   expect_error(
-    CoTiMA:::.ctmaResolveFitBackend(
+    CoTiMA2:::.ctmaResolveFitBackend(
       backendArgs = list(iter = 500),
       legacy_stan_args = list(iter = 1000)
     ),
     "either 'CoTiMAStanctArgs' or 'backendArgs'"
   )
   expect_error(
-    CoTiMA:::.ctmaResolveFitBackend(
+    CoTiMA2:::.ctmaResolveFitBackend(
       backendArgs = list(not_a_control = TRUE)
     ),
     "Unknown backendArgs: not_a_control"
@@ -202,8 +202,8 @@ test_that("ctmaFit accepts either new or legacy Stan controls", {
 })
 
 test_that("ctmaFit resolves Julia ML and Bayesian controls", {
-  ml <- CoTiMA:::.ctmaResolveFitBackend("julia", estimation = "ML")
-  bayes <- CoTiMA:::.ctmaResolveFitBackend(
+  ml <- CoTiMA2:::.ctmaResolveFitBackend("julia", estimation = "ML")
+  bayes <- CoTiMA2:::.ctmaResolveFitBackend(
     "julia",
     backendArgs = list(chains = 2L, metric = "dense"),
     estimation = "Bayes"
@@ -217,7 +217,7 @@ test_that("ctmaFit resolves Julia ML and Bayesian controls", {
   expect_identical(bayes$backend_args$chains, 2L)
   expect_identical(bayes$backend_args$metric, "dense")
   expect_error(
-    CoTiMA:::.ctmaResolveFitBackend(
+    CoTiMA2:::.ctmaResolveFitBackend(
       "julia", legacy_stan_args = list(iter = 1000)
     ),
     "cannot be used with backend = 'julia'"
@@ -229,10 +229,10 @@ test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
     ctmaJuliaFit = function(object, estimation, ...) {
       list(object = object, estimation = estimation, controls = list(...))
     },
-    .package = "CoTiMA"
+    .package = "CoTiMA2"
   )
   setup <- structure(list(marker = "prepared"), class = "CoTiMAFit")
-  result <- CoTiMA:::.ctmaJuliaFitFromSetup(
+  result <- CoTiMA2:::.ctmaJuliaFitFromSetup(
     setup = setup,
     estimation = "ML",
     backend_args = list(maxiters = 321L, julia_threads = 2L)
@@ -268,7 +268,7 @@ test_that("ctmaFit backendArgs work through the public entry point", {
 })
 
 test_that("ctmaAllInvFit resolves partial nested Stan controls", {
-  result <- CoTiMA:::.ctmaResolveAllInvStanArgs(
+  result <- CoTiMA2:::.ctmaResolveAllInvStanArgs(
     overrides = list(
       verbose = 2,
       iter = 400,
@@ -296,11 +296,11 @@ test_that("ctmaAllInvFit resolves partial nested Stan controls", {
 })
 
 test_that("ctmaAllInvFit explicit verbose overrides the legacy list", {
-  inherited <- CoTiMA:::.ctmaResolveAllInvStanArgs(
+  inherited <- CoTiMA2:::.ctmaResolveAllInvStanArgs(
     overrides = list(verbose = 2),
     verbose_was_supplied = FALSE
   )
-  explicit <- CoTiMA:::.ctmaResolveAllInvStanArgs(
+  explicit <- CoTiMA2:::.ctmaResolveAllInvStanArgs(
     overrides = list(verbose = 2),
     verbose = 0,
     verbose_was_supplied = TRUE
@@ -327,7 +327,7 @@ test_that("ctmaAllInvFit validates controls before requiring a fit", {
 })
 
 test_that("ctmaPower resolves partial nested Stan controls", {
-  result <- CoTiMA:::.ctmaResolvePowerStanArgs(
+  result <- CoTiMA2:::.ctmaResolvePowerStanArgs(
     overrides = list(
       scaleTime = 0.5,
       verbose = 2,
@@ -354,7 +354,7 @@ test_that("ctmaPower resolves partial nested Stan controls", {
 })
 
 test_that("ctmaPower direct scale and verbose controls take precedence", {
-  result <- CoTiMA:::.ctmaResolvePowerStanArgs(
+  result <- CoTiMA2:::.ctmaResolvePowerStanArgs(
     overrides = list(scaleTime = 0.5, verbose = 2),
     scaleTime = 2,
     verbose = 0,
@@ -384,7 +384,7 @@ test_that("ctmaPower validates controls before requiring a fit", {
 })
 
 test_that("ctmaOptimizeFit merges defaults, inherited controls, and overrides", {
-  result <- CoTiMA:::.ctmaResolveOptimizeStanArgs(
+  result <- CoTiMA2:::.ctmaResolveOptimizeStanArgs(
     inherited = list(
       verbose = 2,
       iter = 700,
@@ -411,13 +411,13 @@ test_that("ctmaOptimizeFit merges defaults, inherited controls, and overrides", 
 
 test_that("ctmaOptimizeFit rejects unknown stored and supplied controls", {
   expect_error(
-    CoTiMA:::.ctmaResolveOptimizeStanArgs(
+    CoTiMA2:::.ctmaResolveOptimizeStanArgs(
       inherited = list(not_a_control = TRUE)
     ),
     "Unknown stored CoTiMAStanctArgs: not_a_control"
   )
   expect_error(
-    CoTiMA:::.ctmaResolveOptimizeStanArgs(
+    CoTiMA2:::.ctmaResolveOptimizeStanArgs(
       overrides = list(not_a_control = TRUE)
     ),
     "Unknown CoTiMAStanctArgs: not_a_control"
@@ -430,10 +430,10 @@ test_that("ctmaOptimizeFit recognizes only finite fit criteria", {
   missing <- list(summary = list())
   failed <- simpleError("failed")
 
-  expect_identical(CoTiMA:::.ctmaOptimizeFitValue(valid), 123.4)
-  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(nonfinite)))
-  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(missing)))
-  expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(failed)))
+  expect_identical(CoTiMA2:::.ctmaOptimizeFitValue(valid), 123.4)
+  expect_true(is.na(CoTiMA2:::.ctmaOptimizeFitValue(nonfinite)))
+  expect_true(is.na(CoTiMA2:::.ctmaOptimizeFitValue(missing)))
+  expect_true(is.na(CoTiMA2:::.ctmaOptimizeFitValue(failed)))
 })
 
 test_that("stored Julia routing fixture has a CoTiMA-compatible criterion", {
@@ -442,7 +442,7 @@ test_that("stored Julia routing fixture has a CoTiMA-compatible criterion", {
   sys.source(fixture_path, envir = fixture_environment)
   fixture <- fixture_environment$ctma_julia_routing_fixture()
 
-  result <- CoTiMA:::.ctmaFinalizeJuliaCoTiMAFit(
+  result <- CoTiMA2:::.ctmaFinalizeJuliaCoTiMAFit(
     fit = fixture$fit,
     setup = fixture$setup,
     cotima_call = quote(ctmaFit(backend = "julia")),
@@ -456,7 +456,7 @@ test_that("stored Julia routing fixture has a CoTiMA-compatible criterion", {
   expect_identical(result$argumentList$backend, "julia")
   expect_identical(result$argumentList$backendArgs$maxiters, 25L)
   expect_true(result$argumentList$fit)
-  expect_identical(CoTiMA:::.ctmaOptimizeFitValue(result), 247)
+  expect_identical(CoTiMA2:::.ctmaOptimizeFitValue(result), 247)
   expect_identical(result$source_object, fixture$setup)
 })
 
@@ -499,7 +499,7 @@ test_that("parallel fit selection uses the greatest finite log-posterior", {
     )
   }
 
-  result <- CoTiMA:::ctmaSelectBestParallelFit(list(
+  result <- CoTiMA2:::ctmaSelectBestParallelFit(list(
     attempt(-100),
     attempt(-10),
     attempt(NA_real_)
@@ -526,11 +526,11 @@ test_that("parallel fit selection ignores errors and reports total failure", {
   )
 
   expect_identical(
-    CoTiMA:::ctmaSelectBestParallelFit(list(failed, successful))$logposterior,
+    CoTiMA2:::ctmaSelectBestParallelFit(list(failed, successful))$logposterior,
     -5
   )
   expect_error(
-    CoTiMA:::ctmaSelectBestParallelFit(list(failed)),
+    CoTiMA2:::ctmaSelectBestParallelFit(list(failed)),
     "All parallel fitting attempts failed"
   )
 })

@@ -1,5 +1,5 @@
 % !Rnw weave = knitr
-%\VignetteIndexEntry{Using the Julia Estimation Backend in CoTiMA}
+%\VignetteIndexEntry{Using the Julia Estimation Backend in CoTiMA2}
 %\VignetteEngine{knitr::knitr}
 %\VignetteEncoding{UTF-8}
 \documentclass[11pt]{article}
@@ -21,7 +21,7 @@
 \newcommand{\important}[1]{\par\medskip\noindent
   \fcolorbox{blue!45!black}{blue!4}{\parbox{0.94\linewidth}{#1}}\par\medskip}
 
-\title{Using the Julia Estimation Backend in CoTiMA:\\
+\title{Using the Julia Estimation Backend in CoTiMA2:\\
   Motivation, Workflow, and Practical Guidance}
 \author{CoTiMA development documentation}
 \date{\today}
@@ -29,12 +29,13 @@
 \begin{document}
 \maketitle
 
-<<setup, include=FALSE>>=
+<<setup, include=FALSE, purl=FALSE>>=
 knitr::opts_chunk$set(
-  echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE,
+  echo = TRUE, eval = FALSE, purl = FALSE, warning = FALSE, message = FALSE,
   comment = "#>", tidy = FALSE, size = "small"
 )
 options(width = 92)
+library(CoTiMA2)
 @
 
 \begin{abstract}
@@ -175,7 +176,7 @@ quality and model plausibility and supplies information used to construct the
 pooled model.  The exact arguments depend on the substantive model; a typical
 skeleton is:
 
-<<ctma-init>>=
+<<ctma-init, purl=FALSE>>=
 initFit <- ctmaInit(
   primaryStudies = primaryStudies,
   activeDirectory = activeDirectory,
@@ -191,7 +192,7 @@ identified primary-study model.
 
 The pooled CoTiMA model may be created in either fitted or unfitted form.
 
-<<ctma-fit-branches>>=
+<<ctma-fit-branches, purl=FALSE>>=
 # Option A: estimate through the ordinary ctsem/Stan route first
 pooledStanFit <- ctmaFit(
   ctmaInitFit = initFit,
@@ -248,7 +249,7 @@ important, or when the ordinary fit is already available.
 The following call shows the principal controls.  Comments after arguments are
 brief reminders; the complete explanations follow.
 
-<<julia-ml>>=
+<<julia-ml, purl=FALSE>>=
 mlFit <- ctmaJuliaFit(
   object = pooledSetup,               # fitted object, fit=FALSE object, or RDS path
   julia_file = "path/to/CtsemJulia.jl", # unnecessary after package integration
@@ -273,7 +274,7 @@ mlFit <- ctmaJuliaFit(
 
 \subsection{Bayesian NUTS estimation}
 
-<<julia-bayes>>=
+<<julia-bayes, purl=FALSE>>=
 bayesFit <- ctmaJuliaFit(
   object = pooledSetup,
   julia_file = "path/to/CtsemJulia.jl",
@@ -410,7 +411,7 @@ warmup than a diagonal metric, especially when there are many parameters.
 
 \subsection{Printing and extracting results}
 
-<<inspect>>=
+<<inspect, purl=FALSE>>=
 print(mlFit)
 coef(mlFit, type = "raw")
 vcov(mlFit)
@@ -447,7 +448,7 @@ There is no need to repeat a costly Julia optimization merely because
 \code{transformed=FALSE} was used.  \code{ctAddJuliaSamples()} plays a role
 similar to \code{ctsem::ctAddSamples()}:
 
-<<add-samples>>=
+<<add-samples, purl=FALSE>>=
 mlFit <- ctAddJuliaSamples(
   fit = mlFit,                # completed Julia ML or Bayesian fit
   setup = pooledSetup,        # matching fitted or fit=FALSE CoTiMA object
@@ -507,7 +508,7 @@ selection, transformations, covariance structures, and interpretation.  In
 brief, prepare the hierarchical model with \code{ctmaRePrep()} and select an
 estimator and backend with \code{ctmaReFit()}:
 
-<<re-fit>>=
+<<re-fit, purl=FALSE>>=
 preparedRE <- ctmaRePrep(
   model = mlFit,
   reDRIFT = reDRIFT,
@@ -565,7 +566,7 @@ remain ordinary \code{ctmaReFit()} arguments.
 Do not judge convergence from the number of iterations or the visually stable
 objective alone.  Inspect:
 
-<<ml-diagnostics>>=
+<<ml-diagnostics, purl=FALSE>>=
 mlFit$optimization$converged
 mlFit$optimization$maximum_absolute_gradient
 mlFit$optimization$gradient_tolerance
@@ -634,7 +635,7 @@ diagnostic guidelines, not substitutes for model-specific judgment.
     or random-effects preparation without repeating estimation.
 \end{itemize}
 
-<<save-results>>=
+<<save-results, purl=FALSE>>=
 saveRDS(pooledSetup, "pooled_setup.rds")
 saveRDS(mlFit, "julia_ml_fit.rds")
 saveRDS(bayesFit, "julia_bayes_fit.rds")
@@ -651,7 +652,7 @@ that it can inherit the changed executable search path.
 
 For most users, the recommended one-time R command is simply:
 
-<<automatic-julia-setup>>=
+<<automatic-julia-setup, purl=FALSE>>=
 juliaSetup <- ctmaJuliaSetup()
 # Restart R afterward. Fitting functions rediscover Julia automatically.
 @
@@ -665,7 +666,7 @@ operating system for the executable and, if necessary, check Juliaup's common
 user-level locations.  The following helper also accommodates Juliaup's
 versioned Linux directory, as encountered on some Ubuntu installations.
 
-<<find-julia>>=
+<<find-julia, purl=FALSE>>=
 findJulia <- function() {
   located <- unname(Sys.which("julia"))
   if (nzchar(located)) return(normalizePath(located))
@@ -710,7 +711,7 @@ JuliaCall's setup code needs the Julia packages \code{Suppressor} and
 project.  The following one-time bootstrap keeps precompilation to one worker,
 which is safer on high-core-count machines and in memory-limited sessions.
 
-<<bootstrap-juliacall>>=
+<<bootstrap-juliacall, purl=FALSE>>=
 bootstrapCode <- paste(
   "import Pkg;",
   "Pkg.add([\"Suppressor\", \"RCall\"]);",
@@ -730,8 +731,8 @@ Next instantiate the Julia project installed with CoTiMA.  Instantiation and
 precompilation are deliberately separated: this produces clearer errors and
 avoids excessive parallel precompilation.
 
-<<instantiate-cotima-julia>>=
-juliaProject <- system.file("julia", package = "CoTiMA")
+<<instantiate-cotima-julia, purl=FALSE>>=
+juliaProject <- system.file("julia", package = "CoTiMA2")
 stopifnot(nzchar(juliaProject))
 
 instantiateCode <- paste(
@@ -821,7 +822,7 @@ For a new class of model:
 
 \section{A compact end-to-end template}
 
-<<complete-template>>=
+<<complete-template, purl=FALSE>>=
 # 1. Primary-study fits
 initFit <- ctmaInit(
   primaryStudies = primaryStudies,

@@ -1,11 +1,11 @@
 test_that("Julia executable discovery accepts explicit paths", {
   executable <- file.path(R.home("bin"), "R")
   expect_identical(
-    CoTiMA:::.ctmaJuliaFindExecutable(julia = executable),
+    CoTiMA2:::.ctmaJuliaFindExecutable(julia = executable),
     normalizePath(executable)
   )
   expect_error(
-    CoTiMA:::.ctmaJuliaFindExecutable(julia = tempfile()),
+    CoTiMA2:::.ctmaJuliaFindExecutable(julia = tempfile()),
     "Julia was not found"
   )
 })
@@ -58,7 +58,7 @@ test_that("Linux Julia subprocesses discard inherited native library paths", {
     args = c("--startup-file=no", "--version"),
     env = c("R_HOME=/usr/lib/R", "JULIA_PKG_PRECOMPILE_AUTO=0")
   )
-  invocation <- CoTiMA:::.ctmaJuliaCommandInvocation(command, linux = TRUE)
+  invocation <- CoTiMA2:::.ctmaJuliaCommandInvocation(command, linux = TRUE)
 
   expect_match(invocation$executable, "env$")
   expect_identical(invocation$label, "Test Julia")
@@ -70,7 +70,7 @@ test_that("Linux Julia subprocesses discard inherited native library paths", {
   expect_true("'/opt/julia/bin/julia'" %in% invocation$args)
   expect_length(invocation$env, 0L)
 
-  unchanged <- CoTiMA:::.ctmaJuliaCommandInvocation(command, linux = FALSE)
+  unchanged <- CoTiMA2:::.ctmaJuliaCommandInvocation(command, linux = FALSE)
   expect_identical(unchanged, command)
 })
 

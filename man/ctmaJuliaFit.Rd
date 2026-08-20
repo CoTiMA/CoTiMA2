@@ -56,7 +56,7 @@ an RDS file containing one of these objects.}
 \item{study}{Which element of `studyFitList` to use when it is a list of
 ctsem fits. Ignored when `studyFitList` is itself a ctsem fit.}
 
-\item{julia_file}{Path to `CtsemJulia.jl`. In an installed CoTiMA package,
+\item{julia_file}{Path to `CtsemJulia.jl`. In an installed CoTiMA2 package,
 the default looks for `inst/julia/CtsemJulia.jl` via `system.file()`.}
 
 \item{initialize}{Whether to initialise JuliaCall when it is not already

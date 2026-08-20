@@ -66,6 +66,7 @@ ctmaBiG <- function(
 
 
 {  # begin function definition (until end of file)
+  .ctmaVersionNote()
 
   ### check if fit object is specified
   if (is.null(ctmaInitFit)){

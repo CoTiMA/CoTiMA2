@@ -971,6 +971,7 @@ ctmaRePrep <- function(
     sd_prior = 0.25,
     lkj_eta = 2,
     verbose = TRUE) {
+  .ctmaVersionNote()
 
   covariance <- .ctma_covariance_name(covariance[1L])
   parameterization_requested <- match.arg(parameterization)
@@ -1281,7 +1282,7 @@ ctmaRePrep <- function(
   if (!is.list(backendArgs) || (length(backendArgs) &&
       is.null(names(backendArgs)))) stop("backendArgs must be a named list.")
   defaults <- list(
-    julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA"),
+    julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA2"),
     initialize = TRUE,
     julia_home = NULL,
     julia_threads = 1L,
@@ -1540,6 +1541,7 @@ ctmaReFit <- function(
     fit_args = list(),
     backend = c("stan", "julia"),
     backendArgs = list()) {
+  .ctmaVersionNote()
 
   # `method` is retained as a backward-compatible alias. Previously,
   # method="sample" meant Bayesian sampling and method="optimize" meant MAP.

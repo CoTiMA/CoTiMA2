@@ -33,6 +33,7 @@ ctmaSV <- function(
   replaceSV=TRUE)
 
 {  # begin function definition (until end of file)
+  .ctmaVersionNote()
 
   { ### CHECKS
 

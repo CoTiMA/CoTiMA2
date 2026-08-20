@@ -40,6 +40,7 @@ ctmaEqual <- function(
 )
 
 {  # begin function definition (until end of file)
+  .ctmaVersionNote()
 
   # use same fitting params as used to fit ctmaInvariantFit
   CoTiMAStanctArgs <- ctmaInvariantFit$argumentList$CoTiMAStanctArgs

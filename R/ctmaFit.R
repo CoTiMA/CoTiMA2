@@ -179,6 +179,7 @@ ctmaFit <- function(
     backendArgs=list()
 )
 {  # begin function definition (until end of file)
+  .ctmaVersionNote()
 
   cotima_call <- match.call()
   requested_fit <- if (is.null(fit)) TRUE else isTRUE(as.logical(fit)[1L])

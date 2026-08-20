@@ -31,7 +31,7 @@ Numerically determines the optimal time lag (largest effect magnitude)
 }
 \examples{
 \dontrun{
-OTL <- ctmaOTL(ctmaFitFit=CoTiMA::CoTiMAFullFit_6_new)
+OTL <- ctmaOTL(ctmaFitFit=CoTiMA2::CoTiMAFullFit_6_new)
 print(OTL)
 }
 

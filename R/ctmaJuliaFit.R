@@ -12,7 +12,7 @@
 #'   an RDS file containing one of these objects.
 #' @param study Which element of `studyFitList` to use when it is a list of
 #'   ctsem fits. Ignored when `studyFitList` is itself a ctsem fit.
-#' @param julia_file Path to `CtsemJulia.jl`. In an installed CoTiMA package,
+#' @param julia_file Path to `CtsemJulia.jl`. In an installed CoTiMA2 package,
 #'   the default looks for `inst/julia/CtsemJulia.jl` via `system.file()`.
 #' @param initialize Whether to initialise JuliaCall when it is not already
 #'   active. An embedded Julia runtime cannot be restarted inside the same R
@@ -140,6 +140,7 @@ ctmaJuliaFit <- function(
     show_trace = TRUE,
     julia_threads = 1L,
     blas_threads = 1L) {
+  .ctmaVersionNote()
 
   julia_threads_was_supplied <- !missing(julia_threads)
   transformed_was_supplied <- !missing(transformed)
@@ -189,7 +190,7 @@ ctmaJuliaFit <- function(
   }
 
   if (is.null(julia_file)) {
-    julia_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA")
+    julia_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA2")
   }
   if (length(julia_file) != 1L || !nzchar(julia_file) ||
       !file.exists(julia_file)) {
@@ -1173,6 +1174,7 @@ vcov.ctmaJuliaFit <- function(object, ...) {
 #' @export
 ctAddJuliaSamples <- function(
     fit, setup, nsamples = 1000L, cores = 2L, seed = NULL, digits = 4L) {
+  .ctmaVersionNote()
   if (!inherits(fit, "ctmaJuliaFit")) {
     stop("'fit' must inherit from 'ctmaJuliaFit'.", call. = FALSE)
   }

@@ -111,6 +111,7 @@ ctmaPrep <- function(selectedStudies=NULL,
                      ctmaPrepObject=NULL,
                      excludedStudies=NULL)
 {
+  .ctmaVersionNote()
 
   ctma <- globalenv()
 

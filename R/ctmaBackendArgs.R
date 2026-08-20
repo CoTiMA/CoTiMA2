@@ -56,7 +56,7 @@ ctmaBackendDefaults <- function(
       )
     }
     return(list(
-      julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA"),
+      julia_file = system.file("julia", "CtsemJulia.jl", package = "CoTiMA2"),
       initialize = TRUE,
       julia_home = NULL,
       julia_threads = 1L,

@@ -261,6 +261,7 @@ ctmaReMLFit <- function(
     compile_args = list(),
     optim_args = list(),
     verbose = TRUE) {
+  .ctmaVersionNote()
 
   if (!inherits(prepared, "ctmaStudyREModel")) stop(
     "prepared must be returned by ctmaRePrep()."

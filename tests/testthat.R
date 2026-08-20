@@ -1,4 +1,4 @@
 library(testthat)
-library(CoTiMA)
+library(CoTiMA2)
 
-test_check("CoTiMA")
+test_check("CoTiMA2")

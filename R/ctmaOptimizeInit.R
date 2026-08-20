@@ -97,8 +97,8 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
   if (!(is.null(scaleTime))) CoTiMAStanctArgs$scaleTime <- scaleTime
 
   # Added 17. Aug 2022
-  tmp1 <- names(CoTiMA::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgs); tmp1
-  tmp2 <- CoTiMA::CoTiMAStanctArgs
+  tmp1 <- names(CoTiMA2::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgs); tmp1
+  tmp2 <- CoTiMA2::CoTiMAStanctArgs
   if (!(is.null(CoTiMAStanctArgs))) tmp2[tmp1] <- CoTiMAStanctArgs
   CoTiMAStanctArgs <- tmp2
 

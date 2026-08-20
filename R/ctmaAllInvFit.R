@@ -62,6 +62,7 @@ ctmaAllInvFit <- function(
   indVaryingT0=NULL
 )
 {
+  .ctmaVersionNote()
 
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"

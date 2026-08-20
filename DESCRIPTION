@@ -1,14 +1,15 @@
-Package: CoTiMA
+Package: CoTiMA2
 Type: Package
-Title: Continuous Time Meta-Analysis ('CoTiMA')
-Version: 1.0.4
-Date: 2026-08-11
+Title: Experimental Continuous Time Meta-Analysis 2.0 ('CoTiMA2')
+Version: 0.9.91
+Date: 2026-08-20
 Authors@R: c(person("Christian", "Dormann", role = c("aut","cph")),
             person("Markus", "Homberg", email = "cotima@uni-mainz.de", role = c("aut", "com", "cre")),
             person("Olga", "Diener", role = c("ctb")),
             person("Christina", "Guthier", role = c("ctb")),
             person("Manuel", "Voelkle", role = c("ctb")))    
-Description: The 'CoTiMA' package performs meta-analyses of correlation matrices of repeatedly measured variables taken from 
+Description: The experimental 'CoTiMA2' package is the development line of
+   'CoTiMA' 2.0 and performs meta-analyses of correlation matrices of repeatedly measured variables taken from
    studies that used different time intervals. Different time intervals between measurement occasions impose problems for 
    meta-analyses because the effects (e.g. cross-lagged effects) cannot be simply aggregated, for example, by means of common 
    fixed or random effects analysis. However, continuous time math, which is applied in 'CoTiMA', can be used to extrapolate or 

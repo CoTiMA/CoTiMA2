@@ -127,6 +127,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                             backendArgs=list()
 )
 {
+  .ctmaVersionNote()
 
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   if (identical(backend, "julia")) {

@@ -60,6 +60,7 @@ ctmaJuliaSetup <- function(
     r_home = R.home(),
     dry_run = FALSE,
     verbose = TRUE) {
+  .ctmaVersionNote()
 
   scalar_flag <- function(value, name) {
     if (!is.logical(value) || length(value) != 1L || is.na(value)) {
@@ -93,7 +94,7 @@ ctmaJuliaSetup <- function(
   julia_home <- dirname(julia)
 
   if (is.null(project)) {
-    project <- system.file("julia", package = "CoTiMA")
+    project <- system.file("julia", package = "CoTiMA2")
   }
   if (!is.character(project) || length(project) != 1L || !nzchar(project) ||
       !dir.exists(project)) stop(

@@ -1,6 +1,6 @@
 test_that("Julia backend resources are installed with CoTiMA", {
-  julia_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA")
-  project_file <- system.file("julia", "Project.toml", package = "CoTiMA")
+  julia_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA2")
+  project_file <- system.file("julia", "Project.toml", package = "CoTiMA2")
 
   expect_true(nzchar(julia_file))
   expect_true(file.exists(julia_file))
@@ -22,8 +22,8 @@ test_that("Julia user-facing functions and controls are available", {
 })
 
 test_that("the packaged Julia project declares the backend dependencies", {
-  project_file <- system.file("julia", "Project.toml", package = "CoTiMA")
-  backend_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA")
+  project_file <- system.file("julia", "Project.toml", package = "CoTiMA2")
+  backend_file <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA2")
   project <- readLines(project_file, warn = FALSE)
   backend <- readLines(backend_file, warn = FALSE)
 

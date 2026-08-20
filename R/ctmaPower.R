@@ -97,6 +97,7 @@ ctmaPower <- function(
 )
 
 {  # begin function definition (until end of file)
+  .ctmaVersionNote()
 
   { ### CHECKS
 
