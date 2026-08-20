@@ -1541,6 +1541,35 @@ print.summary.ctmaJuliaFitStudy <- function(
   sum(lengths(parameter_names))
 }
 
+.ctmaJuliaDefaultRawStart <- function(fit) {
+  nraw <- .ctmaJuliaRawParameterCount(fit)
+  start <- numeric(nraw)
+  popsetup <- fit$setup$popsetup
+  if (is.data.frame(popsetup) &&
+      all(c("param", "transform") %in% names(popsetup))) {
+    free <- !is.na(popsetup$param) & popsetup$param > 0L
+    rows <- popsetup[free, c("param", "transform"), drop = FALSE]
+    rows$matrix_name <- sub("[0-9]+$", "", rownames(rows))
+    rows <- rows[!duplicated(rows$param), , drop = FALSE]
+    # These are neutral raw-scale values under ctsem's standard transforms:
+    # stable drift diagonals near -0.3 and covariance diagonals near one.
+    # They keep all covariance matrices positive definite without putting the
+    # softplus transforms in a saturated region. Unbounded effects and
+    # correlation coordinates remain at zero.
+    assign_start <- function(matrix_names, value) {
+      index <- rows$param[
+        rows$transform == 1L & rows$matrix_name %in% matrix_names
+      ]
+      index <- index[index <= nraw]
+      start[index] <<- value
+    }
+    assign_start("DRIFT", 0.9)
+    assign_start(c("DIFFUSION", "MANIFESTVAR"), -1.2)
+    assign_start("T0VAR", -0.75)
+  }
+  start
+}
+
 .ctmaJuliaPrepareInput <- function(object, study = 1L, inits = NULL) {
   if (!.ctmaJuliaIsUnfittedCoTiMA(object)) {
     return(list(
@@ -1553,8 +1582,8 @@ print.summary.ctmaJuliaFitStudy <- function(
   fit <- .ctmaJuliaGenerateSetup(object)
   nraw <- .ctmaJuliaRawParameterCount(fit)
   if (is.null(inits)) {
-    raw_start <- numeric(nraw)
-    starting_values <- "zero"
+    raw_start <- .ctmaJuliaDefaultRawStart(fit)
+    starting_values <- "model-derived"
   } else {
     raw_start <- as.numeric(inits)
     starting_values <- "user-supplied"

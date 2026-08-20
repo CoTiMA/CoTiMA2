@@ -33,3 +33,23 @@ test_that("the packaged Julia project declares the backend dependencies", {
   expect_true(any(grepl("using ForwardDiff", backend, fixed = TRUE)))
   expect_true(any(grepl("using Optim", backend, fixed = TRUE)))
 })
+
+test_that("model-derived Julia starts respect ctsem matrix transforms", {
+  testthat::local_mocked_bindings(
+    .ctmaJuliaRawParameterCount = function(fit) 7L,
+    .package = "CoTiMA2"
+  )
+  fit <- list(setup = list(popsetup = data.frame(
+    param = 1:7,
+    transform = c(1L, 0L, 1L, 1L, 3L, 1L, 0L),
+    row.names = c(
+      "DRIFT", "DRIFT1", "DIFFUSION", "T0VAR",
+      "T0VAR1", "MANIFESTVAR", "CINT"
+    )
+  )))
+
+  expect_equal(
+    CoTiMA2:::.ctmaJuliaDefaultRawStart(fit),
+    c(0.9, 0, -1.2, -0.75, 0, -1.2, 0)
+  )
+})

@@ -1,3 +1,9 @@
+# CoTiMA2 0.9.93
+
+- Adds the experimental Julia ML and Bayesian backend route to `ctmaInit()`,
+  retaining ctsem-transformed single-study summaries for downstream CoTiMA2
+  workflows.
+
 # CoTiMA2 0.9.92
 
 - Reports wall-clock execution time when each principal workflow exits,

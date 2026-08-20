@@ -30,7 +30,7 @@
 ctmaBackendDefaults <- function(
     backend = c("stan", "julia"),
     estimation = NULL,
-    workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaReFit")) {
+    workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaReFit")) {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
 
   # Preserve the established Stan defaults exactly during migration. Assigning
@@ -108,7 +108,7 @@ ctmaBackendDefaults <- function(
       transformed_draws = 1000L,
       transformed_cores = 1L
     ))
-    if (identical(workflow, "ctmaFit")) {
+    if (workflow %in% c("ctmaFit", "ctmaInit")) {
       result$uncertainty <- TRUE
       result$transformed <- TRUE
     }

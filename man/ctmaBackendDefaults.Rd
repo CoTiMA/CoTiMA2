@@ -7,7 +7,7 @@
 ctmaBackendDefaults(
   backend = c("stan", "julia"),
   estimation = NULL,
-  workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaReFit")
+  workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaReFit")
 )
 }
 \arguments{

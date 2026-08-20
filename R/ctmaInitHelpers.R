@@ -192,7 +192,7 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
 
 .ctmaResolveFitBackend <- function(backend = c("stan", "julia"),
     backendArgs = list(), legacy_stan_args = NULL,
-    estimation = c("ML", "Bayes")) {
+    estimation = c("ML", "Bayes"), workflow = "ctmaFit") {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
   if (is.null(backendArgs)) backendArgs <- list()
@@ -221,7 +221,7 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
       ctmaBackendDefaults(
         backend = "julia",
         estimation = estimation,
-        workflow = "ctmaFit"
+        workflow = workflow
       ),
       backendArgs,
       path = "backendArgs"
@@ -254,6 +254,63 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     ctmaJuliaFit,
     c(list(object = setup, estimation = estimation), backend_args)
   )
+}
+
+.ctmaInitJuliaStudyFit <- function(
+    datalong, model, same_initial_times, stan_args, backend_args,
+    estimation, start_values = NULL, digits = 4L) {
+  wrapper <- structure(
+    list(
+      data = datalong,
+      ctModel = model,
+      argumentList = list(
+        fit = FALSE,
+        sameInitialTimes = same_initial_times,
+        CoTiMAStanctArgs = stan_args,
+        backend = "julia",
+        backendArgs = backend_args
+      )
+    ),
+    class = "CoTiMAFit"
+  )
+
+  args <- backend_args
+  if (!is.null(start_values) && length(start_values) &&
+      all(is.finite(start_values)) && is.null(args$inits)) {
+    args$inits <- as.numeric(start_values)
+  }
+  # ctmaInit's ordinary result requires transformed uncertainty summaries.
+  # ML therefore always computes the Hessian; Bayesian fits use retained NUTS
+  # draws. Transformation is performed once below through ctAddJuliaSamples().
+  args$uncertainty <- identical(tolower(estimation), "ml")
+  args$transformed <- FALSE
+
+  julia_fit <- .ctmaJuliaFitFromSetup(
+    setup = wrapper,
+    estimation = estimation,
+    backend_args = args
+  )
+  nsamples <- as.integer(args$transformed_draws)[1L]
+  if (is.na(nsamples) || nsamples < 2L) nsamples <- 1000L
+  transformed_cores <- as.integer(args$transformed_cores)[1L]
+  if (is.na(transformed_cores) || transformed_cores < 1L) {
+    transformed_cores <- 1L
+  }
+  julia_fit <- ctAddJuliaSamples(
+    fit = julia_fit,
+    setup = wrapper,
+    nsamples = nsamples,
+    cores = transformed_cores,
+    seed = args$seed,
+    digits = digits
+  )
+  setup <- .ctmaJuliaGenerateSetup(wrapper)
+  julia_fit$standata <- setup$standata
+  julia_fit$ctstanmodelbase <- model
+  julia_fit$ctsem_setup <- setup
+  julia_fit$resultsSummary <- julia_fit$ctsem_summary
+  julia_fit$backend <- "julia"
+  julia_fit
 }
 
 ctmaSelectBestParallelFit <- function(attempts) {

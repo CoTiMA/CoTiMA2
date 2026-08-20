@@ -43,7 +43,9 @@ ctmaInit(
   T0means = 0,
   T0var = "auto",
   useSV = FALSE,
-  verbose = 0
+  verbose = 0,
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -124,6 +126,13 @@ ctmaInit(
 \item{useSV}{if TRUE (default=FALSE) start values will be used if provided in the list of primary studies}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit - for debugging}
+
+\item{backend}{Estimation backend, either \code{"stan"} (the default) or
+the experimental \code{"julia"} backend.}
+
+\item{backendArgs}{Named list of controls for the selected backend. Julia
+controls follow \code{\link{ctmaJuliaFit}}. Primary studies are currently
+processed sequentially; parallel starts or chains can run within a study.}
 }
 \value{
 ctmaFit returns a list containing some arguments supplied, the fitted models, different elements summarizing the main results,

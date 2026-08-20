@@ -224,6 +224,21 @@ test_that("ctmaFit resolves Julia ML and Bayesian controls", {
   )
 })
 
+test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism", {
+  expect_identical(eval(formals(ctmaInit)$backend), c("stan", "julia"))
+  defaults <- ctmaBackendDefaults("julia", "ML", "ctmaInit")
+  expect_true(defaults$uncertainty)
+  expect_true(defaults$transformed)
+  expect_error(
+    ctmaInit(
+      primaryStudies = NULL,
+      backend = "julia",
+      doPar = 2L
+    ),
+    "currently requires doPar = 1"
+  )
+})
+
 test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
   testthat::local_mocked_bindings(
     ctmaJuliaFit = function(object, estimation, ...) {
@@ -242,6 +257,49 @@ test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
   expect_identical(result$estimation, "ML")
   expect_identical(result$controls$maxiters, 321L)
   expect_identical(result$controls$julia_threads, 2L)
+})
+
+test_that("ctmaInit Julia study dispatcher restores ctsem compatibility", {
+  transformed_summary <- list(loglik = -12, npars = 2L)
+  testthat::local_mocked_bindings(
+    ctmaJuliaFit = function(object, estimation, ...) {
+      structure(
+        list(source_object = object, controls = list(...)),
+        class = "ctmaJuliaFit"
+      )
+    },
+    ctAddJuliaSamples = function(fit, setup, nsamples, cores, seed, digits) {
+      fit$ctsem_summary <- transformed_summary
+      fit
+    },
+    .ctmaJuliaGenerateSetup = function(object) {
+      list(standata = list(priors = 0L))
+    },
+    .package = "CoTiMA2"
+  )
+
+  result <- CoTiMA2:::.ctmaInitJuliaStudyFit(
+    datalong = data.frame(id = 1, time = 0, V1 = 0),
+    model = list(marker = "model"),
+    same_initial_times = FALSE,
+    stan_args = list(iter = 100L),
+    backend_args = list(
+      transformed_draws = 20L,
+      transformed_cores = 1L,
+      seed = 3L,
+      inits = NULL
+    ),
+    estimation = "ML",
+    digits = 4L
+  )
+
+  expect_s3_class(result, "ctmaJuliaFit")
+  expect_identical(result$resultsSummary, transformed_summary)
+  expect_identical(result$standata$priors, 0L)
+  expect_identical(result$ctstanmodelbase$marker, "model")
+  expect_true(result$controls$uncertainty)
+  expect_false(result$controls$transformed)
+  expect_identical(result$backend, "julia")
 })
 
 test_that("ctmaFit backendArgs work through the public entry point", {

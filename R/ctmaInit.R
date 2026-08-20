@@ -41,6 +41,11 @@
 #' @param T0var (default = 'auto')
 #' @param useSV if TRUE (default=FALSE) start values will be used if provided in the list of primary studies
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit - for debugging
+#' @param backend Estimation backend, either \code{"stan"} (the default) or
+#'   the experimental \code{"julia"} backend.
+#' @param backendArgs Named list of controls for the selected backend. Julia
+#'   controls follow \code{\link{ctmaJuliaFit}}. Primary studies are currently
+#'   processed sequentially; parallel starts or chains can run within a study.
 
 #'
 #' @importFrom RPushbullet pbPost
@@ -120,13 +125,39 @@ ctmaInit <- function(
     T0means=0,
     T0var='auto',
     useSV=FALSE,
-    verbose=0
+    verbose=0,
+    backend=c("stan", "julia"),
+    backendArgs=list()
 )
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaInit")
   on.exit(.ctma_timer(), add = TRUE)
+
+  requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) {
+    "ML"
+  } else {
+    "Bayes"
+  }
+  backend_resolution <- .ctmaResolveFitBackend(
+    backend = backend,
+    backendArgs = backendArgs,
+    legacy_stan_args = CoTiMAStanctArgs,
+    estimation = requested_estimation,
+    workflow = "ctmaInit"
+  )
+  backend <- backend_resolution$backend
+  resolved_backend_args <- backend_resolution$backend_args
+  CoTiMAStanctArgs <- backend_resolution$stan_args
+  if (identical(backend, "julia") && doPar > 1L) {
+    stop(
+      "ctmaInit(backend='julia') currently requires doPar = 1. Use Julia's ",
+      "parallel_starts/threads_per_start or parallel_chains/threads_per_chain ",
+      "inside backendArgs.",
+      call. = FALSE
+    )
+  }
 
 
   #start.time <- Sys.time()
@@ -1140,6 +1171,19 @@ ctmaInit <- function(
 
             hessianWarning[[i]] <- FALSE
 
+            if (identical(backend, "julia")) {
+              results <- .ctmaInitJuliaStudyFit(
+                datalong = emprawLong[[i]],
+                model = currentModel,
+                same_initial_times = sameInitialTimes,
+                stan_args = CoTiMAStanctArgs,
+                backend_args = resolved_backend_args,
+                estimation = requested_estimation,
+                start_values = inits,
+                digits = digits
+              )
+              results_summary <- results$resultsSummary
+            } else {
             #results <- suppressMessages(ctsem::ctStanFit(
             results <- ctsem::ctFit(
               datalong = emprawLong[[i]],
@@ -1180,6 +1224,7 @@ ctmaInit <- function(
             #if (is.null(results$error)) {
               #results <- results$fit # to match former fitting results w/o error handling # CHD 20.7.2026
               results_summary <- summary(results, digits=2*digits, parmatrices=TRUE, residualcov=FALSE)
+            }
             #if (!is.null(results$error)) { # CHD 20.7.2026
               #fit <- FALSE
             #  print(paste0("#################################################################################"))
@@ -1323,7 +1368,9 @@ ctmaInit <- function(
                                             useSV=useSV,
                                             verbose=verbose,
                                             randomIntercepts=randomInterceptsSettings,
-                                            CoTiMAStanctArgs=CoTiMAStanctArgs)
+                                            CoTiMAStanctArgs=CoTiMAStanctArgs,
+                                            backend=backend,
+                                            backendArgs=resolved_backend_args)
 
             ctmaSaveFile(activateRPB, activeDirectory, tmp, x1, x2, silentOverwrite=silentOverwrite)
           }
@@ -1965,7 +2012,9 @@ ctmaInit <- function(
                                       useSV=useSV,
                                       verbose=verbose,
                                       randomIntercepts=randomInterceptsSettings,
-                                      CoTiMAStanctArgs=CoTiMAStanctArgs),
+                                      CoTiMAStanctArgs=CoTiMAStanctArgs,
+                                      backend=backend,
+                                      backendArgs=resolved_backend_args),
                     modelResults=list(DRIFT=model_Drift_Coef, DIFFUSION=model_Diffusion_Coef, T0VAR=model_T0var_Coef, CINT=model_Cint_Coef,
                                       DRIFToriginal_time_scale=model_Drift_Coef_original_time_scale,
                                       DIFFUSIONoriginal_time_scale=model_Diffusion_Coef_original_time_scale),
@@ -1995,7 +2044,9 @@ ctmaInit <- function(
     #if (hessianWarning == FALSE) {
     results <- list(summary=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),
                     data = empraw,
-                    ctModel = currentModel)
+                    ctModel = currentModel,
+                    backend = backend,
+                    backendArgs = resolved_backend_args)
     #} else {
     #  results <- list(summary = list(message=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),
     #                                 error=hessianWarning),
