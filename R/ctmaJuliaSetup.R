@@ -6,7 +6,10 @@
 #' precompiles that project. All work is performed in separate Julia
 #' processes; this function does not initialize JuliaCall in the current R
 #' session. Restart R after setup before requesting a different Julia thread
-#' count or after a failed JuliaCall initialization.
+#' count or after a failed JuliaCall initialization. On Linux, Julia setup
+#' subprocesses do not inherit code{LD_LIBRARY_PATH} or code{LD_PRELOAD};
+#' this prevents R, Java, or RStudio Server libraries from shadowing Julia's
+#' own native dependencies.
 #'
 #' @param julia Optional path to the Julia executable. When omitted, the
 #'   function searches PATH, common Juliaup launcher locations, and
@@ -162,10 +165,12 @@ ctmaJuliaSetup <- function(
     )
   }
 
-  render_command <- function(command) paste(
+  render_command <- function(command) {
+    command <- .ctmaJuliaCommandInvocation(command)
+    paste(
     c(command$env, shQuote(command$executable), command$args),
     collapse = " "
-  )
+  )}
   if (dry_run) {
     result <- structure(list(
       julia = julia,
@@ -180,8 +185,12 @@ ctmaJuliaSetup <- function(
     return(invisible(result))
   }
 
+  version_command <- .ctmaJuliaCommandInvocation(list(
+    executable = julia, args = "--version", env = character()
+  ))
   version_output <- system2(
-    julia, "--version", stdout = TRUE, stderr = TRUE
+    version_command$executable, version_command$args,
+    env = version_command$env, stdout = TRUE, stderr = TRUE
   )
   version_status <- attr(version_output, "status")
   if (!is.null(version_status) && version_status != 0L) stop(
@@ -193,7 +202,7 @@ ctmaJuliaSetup <- function(
 
   results <- vector("list", length(commands))
   for (index in seq_along(commands)) {
-    command <- commands[[index]]
+    command <- .ctmaJuliaCommandInvocation(commands[[index]])
     if (verbose) cat("\n", command$label, "...\n", sep = "")
     output <- system2(
       command$executable,
@@ -233,6 +242,31 @@ ctmaJuliaSetup <- function(
     )
   }
   invisible(result)
+}
+
+# Build a subprocess invocation without executing it. RStudio Server and some
+# Linux R installations prepend R/Java library directories to LD_LIBRARY_PATH.
+# Julia can then load ABI-incompatible libcurl, libstdc++, or related native
+# libraries and terminate with status 139. `env -u` genuinely removes inherited
+# variables; system2(env=) can add or replace variables but cannot unset them.
+.ctmaJuliaCommandInvocation <- function(command, linux = identical(
+    unname(Sys.info()[["sysname"]]), "Linux")) {
+  if (!isTRUE(linux)) return(command)
+  env_executable <- if (file.exists("/usr/bin/env")) "/usr/bin/env" else
+    unname(Sys.which("env"))
+  if (!nzchar(env_executable)) stop(
+    "Linux Julia setup requires the 'env' executable to sanitize native ",
+    "library paths.", call. = FALSE
+  )
+  list(
+    label = command$label,
+    executable = env_executable,
+    args = c(
+      "-u", "LD_LIBRARY_PATH", "-u", "LD_PRELOAD",
+      command$env, shQuote(command$executable), command$args
+    ),
+    env = character()
+  )
 }
 
 .ctmaJuliaFindExecutable <- function(julia = NULL, julia_home = NULL) {

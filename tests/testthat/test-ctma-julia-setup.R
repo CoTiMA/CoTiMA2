@@ -51,6 +51,29 @@ test_that("ctmaJuliaSetup constructs a portable dry-run plan", {
   expect_match(result$commands[[3L]], "JULIA_NUM_PRECOMPILE_TASKS=1")
 })
 
+test_that("Linux Julia subprocesses discard inherited native library paths", {
+  command <- list(
+    label = "Test Julia",
+    executable = "/opt/julia/bin/julia",
+    args = c("--startup-file=no", "--version"),
+    env = c("R_HOME=/usr/lib/R", "JULIA_PKG_PRECOMPILE_AUTO=0")
+  )
+  invocation <- CoTiMA:::.ctmaJuliaCommandInvocation(command, linux = TRUE)
+
+  expect_match(invocation$executable, "env$")
+  expect_identical(invocation$label, "Test Julia")
+  expect_identical(
+    invocation$args[seq_len(4L)],
+    c("-u", "LD_LIBRARY_PATH", "-u", "LD_PRELOAD")
+  )
+  expect_true("R_HOME=/usr/lib/R" %in% invocation$args)
+  expect_true("'/opt/julia/bin/julia'" %in% invocation$args)
+  expect_length(invocation$env, 0L)
+
+  unchanged <- CoTiMA:::.ctmaJuliaCommandInvocation(command, linux = FALSE)
+  expect_identical(unchanged, command)
+})
+
 test_that("JuliaCall bootstrap can be skipped or forced", {
   executable <- file.path(R.home("bin"), "R")
   skipped <- ctmaJuliaSetup(

@@ -684,7 +684,25 @@ findJulia <- function() {
 
 juliaExecutable <- findJulia()
 juliaHome <- dirname(juliaExecutable)
-system2(juliaExecutable, "--version")
+
+# RStudio Server may inject native-library paths that are incompatible with
+# Julia. ctmaJuliaSetup() applies this Linux isolation automatically. Use the
+# same wrapper only when reproducing the individual commands manually.
+juliaSystem2 <- function(args, env = character()) {
+  if (identical(unname(Sys.info()[["sysname"]]), "Linux")) {
+    system2(
+      "/usr/bin/env",
+      c(
+        "-u", "LD_LIBRARY_PATH", "-u", "LD_PRELOAD",
+        env, shQuote(juliaExecutable), args
+      )
+    )
+  } else {
+    system2(juliaExecutable, args, env = env)
+  }
+}
+
+juliaSystem2("--version")
 @
 
 JuliaCall's setup code needs the Julia packages \code{Suppressor} and
@@ -698,8 +716,7 @@ bootstrapCode <- paste(
   "Pkg.add([\"Suppressor\", \"RCall\"]);",
   "Pkg.build(\"RCall\")"
 )
-system2(
-  juliaExecutable,
+juliaSystem2(
   c("--startup-file=no", "-e", shQuote(bootstrapCode)),
   env = c(
     paste0("R_HOME=", shQuote(R.home())),
@@ -722,8 +739,7 @@ instantiateCode <- paste(
   "Pkg.instantiate(; allow_autoprecomp=false);",
   "Pkg.status()"
 )
-system2(
-  juliaExecutable,
+juliaSystem2(
   c(
     "--startup-file=no",
     paste0("--project=", shQuote(juliaProject)),
@@ -732,8 +748,7 @@ system2(
   env = "JULIA_PKG_PRECOMPILE_AUTO=0"
 )
 
-system2(
-  juliaExecutable,
+juliaSystem2(
   c(
     "--startup-file=no",
     paste0("--project=", shQuote(juliaProject)),
