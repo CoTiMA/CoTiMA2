@@ -25,6 +25,8 @@
 #' @param T0means Default 0 (assuming standardized variables). Can be assigned labels to estimate them freely.
 #' @param manifestMeans Default 0 (assuming standardized variables). Can be assigned labels to estimate them freely.
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctStanFit}} Function
+#' @param backend estimation backend, \code{"stan"} (default) or \code{"julia"}.
+#' @param backendArgs named list of controls for the selected backend.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
 #' @param manifestVars define the error variances of the manifests with a single time point using R-type lower triangular matrix with nrow=n.manifest & ncol=n.manifest.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
@@ -59,7 +61,9 @@ ctmaAllInvFit <- function(
   CoTiMAStanctArgs=NULL,
   lambda=NULL,
   manifestVars=NULL,
-  indVaryingT0=NULL
+  indVaryingT0=NULL,
+  backend=c("stan", "julia"),
+  backendArgs=list()
 )
 {
   .ctmaVersionNote()
@@ -69,18 +73,43 @@ ctmaAllInvFit <- function(
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"
 
-  CoTiMAStanctArgs <- .ctmaResolveAllInvStanArgs(
-    overrides = CoTiMAStanctArgs,
-    scaleTime = scaleTime,
-    optimize = optimize,
-    priors = priors,
-    finishsamples = finishsamples,
-    chains = chains,
-    iter = iter,
-    verbose = verbose,
-    verbose_was_supplied = !missing(verbose)
+  requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) "ML" else "Bayes"
+  backend_resolution <- .ctmaResolveFitBackend(
+    backend = backend, backendArgs = backendArgs,
+    legacy_stan_args = CoTiMAStanctArgs,
+    estimation = requested_estimation, workflow = "ctmaAllInvFit"
   )
-  verbose <- CoTiMAStanctArgs$verbose
+  backend <- backend_resolution$backend
+  resolved_backend_args <- backend_resolution$backend_args
+  if (identical(backend, "stan")) {
+    CoTiMAStanctArgs <- .ctmaResolveAllInvStanArgs(
+      overrides = backend_resolution$stan_args,
+      scaleTime = scaleTime, optimize = optimize, priors = priors,
+      finishsamples = finishsamples, chains = chains, iter = iter,
+      verbose = verbose, verbose_was_supplied = !missing(verbose)
+    )
+    verbose <- CoTiMAStanctArgs$verbose
+  } else {
+    CoTiMAStanctArgs <- .ctmaResolveAllInvStanArgs(
+      scaleTime = scaleTime, optimize = optimize, priors = priors,
+      finishsamples = finishsamples, chains = chains, iter = iter,
+      verbose = verbose, verbose_was_supplied = !missing(verbose)
+    )
+    resolved_backend_args <- .ctmaInitJuliaFinishsamples(
+      finishsamples, backendArgs, resolved_backend_args
+    )
+    if (!is.null(iter)) {
+      if (identical(requested_estimation, "ML")) resolved_backend_args$maxiters <- as.integer(iter)
+      else {
+        resolved_backend_args$warmup <- as.integer(iter %/% 2L)
+        resolved_backend_args$samples <- as.integer(iter - iter %/% 2L)
+      }
+    }
+    if (!is.null(chains) && identical(requested_estimation, "Bayes")) {
+      resolved_backend_args$chains <- as.integer(chains)
+    }
+    verbose <- if (is.null(verbose)) 0 else verbose
+  }
 
 
   # check if fit object is specified
@@ -93,15 +122,15 @@ ctmaAllInvFit <- function(
   #######################################################################################################################
   ################################################# Check Cores To Use ##################################################
   #######################################################################################################################
-  if  (length(coresToUse) > 0) {
-    if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-  }
-
-  if (coresToUse >= parallel::detectCores()) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
-    coresToUse <- parallel::detectCores() - 1
-    Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash.\n"
-    message(Msg)
+  resource_resolution <- .ctmaResolveCores(
+    coresToUse, backend = backend, workflow = "ctmaAllInvFit"
+  )
+  coresToUse <- resource_resolution$resolved
+  if (identical(backend, "julia")) {
+    julia_resources <- .ctmaInitJuliaResources(
+      coresToUse, requested_estimation, backendArgs, resolved_backend_args
+    )
+    resolved_backend_args <- julia_resources$backend_args
   }
 
 
@@ -167,7 +196,12 @@ ctmaAllInvFit <- function(
 
     # eliminate rows where ALL latents are NA
     if (n.manifest > n.latent) namePart <- "y" else namePart <- "V"
-    dataTmp3 <- dataTmp3[, ][ apply(dataTmp3[, paste0(namePart, 1:n.var)], 1, function(x) sum(is.na(x)) != n.var ), ]
+    observed_columns <- dataTmp3[, paste0(namePart, 1:n.var), drop = FALSE]
+    dataTmp3 <- dataTmp3[
+      apply(observed_columns, 1, function(x) sum(is.na(x)) != n.var),
+      ,
+      drop = FALSE
+    ]
     datalong_all <- dataTmp3
 
   }
@@ -339,12 +373,29 @@ ctmaAllInvFit <- function(
   # LOAD or Fit
   if (length(loadAllInvFit) > 0) {
     x1 <- paste0(activeDirectory, loadAllInvFit[1], ".rds"); x1
-    results <- readRDS(file=x1)
+    allFixedModelFit <- readRDS(file=x1)
+    allFixedModelFitSummary <- if (inherits(allFixedModelFit, "ctmaJuliaFit")) {
+      allFixedModelFit$ctsem_summary
+    } else {
+      summary(allFixedModelFit, digits=digits)
+    }
   } else {
     CoTiMAStanctArgs$optimcontrol$bootstrapUncertainty <- NULL
 
-    #allFixedModelFit <- suppressMessages(ctsem::ctStanFit(
-    allFixedModelFit <- (ctsem::ctStanFit(
+    if (identical(backend, "julia")) {
+      allFixedModelFit <- .ctmaInitJuliaStudyFit(
+        datalong = datalong_all,
+        model = allFixedModel,
+        same_initial_times = FALSE,
+        stan_args = CoTiMAStanctArgs,
+        backend_args = resolved_backend_args,
+        estimation = requested_estimation,
+        digits = digits
+      )
+      allFixedModelFitSummary <- allFixedModelFit$ctsem_summary
+    } else {
+      #allFixedModelFit <- suppressMessages(ctsem::ctStanFit(
+      allFixedModelFit <- (ctsem::ctStanFit(
       type=type,
       datalong = datalong_all,
       ctstanmodel = allFixedModel,
@@ -372,9 +423,10 @@ ctmaAllInvFit <- function(
       warmup=CoTiMAStanctArgs$warmup,
       cores=coresToUse))
 
-    #Msg <- "\nComputing results summary of all invariant model.\n"
-    #message(Msg)
-    allFixedModelFitSummary <- summary(allFixedModelFit, digits=digits)
+      #Msg <- "\nComputing results summary of all invariant model.\n"
+      #message(Msg)
+      allFixedModelFitSummary <- summary(allFixedModelFit, digits=digits)
+    }
   }
 
   # SAVE
@@ -507,6 +559,9 @@ ctmaAllInvFit <- function(
   T0VAR <- matrix(homAll_T0VAR_Coef, n.latent); T0VAR
 
   results <- list(plot.type="drift",  model.type=type,
+                  backend=backend,
+                  backendArgs=resolved_backend_args,
+                  resource_resolution=resource_resolution,
                   coresToUse=coresToUse, n.studies=1,
                   n.latent=n.latent,
                   ctModel=allFixedModel,
@@ -517,6 +572,17 @@ ctmaAllInvFit <- function(
                   modelResults=list(DRIFT=DRIFT, DIFFUSION=DIFFUSION, T0VAR=T0VAR, CINT=NULL),
                   #parameterNames=ctmaInitFit$parameterNames,
                   CoTiMAStanctArgs=CoTiMAStanctArgs,
+                  argumentList=list(
+                    backend=backend,
+                    backendArgs=resolved_backend_args,
+                    CoTiMAStanctArgs=if (identical(backend, "stan")) CoTiMAStanctArgs else NULL,
+                    finishsamples=finishsamples,
+                    iter=iter,
+                    chains=chains,
+                    optimize=optimize,
+                    priors=priors,
+                    coresToUse=coresToUse
+                  ),
                   #invariantDrift=invariantDrift,
                   summary=list(model="All effect (drift, diffusion, T0var) invariant across primary studies.",
                                parmatrices=allFixedModelFitSummary$parmatrices,

@@ -29,7 +29,9 @@ ctmaAllInvFit(
   CoTiMAStanctArgs = NULL,
   lambda = NULL,
   manifestVars = NULL,
-  indVaryingT0 = NULL
+  indVaryingT0 = NULL,
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -82,6 +84,10 @@ ctmaAllInvFit(
 \item{manifestVars}{define the error variances of the manifests with a single time point using R-type lower triangular matrix with nrow=n.manifest & ncol=n.manifest.}
 
 \item{indVaryingT0}{Forces T0MEANS (T0 scores) to vary interindividually, which undos the nesting of T0(co-)variances in primary studies (default = TRUE). Was standard until Aug. 2022. Could provide better/worse estimates if set to FALSE.}
+
+\item{backend}{estimation backend, \code{"stan"} (default) or \code{"julia"}.}
+
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
 returns a fitted CoTiMA object, in which all drift parameters, Time 0 variances and covariances, and diffusion parameters were set invariant across primary studies

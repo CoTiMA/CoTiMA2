@@ -1,3 +1,11 @@
+# CoTiMA2 0.9.97
+
+- Added a central backend-aware core resolver. Stan/R worker counts are
+  conservatively capped to avoid exhausting R connections on many-core hosts;
+  Julia keeps its thread-based allocation.
+- Added the public `backend` and `backendArgs` interface and Julia ML/Bayesian
+  route to `ctmaAllInvFit()`; Stan remains the default backend.
+
 # CoTiMA2 0.9.96
 
 - `ctmaInit(finishsamples=...)` now maps to Julia's `transformed_draws`

@@ -29,6 +29,33 @@ test_that("Julia defaults are workflow and estimation specific", {
   )
 })
 
+test_that("ctmaAllInvFit exposes Julia backend defaults", {
+  defaults <- ctmaBackendDefaults("julia", "ML", "ctmaAllInvFit")
+  expect_true(defaults$uncertainty)
+  expect_true(defaults$transformed)
+  expect_true(all(c("backend", "backendArgs") %in%
+                    names(formals(ctmaAllInvFit))))
+})
+
+test_that("central core resolution is backend aware", {
+  stan <- CoTiMA2:::.ctmaResolveCores(
+    -1L, backend = "stan", max_stan_workers = 8L, announce = FALSE
+  )
+  expect_gte(stan$resolved, 1L)
+  expect_lte(stan$resolved, 8L)
+
+  tasks <- CoTiMA2:::.ctmaResolveCores(
+    12L, backend = "stan", task_count = 3L,
+    max_stan_workers = 32L, announce = FALSE
+  )
+  expect_identical(tasks$resolved, min(3L, tasks$available))
+
+  julia <- CoTiMA2:::.ctmaResolveCores(
+    -1L, backend = "julia", max_stan_workers = 1L, announce = FALSE
+  )
+  expect_identical(julia$resolved, max(1L, julia$available - 1L))
+})
+
 test_that("backend overrides merge recursively and by name", {
   defaults <- list(
     iter = 1000L,
@@ -88,10 +115,10 @@ test_that("backend defaults are isolated between calls", {
   expect_identical(ctmaBackendDefaults()$control$adapt_delta, 0.8)
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.9.96")
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.9.97")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.9.96\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.9.97\\)."
   )
 
   major_functions <- c(

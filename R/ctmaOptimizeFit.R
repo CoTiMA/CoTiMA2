@@ -175,16 +175,10 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   #######################################################################################################################
   {
     {
-      if  (length(coresToUse) > 0) {
-        if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-      }
-
-      if (coresToUse >= parallel::detectCores()) {
-        if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
-        coresToUse <- parallel::detectCores() - 1
-        Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash. \n"
-        message(Msg)
-      }
+      resource_resolution <- .ctmaResolveCores(
+        coresToUse, backend = backend, workflow = "ctmaOptimizeFit"
+      )
+      coresToUse <- resource_resolution$resolved
     }
 
     if (!(is.null(ctStanFit))) {

@@ -17,8 +17,8 @@
 #'   \code{workflow = "ctmaReFit"} currently supports Julia defaults only for
 #'   \code{"Bayes"}. This argument is ignored for the compatibility Stan list.
 #' @param workflow Public workflow for which defaults are requested. The
-#'   current Julia workflows are \code{"ctmaJuliaFit"}, \code{"ctmaFit"}, and
-#'   \code{"ctmaReFit"}.
+#'   current Julia workflows are \code{"ctmaJuliaFit"}, \code{"ctmaInit"},
+#'   \code{"ctmaFit"}, \code{"ctmaAllInvFit"}, and \code{"ctmaReFit"}.
 #'
 #' @return A fresh named list of backend-specific defaults.
 #' @export
@@ -30,7 +30,8 @@
 ctmaBackendDefaults <- function(
     backend = c("stan", "julia"),
     estimation = NULL,
-    workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaReFit")) {
+    workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit",
+                 "ctmaReFit")) {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
 
   # Preserve the established Stan defaults exactly during migration. Assigning
@@ -108,7 +109,7 @@ ctmaBackendDefaults <- function(
       transformed_draws = 1000L,
       transformed_cores = 1L
     ))
-    if (workflow %in% c("ctmaFit", "ctmaInit")) {
+    if (workflow %in% c("ctmaFit", "ctmaInit", "ctmaAllInvFit")) {
       result$uncertainty <- TRUE
       result$transformed <- TRUE
     }
@@ -134,6 +135,49 @@ ctmaBackendDefaults <- function(
     transformed_draws = 1000L,
     transformed_cores = 1L
   ))
+}
+
+.ctmaResolveCores <- function(
+    coresToUse, backend = c("stan", "julia"), task_count = NULL,
+    max_stan_workers = 32L, announce = TRUE, workflow = "CoTiMA") {
+  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  detected <- if (requireNamespace("parallelly", quietly = TRUE)) {
+    suppressWarnings(as.integer(parallelly::availableCores()[1L]))
+  } else {
+    suppressWarnings(as.integer(parallel::detectCores(logical = TRUE)[1L]))
+  }
+  if (is.na(detected) || detected < 1L) detected <- 1L
+  requested <- suppressWarnings(as.integer(coresToUse)[1L])
+  if (is.na(requested)) stop("'coresToUse' must be one integer.", call. = FALSE)
+  if (requested < 0L) requested <- detected + requested
+  if (requested == 0L) requested <- 1L
+  resolved <- min(max(1L, requested), detected)
+  reason <- character()
+  if (!is.null(task_count)) {
+    task_count <- suppressWarnings(as.integer(task_count)[1L])
+    if (!is.na(task_count) && task_count > 0L && identical(backend, "stan") &&
+        resolved > task_count) {
+      resolved <- task_count
+      reason <- c(reason, "number of parallel tasks")
+    }
+  }
+  max_stan_workers <- suppressWarnings(as.integer(max_stan_workers)[1L])
+  if (identical(backend, "stan") && !is.na(max_stan_workers) &&
+      max_stan_workers > 0L && resolved > max_stan_workers) {
+    resolved <- max_stan_workers
+    reason <- c(reason, "safe R-worker limit")
+  }
+  if (isTRUE(announce) && (resolved != requested || length(reason))) {
+    message(
+      "Note: ", workflow, " resolved coresToUse=", coresToUse, " to ",
+      resolved, " ", if (identical(backend, "stan")) "Stan/R worker" else "Julia thread",
+      "(s)", if (length(reason)) paste0(" (limited by ", paste(reason, collapse = " and "), ")") else "", "."
+    )
+  }
+  list(
+    requested = as.integer(coresToUse)[1L], resolved = resolved,
+    available = detected, backend = backend, reasons = reason
+  )
 }
 
 .ctmaValidateBackendArgs <- function(defaults, overrides = NULL,
