@@ -436,7 +436,35 @@ test_that("ctmaOptimizeFit recognizes only finite fit criteria", {
   expect_true(is.na(CoTiMA:::.ctmaOptimizeFitValue(failed)))
 })
 
+test_that("stored Julia routing fixture has a CoTiMA-compatible criterion", {
+  fixture_path <- testthat::test_path("fixtures", "julia-routing-fixture.R")
+  fixture_environment <- new.env(parent = baseenv())
+  sys.source(fixture_path, envir = fixture_environment)
+  fixture <- fixture_environment$ctma_julia_routing_fixture()
+
+  result <- CoTiMA:::.ctmaFinalizeJuliaCoTiMAFit(
+    fit = fixture$fit,
+    setup = fixture$setup,
+    cotima_call = quote(ctmaFit(backend = "julia")),
+    backend_args = list(maxiters = 25L)
+  )
+
+  expect_s3_class(result, "ctmaJuliaFit")
+  expect_identical(result$summary$minus2ll, 247)
+  expect_identical(result$summary$loglik, -123.5)
+  expect_identical(result$summary$n.parameters, 3L)
+  expect_identical(result$argumentList$backend, "julia")
+  expect_identical(result$argumentList$backendArgs$maxiters, 25L)
+  expect_true(result$argumentList$fit)
+  expect_identical(CoTiMA:::.ctmaOptimizeFitValue(result), 247)
+  expect_identical(result$source_object, fixture$setup)
+})
+
 test_that("ctmaOptimizeFit validates backend controls before input objects", {
+  expect_identical(
+    eval(formals(ctmaOptimizeFit)$backend),
+    c("stan", "julia")
+  )
   expect_error(
     ctmaOptimizeFit(
       CoTiMAStanctArgs = list(control = list(adapt_delta = 0.9))
@@ -446,6 +474,17 @@ test_that("ctmaOptimizeFit validates backend controls before input objects", {
   expect_error(
     ctmaOptimizeFit(CoTiMAStanctArgs = list(not_a_control = TRUE)),
     "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+  expect_error(
+    ctmaOptimizeFit(backend = "julia", reFits = 2L),
+    "requires the complete-model 'ctmaFitFit' branch"
+  )
+  expect_error(
+    ctmaOptimizeFit(
+      backend = "stan",
+      backendArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown backendArgs: not_a_control"
   )
 })
 

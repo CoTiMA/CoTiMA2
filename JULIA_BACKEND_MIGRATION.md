@@ -11,7 +11,7 @@ builds. Stan remains the default backend throughout the migration.
 | 2 | Replace fragile legacy Stan-list merges internally, one function at a time | Complete for `ctmaInit()`, `ctmaFit()`, `ctmaAllInvFit()`, `ctmaPower()`, and `ctmaOptimizeFit()` |
 | 3 | Add `backend` and `backendArgs` to `ctmaFit()` while retaining all old calls | Complete; Stan remains default and Julia requests identify the staged boundary |
 | 4 | Route validated Julia ML/Bayesian estimation through `ctmaFit()` | Complete |
-| 5 | Repair `ctmaOptimizeFit()` workflow issues and make it backend-aware | Workflow correctness repaired; backend routing pending |
+| 5 | Repair `ctmaOptimizeFit()` workflow issues and make it backend-aware | Complete for full-model Julia ML refits; single-study `ctmaInit()` refits remain Stan-only |
 | 6 | Migrate additional CoTiMA fitting functions individually | Pending |
 | 7 | Deprecate `CoTiMAStanctArgs` with a compatibility translator | Pending |
 | 8 | Remove the duplicate data object only after the transition period | Pending |
@@ -35,3 +35,10 @@ builds. Stan remains the default backend throughout the migration.
    public interface must report a clear conflict instead of guessing.
 4. Unknown backend control names are errors; nested lists merge recursively.
 5. Julia options are exposed only after their workflow has been validated.
+
+## Julia integration-test boundary
+
+Package tests use a small stored routing fixture and mocked dispatch so routine
+checks do not initialize Julia or compile a model. Real Julia ML and Bayesian
+smoke tests remain explicit release checks because they depend on a working
+external Julia installation and take substantially longer.

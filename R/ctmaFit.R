@@ -2289,8 +2289,12 @@ ctmaFit <- function(
       estimation = requested_estimation,
       backend_args = resolved_backend_args
     )
-    julia_result$cotima_call <- cotima_call
-    julia_result$backend <- backend
+    julia_result <- .ctmaFinalizeJuliaCoTiMAFit(
+      fit = julia_result,
+      setup = results,
+      cotima_call = cotima_call,
+      backend_args = resolved_backend_args
+    )
     return(invisible(julia_result))
   }
 

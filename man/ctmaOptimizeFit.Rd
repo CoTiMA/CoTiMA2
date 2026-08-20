@@ -35,7 +35,9 @@ ctmaOptimizeFit(
     list(), nopriors = NA, priors = FALSE, chains = 2, inits = NULL, compileArgs =
     list(), forcerecompile = FALSE, saveCompile = TRUE, savescores = FALSE,
     savesubjectmatrices = FALSE, saveComplexPars = FALSE, gendata = FALSE, control =
-    list(), vb = FALSE)
+    list(), vb = FALSE),
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -94,6 +96,13 @@ attempts.}
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit – for debugging}
 
 \item{ctStanFitArgs}{list of arguments passed forward to ctStanFit except datalong, ctstanmodel, cores & verbose  (default=NULL)}
+
+\item{backend}{Estimation backend used for complete-model refits. Stan is
+the default. Julia is currently available for the \code{ctmaFitFit}
+branch and ML estimation only.}
+
+\item{backendArgs}{Named list of controls for the selected backend. Do not
+supply this together with \code{CoTiMAStanctArgs}.}
 }
 \value{
 Returns a list with \code{bestFit}, the successful fit with the

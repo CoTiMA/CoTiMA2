@@ -154,10 +154,40 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
 .ctmaOptimizeFitValue <- function(fit) {
   if (!is.list(fit) || inherits(fit, "condition")) return(NA_real_)
   value <- fit$summary$minus2ll
+  if (is.null(value) && inherits(fit, "ctmaJuliaFit")) {
+    loglik <- if (!is.null(fit$optimization)) {
+      fit$optimization$loglik
+    } else {
+      fit$likelihood$julia
+    }
+    value <- -2 * loglik
+  }
   if (!is.numeric(value) || length(value) != 1L || !is.finite(value)) {
     return(NA_real_)
   }
   as.numeric(value)
+}
+
+.ctmaFinalizeJuliaCoTiMAFit <- function(fit, setup, cotima_call,
+    backend_args) {
+  loglik <- if (!is.null(fit$optimization)) {
+    fit$optimization$loglik
+  } else {
+    fit$likelihood$julia
+  }
+  n_parameters <- length(fit$coefficients$raw)
+  fit$summary <- list(
+    minus2ll = -2 * as.numeric(loglik),
+    loglik = as.numeric(loglik),
+    n.parameters = n_parameters
+  )
+  fit$argumentList <- setup$argumentList
+  fit$argumentList$backend <- "julia"
+  fit$argumentList$backendArgs <- backend_args
+  fit$argumentList$fit <- TRUE
+  fit$cotima_call <- cotima_call
+  fit$backend <- "julia"
+  fit
 }
 
 .ctmaResolveFitBackend <- function(backend = c("stan", "julia"),

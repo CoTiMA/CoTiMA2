@@ -40,6 +40,11 @@
 #' @param scaleTime scale time (interval) - sometimes desirable to improve fitting
 #' @param shuffleStudyList (default = FALSE) randomly re-arranges studies in primaryStudyList. We encountered a few cases where this mattered, even though it should not. Only works if ctmaFit is optimized.
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit – for debugging
+#' @param backend Estimation backend used for complete-model refits. Stan is
+#'   the default. Julia is currently available for the \code{ctmaFitFit}
+#'   branch and ML estimation only.
+#' @param backendArgs Named list of controls for the selected backend. Do not
+#'   supply this together with \code{CoTiMAStanctArgs}.
 #'
 #' @importFrom foreach %dopar%
 #' @importFrom RPushbullet pbPost
@@ -117,9 +122,50 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                                gendata = FALSE,
                                                control = list(),
                                                #verbose = 0,
-                                               vb = FALSE)
+                                               vb = FALSE),
+                            backend=c("stan", "julia"),
+                            backendArgs=list()
 )
 {
+
+  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  if (identical(backend, "julia")) {
+    if (is.null(ctmaFitFit) || !is.null(ctStanFit)) {
+      stop(
+        "backend = 'julia' currently requires the complete-model ",
+        "'ctmaFitFit' branch of ctmaOptimizeFit().",
+        call. = FALSE
+      )
+    }
+    if (!isTRUE(ctmaFitFit$argumentList$optimize)) {
+      stop(
+        "ctmaOptimizeFit() currently supports backend = 'julia' only for ML estimation.",
+        call. = FALSE
+      )
+    }
+    resolved_optimize_backend <- .ctmaResolveFitBackend(
+      backend = "julia",
+      backendArgs = backendArgs,
+      legacy_stan_args = CoTiMAStanctArgs,
+      estimation = "ML"
+    )
+    backendArgs <- resolved_optimize_backend$backend_args
+    CoTiMAStanctArgs <- NULL
+  } else if (length(backendArgs)) {
+    if (!is.null(CoTiMAStanctArgs)) {
+      stop(
+        "Supply either 'CoTiMAStanctArgs' or 'backendArgs', not both. ",
+        "Use backendArgs for new code.",
+        call. = FALSE
+      )
+    }
+    .ctmaValidateBackendArgs(
+      ctmaBackendDefaults(backend = "stan"),
+      backendArgs,
+      path = "backendArgs"
+    )
+    CoTiMAStanctArgs <- backendArgs
+  }
 
   #######################################################################################################################
   ################################################# Check Cores To Use ##################################################
@@ -151,7 +197,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
 
     # Resolve stored and user-supplied Stan controls by name. User overrides
     # take precedence over settings inherited from the supplied CoTiMA fit.
-    if (is.null(ctStanFit)) {
+    if (is.null(ctStanFit) && identical(backend, "stan")) {
       inherited_stan_args <- NULL
       if (!is.null(ctmaFitFit)) {
         inherited_stan_args <- ctmaFitFit$argumentList$CoTiMAStanctArgs
@@ -448,8 +494,9 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
 
   # ctmaFitFit
   if (!(is.null(ctmaFitFit))) {
-    if (!(is(ctmaFitFit, "CoTiMAFit"))) {
-      ErrorMsg <- "The ctmaFitFit object provided is not of class CoTiMAFit. Probably it was not created with ctmaFit."
+    if (!(is(ctmaFitFit, "CoTiMAFit")) &&
+        !inherits(ctmaFitFit, "ctmaJuliaFit")) {
+      ErrorMsg <- "The ctmaFitFit object must have been created with ctmaFit()."
       stop(ErrorMsg)
     }
 
@@ -655,7 +702,9 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        ind.mod.type=ctmaFitFit$argumentList$ind.mod.type,
                        cint=ctmaFitFit$argumentList$cint,
                        indVaryingT0=ctmaFitFit$argumentList$indVaryingT0,
-                       fit=ctmaFitFit$argumentList$fit
+                       fit=ctmaFitFit$argumentList$fit,
+                       backend=backend,
+                       backendArgs=if (identical(backend, "julia")) backendArgs else list()
         ),
         warning = function(w) {warns[[i]] <<- w}),
         error = function(e) {
@@ -808,7 +857,11 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     }
     resultsSummary <- "Available only if CoTiMA models are optimized."
   } else if (exists("bestFit", inherits = FALSE)) {
-    resultsSummary <- bestFit$studyFitList[[1]]$resultsSummary
+    resultsSummary <- if (inherits(bestFit, "ctmaJuliaFit")) {
+      "Julia backend fit; use summary(bestFit) for transformed results."
+    } else {
+      bestFit$studyFitList[[1]]$resultsSummary
+    }
   }
 
   if (!exists("bestFit", inherits = FALSE)) {
@@ -826,7 +879,15 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   }
 
   if (is.null(ctStanFit)) {
-    result_used_studies <- ctmaFitToPrep(bestFit, reUseEmprawData = TRUE)
+    fit_for_prep <- if (inherits(bestFit, "ctmaJuliaFit")) {
+      bestFit$source_object
+    } else {
+      bestFit
+    }
+    result_used_studies <- ctmaFitToPrep(
+      fit_for_prep,
+      reUseEmprawData = TRUE
+    )
     result_time_scale <- bestFit$argumentList$scaleTime
     result_scale_ti <- bestFit$argumentList$scaleTI
   } else {
@@ -849,7 +910,9 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                   all_randomRI = all_randomRI,
                   all_usedStudyList = all_usedStudyList,
                   warnings = warns,
-                  errors = errs
+                  errors = errs,
+                  backend = backend,
+                  backendArgs = if (identical(backend, "julia")) backendArgs else CoTiMAStanctArgs
 
   )
   class(results) <- "CoTiMAFit"
