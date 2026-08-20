@@ -980,7 +980,7 @@ ctmaFit <- function(
   if ( (randomIntercepts != "CINT") & (randomIntercepts != "MANIFEST") ) {
     if (indVarying == 'CINT') {
       print(paste0("#################################################################################"))
-      print(paste0("######## Just a note: Individually varying intercepts model requested.  #########"))
+      print(paste0("######## Note: Individually varying intercepts model requested.  #########"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))
@@ -1001,7 +1001,7 @@ ctmaFit <- function(
     if (indVarying == "MANIFEST")  {
 
       print(paste0("#################################################################################"))
-      print(paste0("###### Just a note: Individually varying manifest means model requested.  #######"))
+      print(paste0("###### Note: Individually varying manifest means model requested.  #######"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))

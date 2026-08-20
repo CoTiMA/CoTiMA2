@@ -972,7 +972,7 @@ ctmaInit <- function(
           # CHD 27.11.2024
           if (indVarying == 'CINT')  {
             print(paste0("#################################################################################"))
-            print(paste0("######## Just a note: Individually varying intercepts model requested.  #########"))
+            print(paste0("######## Note: Individually varying intercepts model requested.  #########"))
             print(paste0("#################################################################################"))
 
             # CHD 2.12.2024
@@ -993,7 +993,7 @@ ctmaInit <- function(
           # CHD 27.11.2024
           if (indVarying == "MANIFEST") {
             print(paste0("#################################################################################"))
-            print(paste0("###### Just a note: Individually varying manifest means model requested.  #######"))
+            print(paste0("###### Note: Individually varying manifest means model requested.  #######"))
             print(paste0("#################################################################################"))
 
             # CHD 2.12.2024

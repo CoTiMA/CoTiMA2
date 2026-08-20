@@ -19,7 +19,7 @@
 # study. Person-level random effects remain a separate level.
 
 .ctma_print_message <- function(text, width = 81L,
-    prefix = "Just a note: ") {
+    prefix = "Note: ") {
   width <- max(40L, as.integer(width)[1L])
   left <- "######## "
   right <- " #########"

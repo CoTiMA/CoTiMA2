@@ -235,7 +235,7 @@ ctmaAllInvFit <- function(
     # CHD 9.6.2023
     if ( (indVarying == 'CINT') & (indVaryingT0 == TRUE) ) {
       print(paste0("#################################################################################"))
-      print(paste0("######## Just a note: Individually varying intercepts model requested.  #########"))
+      print(paste0("######## Note: Individually varying intercepts model requested.  #########"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))
@@ -256,7 +256,7 @@ ctmaAllInvFit <- function(
 
     if ( (indVarying == 'CINT') & (indVaryingT0 == FALSE) ) {
       print(paste0("#################################################################################"))
-      print(paste0("######## Just a note: Individually varying intercepts model requested.  #########"))
+      print(paste0("######## Note: Individually varying intercepts model requested.  #########"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))
@@ -276,7 +276,7 @@ ctmaAllInvFit <- function(
 
     if ( (indVarying == TRUE) & (indVaryingT0 == TRUE) ) {
       print(paste0("#################################################################################"))
-      print(paste0("###### Just a note: Individually varying manifest means model requested.  #######"))
+      print(paste0("###### Note: Individually varying manifest means model requested.  #######"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))
@@ -295,7 +295,7 @@ ctmaAllInvFit <- function(
 
     if ( (indVarying == TRUE) & (indVaryingT0 == FALSE) ) {
       print(paste0("#################################################################################"))
-      print(paste0("###### Just a note: Individually varying manifest means model requested.  #######"))
+      print(paste0("###### Note: Individually varying manifest means model requested.  #######"))
       print(paste0("#################################################################################"))
 
       print(paste0("#################################################################################"))
