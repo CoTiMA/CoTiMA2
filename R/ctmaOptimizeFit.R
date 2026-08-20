@@ -702,7 +702,9 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        ind.mod.type=ctmaFitFit$argumentList$ind.mod.type,
                        cint=ctmaFitFit$argumentList$cint,
                        indVaryingT0=ctmaFitFit$argumentList$indVaryingT0,
-                       fit=ctmaFitFit$argumentList$fit,
+                       # ctmaOptimizeFit() always performs complete refits,
+                       # including when ctmaFitFit is a fit=FALSE template.
+                       fit=TRUE,
                        backend=backend,
                        backendArgs=if (identical(backend, "julia")) backendArgs else list()
         ),

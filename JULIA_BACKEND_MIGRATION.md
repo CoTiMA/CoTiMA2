@@ -42,3 +42,8 @@ Package tests use a small stored routing fixture and mocked dispatch so routine
 checks do not initialize Julia or compile a model. Real Julia ML and Bayesian
 smoke tests remain explicit release checks because they depend on a working
 external Julia installation and take substantially longer.
+
+The first real `ctmaOptimizeFit()` Julia ML smoke test used an eight-study,
+52-parameter model with two outer refits. Both attempts converged to
+`minus2ll = 5404.758`; the selected fit had a maximum absolute raw gradient of
+0.0006975 and retained the Julia backend metadata and all eight source studies.
