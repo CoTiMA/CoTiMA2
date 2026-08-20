@@ -50,6 +50,34 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   resolved
 }
 
+# Resolve ctmaFit() controls while retaining its historical defaults. Unlike
+# optimize and priors, verbose can be inherited from CoTiMAStanctArgs when the
+# direct ctmaFit() argument was omitted; `verbose_was_supplied` preserves that
+# distinction without changing the public function signature.
+.ctmaResolveFitStanArgs <- function(overrides = NULL, optimize = TRUE,
+    priors = FALSE, finishsamples = NULL, chains = NULL, iter = NULL,
+    verbose = 0, verbose_was_supplied = FALSE) {
+  resolved <- .ctmaMergeBackendArgs(
+    ctmaBackendDefaults(backend = "stan"),
+    overrides,
+    path = "CoTiMAStanctArgs"
+  )
+
+  direct <- list(
+    optimize = optimize,
+    priors = priors,
+    chains = chains,
+    iter = iter
+  )
+  supplied <- !vapply(direct, is.null, logical(1L))
+  resolved[names(direct)[supplied]] <- direct[supplied]
+  if (isTRUE(verbose_was_supplied)) resolved$verbose <- verbose
+  if (!is.null(finishsamples)) {
+    resolved$optimcontrol$finishsamples <- finishsamples
+  }
+  resolved
+}
+
 ctmaSelectBestParallelFit <- function(attempts) {
   successful <- vapply(attempts, function(x) isTRUE(x$ok), logical(1))
 

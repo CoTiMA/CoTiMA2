@@ -8,7 +8,7 @@ builds. Stan remains the default backend throughout the migration.
 | Stage | Scope | Status |
 |---|---|---|
 | 1 | Add backend defaults, recursive validation, merge helpers, and tests without changing fitting behavior | Complete |
-| 2 | Replace fragile legacy Stan-list merges internally, one function at a time | In progress: `ctmaInit()` complete |
+| 2 | Replace fragile legacy Stan-list merges internally, one function at a time | In progress: `ctmaInit()` and `ctmaFit()` complete |
 | 3 | Add `backend` and `backendArgs` to `ctmaFit()` while retaining all old calls | Pending |
 | 4 | Route validated Julia ML/Bayesian estimation through `ctmaFit()` | Pending |
 | 5 | Repair `ctmaOptimizeFit()` workflow issues and make it backend-aware | Pending |

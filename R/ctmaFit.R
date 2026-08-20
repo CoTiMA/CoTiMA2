@@ -233,7 +233,16 @@ ctmaFit <- function(
       if (is.null(cint)) cint <- 0
       if (is.null(fit)) fit <- TRUE
       if (is.null(WEC)) WEC <- FALSE
-      if (is.null(CoTiMAStanctArgs)) CoTiMAStanctArgs <- CoTiMA::CoTiMAStanctArgs
+      CoTiMAStanctArgs <- .ctmaResolveFitStanArgs(
+        overrides = CoTiMAStanctArgs,
+        optimize = optimize,
+        priors = priors,
+        finishsamples = finishsamples,
+        chains = chains,
+        iter = iter,
+        verbose = verbose,
+        verbose_was_supplied = !missing(verbose)
+      )
     }
 
     {
@@ -265,6 +274,7 @@ ctmaFit <- function(
 
     # adapt display of information during model fit
     if (is.null(verbose) & (optimize == FALSE) )  {verbose <- 0} else {verbose <- CoTiMAStanctArgs$verbose}
+    if (!is.null(verbose)) CoTiMAStanctArgs$verbose <- verbose
 
     # check if fit object is specified
     if (is.null(ctmaInitFit)){
@@ -290,16 +300,6 @@ ctmaFit <- function(
         message(Msg)
         scaleTI <- FALSE
       }
-    }
-
-    { # set fitting params
-
-      if (!(is.null(optimize))) CoTiMAStanctArgs$optimize <- optimize
-      if (!(is.null(priors))) CoTiMAStanctArgs$priors <- priors # added Aug 2023
-      if (!(is.null(finishsamples))) CoTiMAStanctArgs$optimcontrol$finishsamples <- finishsamples
-      if (!(is.null(chains))) CoTiMAStanctArgs$chains <- chains
-      if (!(is.null(iter))) CoTiMAStanctArgs$iter <- iter
-      if (!(is.null(verbose))) CoTiMAStanctArgs$verbose <- verbose
     }
 
     { # check of catsToCompare or catsToCompare is used only with mod.type = "cat"

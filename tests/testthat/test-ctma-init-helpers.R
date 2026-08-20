@@ -96,6 +96,78 @@ test_that("ctmaInit backend merge detects misordered and unknown controls", {
   )
 })
 
+test_that("ctmaFit resolves partial legacy Stan controls recursively", {
+  result <- CoTiMA:::.ctmaResolveFitStanArgs(
+    overrides = list(
+      verbose = 2,
+      control = list(adapt_delta = 0.95),
+      optimcontrol = list(finishsamples = 300)
+    )
+  )
+
+  expect_identical(result$verbose, 2)
+  expect_identical(result$control$adapt_delta, 0.95)
+  expect_identical(
+    result$control$max_treedepth,
+    CoTiMAStanctArgs$control$max_treedepth
+  )
+  expect_identical(result$optimcontrol$finishsamples, 300)
+  expect_identical(
+    result$optimcontrol$carefulfit,
+    CoTiMAStanctArgs$optimcontrol$carefulfit
+  )
+})
+
+test_that("ctmaFit direct controls have defined precedence", {
+  inherited <- CoTiMA:::.ctmaResolveFitStanArgs(
+    overrides = list(verbose = 2, iter = 400, priors = TRUE),
+    optimize = TRUE,
+    priors = FALSE,
+    iter = 900,
+    verbose_was_supplied = FALSE
+  )
+  expect_identical(inherited$verbose, 2)
+  expect_identical(inherited$iter, 900)
+  expect_false(inherited$priors)
+
+  explicit <- CoTiMA:::.ctmaResolveFitStanArgs(
+    overrides = list(verbose = 2),
+    verbose = 0,
+    verbose_was_supplied = TRUE
+  )
+  expect_identical(explicit$verbose, 0)
+})
+
+test_that("ctmaFit rejects unknown legacy Stan controls", {
+  expect_error(
+    CoTiMA:::.ctmaResolveFitStanArgs(list(not_a_control = TRUE)),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+  expect_error(
+    CoTiMA:::.ctmaResolveFitStanArgs(list(
+      control = list(not_a_control = TRUE)
+    )),
+    "Unknown CoTiMAStanctArgs\\$control: not_a_control"
+  )
+})
+
+test_that("ctmaFit applies backend validation before fitting", {
+  expect_error(
+    ctmaFit(
+      ctmaInitFit = NULL,
+      CoTiMAStanctArgs = list(control = list(adapt_delta = 0.9))
+    ),
+    "A fitted CoTiMA object has to be supplied"
+  )
+  expect_error(
+    ctmaFit(
+      ctmaInitFit = NULL,
+      CoTiMAStanctArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown CoTiMAStanctArgs: not_a_control"
+  )
+})
+
 test_that("parallel fit selection uses the greatest finite log-posterior", {
   attempt <- function(value) {
     list(
