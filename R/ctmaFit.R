@@ -12,7 +12,8 @@
 #' @param cint default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')
 #' @param cluster  vector with cluster variables (e.g., countries). Has to be set up carfully. Will be included in \code{\link{ctmaPrep}} in later 'CoTiMA' versions.
 #' @param coresToUse if negative, the value is subtracted from available cores, else value = cores to use
-#' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function
+#' @param CoTiMAStanctArgs legacy named list of Stan/ctsem controls. Retained
+#'   for compatibility; use \code{backendArgs} in new code. Do not supply both.
 #' @param ctmaInitFit object to which all single ctsem fits of primary studies has been assigned to (i.e., what has been returned by \code{\link{ctmaInit}})
 #' @param customPar logical. If set TRUE leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)
 #' @param digits Number of digits used for rounding (in outputs)
@@ -54,6 +55,11 @@
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit – for debugging
 #' @param WEC (default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
 #' @param WECnt (default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
+#' @param backend estimation backend. \code{"stan"} remains the default.
+#'   The Julia route is introduced separately after package-level validation.
+#' @param backendArgs named backend-specific controls. With the default Stan
+#'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
+#'   completed from \code{ctmaBackendDefaults("stan")}.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores
@@ -160,9 +166,19 @@ ctmaFit <- function(
     useSampleFraction=NULL,
     verbose=0,
     WEC=FALSE,
-    WECnt=TRUE
+    WECnt=TRUE,
+    backend=c("stan", "julia"),
+    backendArgs=list()
 )
 {  # begin function definition (until end of file)
+
+  backend_resolution <- .ctmaResolveFitBackend(
+    backend = backend,
+    backendArgs = backendArgs,
+    legacy_stan_args = CoTiMAStanctArgs
+  )
+  backend <- backend_resolution$backend
+  CoTiMAStanctArgs <- backend_resolution$stan_args
 
   catchWarnings <- FALSE
   if (catchWarnings) { # function definition to handle possible errors and warnings during fitting
@@ -2061,6 +2077,8 @@ ctmaFit <- function(
                         WEC=WEC,
                         randomIntercepts=randomInterceptsSettings,
                         CoTiMAStanctArgs=CoTiMAStanctArgs,
+                        backend=backend,
+                        backendArgs=CoTiMAStanctArgs,
                         T0var=T0var,
                         priors=priors,
                         binaries=binaries,
@@ -2113,7 +2131,9 @@ ctmaFit <- function(
                       argumentList = list(
                         fit = FALSE,
                         sameInitialTimes = sameInitialTimes,
-                        CoTiMAStanctArgs = CoTiMAStanctArgs
+                        CoTiMAStanctArgs = CoTiMAStanctArgs,
+                        backend = backend,
+                        backendArgs = CoTiMAStanctArgs
                       ))
     #} else {
     #  results <- list(summary = list(message=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),

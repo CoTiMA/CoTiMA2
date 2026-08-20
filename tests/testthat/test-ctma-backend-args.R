@@ -43,6 +43,18 @@ test_that("backend overrides merge recursively and by name", {
   expect_identical(result$control$max_treedepth, 12L)
 })
 
+test_that("empty top-level and nested backend lists are valid", {
+  defaults <- list(control = list(), iter = 1000L)
+  expect_identical(
+    CoTiMA:::.ctmaMergeBackendArgs(defaults, list()),
+    defaults
+  )
+  expect_identical(
+    CoTiMA:::.ctmaMergeBackendArgs(defaults, list(control = list())),
+    defaults
+  )
+})
+
 test_that("backend overrides reject unnamed and unknown controls", {
   defaults <- list(iter = 1000L, control = list(adapt_delta = 0.8))
 

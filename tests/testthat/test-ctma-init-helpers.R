@@ -168,6 +168,75 @@ test_that("ctmaFit applies backend validation before fitting", {
   )
 })
 
+test_that("ctmaFit keeps Stan as its default backend", {
+  expect_identical(eval(formals(ctmaFit)$backend), c("stan", "julia"))
+
+  resolved <- CoTiMA:::.ctmaResolveFitBackend()
+  expect_identical(resolved$backend, "stan")
+  expect_null(resolved$stan_args)
+})
+
+test_that("ctmaFit accepts either new or legacy Stan controls", {
+  modern <- CoTiMA:::.ctmaResolveFitBackend(
+    backendArgs = list(control = list(adapt_delta = 0.9))
+  )
+  legacy <- CoTiMA:::.ctmaResolveFitBackend(
+    legacy_stan_args = list(control = list(adapt_delta = 0.8))
+  )
+  expect_identical(modern$stan_args$control$adapt_delta, 0.9)
+  expect_identical(legacy$stan_args$control$adapt_delta, 0.8)
+
+  expect_error(
+    CoTiMA:::.ctmaResolveFitBackend(
+      backendArgs = list(iter = 500),
+      legacy_stan_args = list(iter = 1000)
+    ),
+    "either 'CoTiMAStanctArgs' or 'backendArgs'"
+  )
+  expect_error(
+    CoTiMA:::.ctmaResolveFitBackend(
+      backendArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown backendArgs: not_a_control"
+  )
+})
+
+test_that("ctmaFit reports the staged Julia routing boundary", {
+  expect_error(
+    CoTiMA:::.ctmaResolveFitBackend("julia"),
+    "not yet routed through ctmaFit"
+  )
+  expect_error(
+    CoTiMA:::.ctmaResolveFitBackend(
+      "julia", legacy_stan_args = list(iter = 1000)
+    ),
+    "cannot be used with backend = 'julia'"
+  )
+})
+
+test_that("ctmaFit backendArgs work through the public entry point", {
+  expect_error(
+    ctmaFit(
+      ctmaInitFit = NULL,
+      backend = "stan",
+      backendArgs = list(control = list(adapt_delta = 0.9))
+    ),
+    "A fitted CoTiMA object has to be supplied"
+  )
+  expect_error(
+    ctmaFit(
+      ctmaInitFit = NULL,
+      CoTiMAStanctArgs = list(iter = 1000),
+      backendArgs = list(iter = 500)
+    ),
+    "either 'CoTiMAStanctArgs' or 'backendArgs'"
+  )
+  expect_error(
+    ctmaFit(ctmaInitFit = NULL, backend = "julia"),
+    "ctmaJuliaFit"
+  )
+})
+
 test_that("ctmaAllInvFit resolves partial nested Stan controls", {
   result <- CoTiMA:::.ctmaResolveAllInvStanArgs(
     overrides = list(

@@ -55,7 +55,9 @@ ctmaFit(
   useSampleFraction = NULL,
   verbose = 0,
   WEC = FALSE,
-  WECnt = TRUE
+  WECnt = TRUE,
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -77,7 +79,8 @@ ctmaFit(
 
 \item{coresToUse}{if negative, the value is subtracted from available cores, else value = cores to use}
 
-\item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
+\item{CoTiMAStanctArgs}{legacy named list of Stan/ctsem controls. Retained
+for compatibility; use \code{backendArgs} in new code. Do not supply both.}
 
 \item{ctmaInitFit}{object to which all single ctsem fits of primary studies has been assigned to (i.e., what has been returned by \code{\link{ctmaInit}})}
 
@@ -160,6 +163,13 @@ ctmaFit(
 \item{WEC}{(default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
 
 \item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
+
+\item{backend}{estimation backend. \code{"stan"} remains the default.
+The Julia route is introduced separately after package-level validation.}
+
+\item{backendArgs}{named backend-specific controls. With the default Stan
+backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
+completed from \code{ctmaBackendDefaults("stan")}.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,

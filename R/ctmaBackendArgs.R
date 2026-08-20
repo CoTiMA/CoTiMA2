@@ -129,8 +129,9 @@ ctmaBackendDefaults <- function(
 .ctmaValidateBackendArgs <- function(defaults, overrides = NULL,
     path = "backendArgs") {
   if (is.null(overrides)) return(invisible(TRUE))
-  if (!is.list(overrides) || is.null(names(overrides)) ||
-      anyNA(names(overrides)) || any(names(overrides) == "")) {
+  if (!is.list(overrides) || (length(overrides) &&
+      (is.null(names(overrides)) || anyNA(names(overrides)) ||
+        any(names(overrides) == "")))) {
     stop(path, " must be a fully named list.", call. = FALSE)
   }
 
