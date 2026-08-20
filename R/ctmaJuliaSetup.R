@@ -7,7 +7,7 @@
 #' processes; this function does not initialize JuliaCall in the current R
 #' session. Restart R after setup before requesting a different Julia thread
 #' count or after a failed JuliaCall initialization. On Linux, Julia setup
-#' subprocesses do not inherit code{LD_LIBRARY_PATH} or code{LD_PRELOAD};
+#' subprocesses do not inherit \code{LD_LIBRARY_PATH} or \code{LD_PRELOAD};
 #' this prevents R, Java, or RStudio Server libraries from shadowing Julia's
 #' own native dependencies.
 #'
