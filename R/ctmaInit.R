@@ -150,6 +150,10 @@ ctmaInit <- function(
   backend <- backend_resolution$backend
   resolved_backend_args <- backend_resolution$backend_args
   CoTiMAStanctArgs <- backend_resolution$stan_args
+  if (identical(backend, "julia") &&
+      !"julia_threads" %in% names(backendArgs)) {
+    resolved_backend_args$julia_threads <- as.integer(coresToUse)[1L]
+  }
   if (identical(backend, "julia") && doPar > 1L) {
     stop(
       "ctmaInit(backend='julia') currently requires doPar = 1. Use Julia's ",
@@ -238,11 +242,26 @@ ctmaInit <- function(
     if ( (indVarying == "Manifest") | (indVarying == "manifest")) indVarying <- "MANIFEST"
     if (indVarying == TRUE) indVarying <- "MANIFEST"
     #
-    randomInterceptsSettings <- randomIntercepts
-    #
     if ( (randomIntercepts == 'cint')  | (randomIntercepts == 'Cint')) randomIntercepts <- "CINT"
     if ( (randomIntercepts == "Manifest") | (randomIntercepts == "manifest") ) randomIntercepts <- "MANIFEST"
     if (randomIntercepts == TRUE)  randomIntercepts <- "MANIFEST"
+    # For separately fitted primary studies, CoTiMA's pseudo-process random
+    # intercept representation supplies the Julia-compatible formulation of
+    # individually varying manifest means or continuous-time intercepts. This
+    # translation is intentionally confined to ctmaInit(); in pooled models
+    # the two options imply different covariance structures across studies.
+    iv_resolution <- .ctmaInitJuliaIndividualVariation(
+      indVarying = indVarying,
+      randomIntercepts = randomIntercepts,
+      backend = backend,
+      backendArgs = backendArgs,
+      resolved_backend_args = resolved_backend_args
+    )
+    indVarying <- iv_resolution$indVarying
+    randomIntercepts <- iv_resolution$randomIntercepts
+    resolved_backend_args <- iv_resolution$backend_args
+    randomInterceptsSettings <- randomIntercepts
+    #
     if ((randomIntercepts == "MANIFEST") | (randomIntercepts == "CINT")) {
       indVarying <- FALSE
     }
@@ -1085,7 +1104,7 @@ ctmaInit <- function(
           DIFFUSIONtmp <- rbind(cbind(DIFFUSIONtmp, nullMat),
                                 cbind(nullMat, nullMat)); DIFFUSIONtmp
           DRIFTtmp <- matrix(driftParamsTmp, nrow=n.latent, ncol=n.latent); DRIFTtmp
-          DRIFTtmp <- rbind(cbind(DRIFTtmp, diag(2)),
+          DRIFTtmp <- rbind(cbind(DRIFTtmp, diag(n.latent)),
                             cbind(nullMat, nullMat)); DRIFTtmp
           if (randomIntercepts == "MANIFEST") {
             DRIFTtmp <- matrix(driftParamsTmp, nrow=n.latent, ncol=n.latent); DRIFTtmp
@@ -1521,7 +1540,7 @@ ctmaInit <- function(
           model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "Mean"]); model_T0var_Coef[[i]]
           if (randomInterceptsSettings != FALSE) {
             model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "Mean"]);  model_T0var_Coef[[i]]
-            model_T0var_Coef[[i]] <- c(matrix(model_T0var_Coef[[i]], n.latent^2, n.latent^2)[1:n.latent, 1:n.latent]); model_T0var_Coef[[i]]
+            model_T0var_Coef[[i]] <- c(matrix(model_T0var_Coef[[i]], n.latent * 2L, n.latent * 2L)[1:n.latent, 1:n.latent]); model_T0var_Coef[[i]]
             names(model_T0var_Coef[[i]]) <- T0covNames
           } else {
             if (length(model_T0var_Coef[[i]]) != n.latent^2) {
@@ -1551,7 +1570,7 @@ ctmaInit <- function(
           #if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") ) {
           if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") | (randomIntercepts == "CINT") ) {
             model_T0var_SE[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "sd"])
-            model_T0var_SE[[i]] <- c(matrix(model_T0var_SE[[i]], n.latent^2, n.latent^2)[1:n.latent, 1:n.latent])
+            model_T0var_SE[[i]] <- c(matrix(model_T0var_SE[[i]], n.latent * 2L, n.latent * 2L)[1:n.latent, 1:n.latent])
             names(model_T0var_SE[[i]]) <- T0covNames
           }
         }
@@ -1582,9 +1601,9 @@ ctmaInit <- function(
           #if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") )  {
           if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") | (randomIntercepts == "CINT") )  {
             tmp1 <- resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "2.5%"]; tmp1
-            tmp1 <- c(matrix(tmp1, n.latent^2, n.latent^2)[1:n.latent, 1:n.latent])
+            tmp1 <- c(matrix(tmp1, n.latent * 2L, n.latent * 2L)[1:n.latent, 1:n.latent])
             tmp2 <- resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "97.5%"]; tmp2
-            tmp2 <- c(matrix(tmp2, n.latent^2, n.latent^2)[1:n.latent, 1:n.latent])
+            tmp2 <- c(matrix(tmp2, n.latent * 2L, n.latent * 2L)[1:n.latent, 1:n.latent])
             model_T0var_CI[[i]] <- c(rbind(tmp1, tmp2)); model_T0var_CI[[i]]
             tmp3 <- c(rbind(paste0(T0covNames, "LL"),
                             paste0(T0covNames, "UL"))); tmp3
@@ -1639,7 +1658,18 @@ ctmaInit <- function(
         }
 
         if ( (randomIntercepts == "CINT") | (randomIntercepts == "MANIFEST")  ) {
-          e <- ctsem::ctExtract(studyFit[[i]])
+          extraction_fit <- if (inherits(studyFit[[i]], "ctmaJuliaFit")) {
+            studyFit[[i]]$ctsem_fit
+          } else {
+            studyFit[[i]]
+          }
+          if (is.null(extraction_fit)) {
+            stop(
+              "The Julia fit has no retained ctsem transformation object for random-intercept extraction.",
+              call. = FALSE
+            )
+          }
+          e <- ctsem::ctExtract(extraction_fit)
           ctsem::ctCollapse(e$pop_T0cov, 1, mean)
           model_popcov_m[[i]] <- round(ctsem::ctCollapse(e$pop_T0cov, 1, mean), digits = digits)
           model_popcov_sd[[i]] <- round(ctsem::ctCollapse(e$pop_T0cov, 1, stats::sd), digits = digits)

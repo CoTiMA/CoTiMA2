@@ -1,3 +1,15 @@
+# CoTiMA2 0.9.94
+
+- Maps `indVarying = "MANIFEST"` and `indVarying = "CINT"` to CoTiMA's
+  Julia-compatible latent pseudo-process random-intercept formulation within
+  `ctmaInit()` only. When not overridden in `backendArgs`, `coresToUse` now
+  supplies `julia_threads` for this workflow. Julia ML single-study fits use
+  5,000 optimizer iterations; automatically translated pseudo-process fits use
+  a 0.05 raw-gradient tolerance unless the user supplies another value.
+- Fixes pseudo-process construction for one or any other number of latent
+  variables and retains a ctsem transformation object so Julia fits can feed
+  CoTiMA's random-intercept covariance summaries.
+
 # CoTiMA2 0.9.93
 
 - Adds the experimental Julia ML and Bayesian backend route to `ctmaInit()`,

@@ -1230,7 +1230,8 @@ ctAddJuliaSamples <- function(
     transformed <- list(
       draws = fit$transformed_draws,
       parameters = fit$coefficients$transformed,
-      summary = fit$ctsem_summary
+      summary = fit$ctsem_summary,
+      ctsem_fit = fit$ctsem_fit
     )
   } else if (is.null(fit$bayes)) {
     transformed <- .ctmaJuliaTransformSummary(
@@ -1285,6 +1286,7 @@ ctAddJuliaSamples <- function(
   )
   fit$transformed_draws <- transformed$draws
   fit$ctsem_summary <- transformed$summary
+  fit$ctsem_fit <- transformed$ctsem_fit
   fit$cotima_summary <- cotima
   fit$coefficients$transformed <- transformed$parameters
   fit$coefficients$population <- transformed$summary$popmeans
@@ -1802,7 +1804,8 @@ print.summary.ctmaJuliaFitStudy <- function(
   list(
     draws = raw_draws,
     parameters = transformed_fit$stanfit$transformedpars,
-    summary = transformed_summary
+    summary = transformed_summary,
+    ctsem_fit = transformed_fit
   )
 }
 

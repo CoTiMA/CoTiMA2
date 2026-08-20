@@ -1,5 +1,41 @@
 # Internal helpers used by ctmaInit().
 
+.ctmaInitJuliaIndividualVariation <- function(
+    indVarying, randomIntercepts, backend, backendArgs,
+    resolved_backend_args, announce = TRUE) {
+  translated <- identical(backend, "julia") &&
+    identical(randomIntercepts, FALSE) &&
+    indVarying %in% c("MANIFEST", "CINT")
+  if (!translated) {
+    return(list(
+      indVarying = indVarying,
+      randomIntercepts = randomIntercepts,
+      backend_args = resolved_backend_args,
+      translated = FALSE
+    ))
+  }
+  randomIntercepts <- indVarying
+  indVarying <- FALSE
+  if (!"gradient_tolerance" %in% names(backendArgs)) {
+    resolved_backend_args$gradient_tolerance <- 0.05
+  }
+  if (isTRUE(announce)) {
+    message(
+      "Note: For ctmaInit(backend='julia'), indVarying='",
+      randomIntercepts,
+      "' is fitted through CoTiMA's equivalent latent pseudo-process ",
+      "random-intercept formulation. This automatic translation applies ",
+      "only to ctmaInit()."
+    )
+  }
+  list(
+    indVarying = indVarying,
+    randomIntercepts = randomIntercepts,
+    backend_args = resolved_backend_args,
+    translated = TRUE
+  )
+}
+
 ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   if (is.null(overrides)) {
     return(defaults)

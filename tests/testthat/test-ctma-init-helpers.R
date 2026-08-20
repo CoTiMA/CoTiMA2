@@ -592,3 +592,28 @@ test_that("parallel fit selection ignores errors and reports total failure", {
     "All parallel fitting attempts failed"
   )
 })
+
+test_that("ctmaInit maps Julia individual variation to pseudo processes only", {
+  defaults <- list(gradient_tolerance = 0.005)
+  manifest <- CoTiMA2:::.ctmaInitJuliaIndividualVariation(
+    "MANIFEST", FALSE, "julia", list(), defaults, announce = FALSE
+  )
+  expect_true(manifest$translated)
+  expect_identical(manifest$indVarying, FALSE)
+  expect_identical(manifest$randomIntercepts, "MANIFEST")
+  expect_identical(manifest$backend_args$gradient_tolerance, 0.05)
+
+  cint <- CoTiMA2:::.ctmaInitJuliaIndividualVariation(
+    "CINT", FALSE, "julia", list(gradient_tolerance = 0.01),
+    list(gradient_tolerance = 0.01), announce = FALSE
+  )
+  expect_identical(cint$randomIntercepts, "CINT")
+  expect_identical(cint$backend_args$gradient_tolerance, 0.01)
+
+  stan <- CoTiMA2:::.ctmaInitJuliaIndividualVariation(
+    "MANIFEST", FALSE, "stan", list(), defaults, announce = FALSE
+  )
+  expect_false(stan$translated)
+  expect_identical(stan$indVarying, "MANIFEST")
+  expect_identical(stan$randomIntercepts, FALSE)
+})

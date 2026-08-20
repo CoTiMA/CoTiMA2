@@ -112,6 +112,10 @@ ctmaBackendDefaults <- function(
       result$uncertainty <- TRUE
       result$transformed <- TRUE
     }
+    if (identical(workflow, "ctmaInit")) {
+      result$maxiters <- 5000L
+      result$gradient_tolerance <- 0.005
+    }
     return(result)
   }
 
