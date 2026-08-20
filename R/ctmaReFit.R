@@ -1294,7 +1294,8 @@ ctmaRePrep <- function(
     chunksize = 7L,
     parallel_chains = 1L,
     threads_per_chain = NULL,
-    nuts_progress = isTRUE(verbose)
+    nuts_progress = isTRUE(verbose),
+    progress_every = 25L
   )
   a <- utils::modifyList(defaults, backendArgs)
   if (!nzchar(a$julia_file)) stop(
@@ -1305,7 +1306,8 @@ ctmaRePrep <- function(
   if (is.null(a$threads_per_chain)) a$threads_per_chain <- a$julia_threads
   a$metric <- match.arg(tolower(a$metric), c("diagonal", "dense"))
   integer_names <- c("julia_threads", "blas_threads", "warmup", "samples",
-    "max_depth", "chunksize", "parallel_chains", "threads_per_chain")
+    "max_depth", "chunksize", "parallel_chains", "threads_per_chain",
+    "progress_every")
   a[integer_names] <- lapply(a[integer_names], function(x) as.integer(x)[1L])
   if (any(vapply(a[integer_names], function(x) is.na(x) || x < 1L,
                  logical(1L)))) stop("Julia integer controls must be positive.")
@@ -1393,12 +1395,13 @@ ctmaRePrep <- function(
       "samples=%d,warmup=%d,chains=%d,target_accept=%.17g,max_depth=%d,",
       "chunksize=%d,seed=%d,init_jitter=%.17g,progress=%s,metric=:%s,",
       "study_re=true,parallel_chains=%d,threads_per_chain=%d,",
-      "blas_threads=%d,source_file=ctma_re_julia_file,",
+      "blas_threads=%d,progress_every=%d,source_file=ctma_re_julia_file,",
       "project_dir=ctma_re_project)"),
     a$samples, a$warmup, as.integer(chains), a$target_accept, a$max_depth,
     a$chunksize, as.integer(seed), as.numeric(init_jitter),
     if (isTRUE(a$nuts_progress)) "true" else "false", a$metric,
-    a$parallel_chains, a$threads_per_chain, a$blas_threads
+    a$parallel_chains, a$threads_per_chain, a$blas_threads,
+    a$progress_every
   )))
   raw <- JuliaCall::julia_eval("ctma_re_bayes.draws")
   dimnames(raw) <- list(
@@ -1501,7 +1504,9 @@ ctmaRePrep <- function(
 #' @param backendArgs Named overrides for Julia controls such as
 #'   \code{julia_threads}, \code{warmup}, \code{samples}, \code{metric},
 #'   \code{target_accept}, \code{max_depth}, \code{parallel_chains}, and
-#'   \code{threads_per_chain}.
+#'   \code{threads_per_chain}. Set \code{nuts_progress = TRUE} to report
+#'   aggregate progress across chains and \code{progress_every} to control
+#'   the number of NUTS iterations between worker updates (default 25).
 #'
 #' @return A \code{"CoTiMAFit"} object with subtype
 #'   \code{"CoTiMAStudyREFit"}. Apply \code{summary()} for population,

@@ -876,7 +876,8 @@ function ctsem_nuts(rawest_r, sd; samples::Integer=1000,
                     chunksize::Integer=7, threaded::Bool=false,
                     seed::Integer=1, init_jitter::Real=0.01,
                     progress::Bool=true, metric::Symbol=:diagonal,
-                    study_re::Bool=false, verbose::Bool=true)
+                    study_re::Bool=false, verbose::Bool=true,
+                    progress_callback=nothing)
     samples > 0 || error("samples must be positive")
     warmup > 0 || error("warmup must be positive")
     chains > 0 || error("chains must be positive")
@@ -927,11 +928,20 @@ function ctsem_nuts(rawest_r, sd; samples::Integer=1000,
         adaptor = AdvancedHMC.StanHMCAdaptor(
             AdvancedHMC.MassMatrixAdaptor(metric_object),
             AdvancedHMC.StepSizeAdaptor(target_accept, integrator))
+        progress_enabled = progress || progress_callback !== nothing
+        progress_update! = if progress_callback === nothing
+            AdvancedHMC.simple_pm_next!
+        else
+            function (pm, stat)
+                progress_callback(stat)
+                progress && AdvancedHMC.simple_pm_next!(pm, stat)
+                nothing
+            end
+        end
         chain_draws, stats = AdvancedHMC.sample(
             rng, hamiltonian, kernel, initial, warmup + samples,
             adaptor, warmup; drop_warmup=false, verbose=verbose,
-            progress=progress,
-            pm_next! = AdvancedHMC.simple_pm_next!)
+            progress=progress_enabled, pm_next! = progress_update!)
         for iteration in 1:warmup
             warmup_divergent[iteration, chain] = stats[iteration].numerical_error
         end
@@ -987,11 +997,13 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
                              study_re::Bool=false,
                              source_file::AbstractString=@__FILE__,
                              project_dir::AbstractString=@__DIR__,
-                             progress::Bool=true)
+                             progress::Bool=true,
+                             progress_every::Integer=25)
     chains > 0 || error("chains must be positive")
     parallel_chains > 0 || error("parallel_chains must be positive")
     threads_per_chain > 0 || error("threads_per_chain must be positive")
     blas_threads > 0 || error("blas_threads must be positive")
+    progress_every > 0 || error("progress_every must be positive")
     workers_requested = min(Int(parallel_chains), Int(chains))
     if workers_requested == 1
         return ctsem_nuts(
@@ -1042,11 +1054,65 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
         end
         available_workers = Channel{Int}(workers_requested)
         foreach(worker -> put!(available_workers, worker), worker_ids)
+        total_iterations = Int(warmup + samples)
+        progress_channel = progress ? Distributed.RemoteChannel(
+            () -> Channel{Any}(max(64, Int(chains) * 8))
+        ) : nothing
+        monitor = nothing
+        if progress
+            monitor = @async begin
+                latest = zeros(Int, Int(chains))
+                completed = falses(Int(chains))
+                completed_chains = 0
+                while completed_chains < chains
+                    message = take!(progress_channel)
+                    chain = Int(message.chain)
+                    if message.kind === :iteration
+                        latest[chain] = max(
+                            latest[chain], Int(message.iteration))
+                    elseif message.kind === :done
+                        latest[chain] = total_iterations
+                        if !completed[chain]
+                            completed[chain] = true
+                            completed_chains += 1
+                        end
+                    end
+                    achieved = sum(latest)
+                    target = Int(chains) * total_iterations
+                    elapsed = max(time() - started, eps(Float64))
+                    rate = achieved / elapsed
+                    eta = rate > 0 ? max(
+                        (target - achieved) / rate, 0.0) : Inf
+                    eta_text = isfinite(eta) ?
+                        string(round(eta; digits=0), " s") : "calculating"
+                    print(
+                        "\rNUTS progress: ", achieved, "/", target,
+                        " iterations (",
+                        round(100 * achieved / target; digits=1), "%); ",
+                        completed_chains, "/", chains,
+                        " chains complete; elapsed ",
+                        round(elapsed; digits=0), " s; ETA ", eta_text, "   "
+                    )
+                    flush(stdout)
+                end
+                println()
+            end
+        end
         tasks = map(collect(1:Int(chains))) do chain
             @async begin
                 worker = take!(available_workers)
                 try
-                    chain_started = time()
+                    callback = progress ? (stat -> begin
+                        iteration = Int(stat.iterations)
+                        if iteration == 1 || iteration == total_iterations ||
+                           iteration % Int(progress_every) == 0
+                            put!(progress_channel, (
+                                kind=:iteration, chain=chain,
+                                iteration=iteration
+                            ))
+                        end
+                        nothing
+                    end) : nothing
                     result = Distributed.remotecall_fetch(
                         Core.eval, worker, Main,
                         :(CtsemJulia.ctsem_nuts(
@@ -1057,19 +1123,20 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
                             threaded=$(threads_per_chain > 1),
                             seed=$(seed + chain - 1), init_jitter=$init_jitter,
                             progress=false, metric=$(QuoteNode(metric)),
-                            study_re=$study_re, verbose=false))
-                    )
-                    progress && println(
-                        "NUTS chain ", chain, "/", chains, " finished in ",
-                        round(time() - chain_started; digits=1), " s."
+                            study_re=$study_re, verbose=false,
+                            progress_callback=$callback))
                     )
                     result
                 finally
+                    progress && put!(progress_channel, (
+                        kind=:done, chain=chain, iteration=total_iterations
+                    ))
                     put!(available_workers, worker)
                 end
             end
         end
         results = fetch.(tasks)
+        progress && wait(monitor)
         progress && println(
             "Finished ", chains, " parallel NUTS chains in ",
             round(time() - started; digits=1), " s."

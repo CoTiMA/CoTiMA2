@@ -383,7 +383,12 @@ warmup than a diagonal metric, especially when there are many parameters.
     warmup and memory.
   \item[\code{init_jitter}] Standard deviation of chain-specific perturbations
     around \code{inits} on the raw scale.
-  \item[\code{nuts_progress}] Show a compact single-line NUTS progress bar.
+  \item[\code{nuts_progress}] Show compact aggregate NUTS progress across all
+    chains, including completed iterations, elapsed time, and an ETA. The line
+    is overwritten at each update where supported by the console.
+  \item[\code{progress_every}] Number of NUTS iterations between progress
+    messages from each parallel worker (default 25). Smaller values update the
+    display more often but add a little inter-process communication.
   \item[\code{parallel_chains}] Number of Bayesian chains run concurrently in
     separate local Julia worker processes.  One retains sequential behavior.
   \item[\code{threads_per_chain}] Subject-likelihood threads assigned to every
