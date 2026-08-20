@@ -1,5 +1,5 @@
 .ctma_package_name <- "CoTiMA2"
-.ctma_package_version <- "0.9.94"
+.ctma_package_version <- "0.9.95"
 
 .ctmaVersionNote <- function() {
   message(
@@ -22,7 +22,12 @@
     } else {
       formatted <- sprintf("%.2f hours", elapsed / 3600)
     }
-    message(function_name, " execution time: ", formatted, ".")
+    message(
+      function_name,
+      " total wall-clock execution time: ",
+      formatted,
+      "."
+    )
     invisible(elapsed)
   }
 }

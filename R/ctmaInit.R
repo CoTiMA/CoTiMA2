@@ -8,7 +8,10 @@
 #' @param chains number of chains to sample, during HMC or post-optimization importance sampling.
 #' @param checkSingleStudyResults Displays estimates from single study ctsem models and waits for user input to continue. Useful to check estimates before they are saved.
 #' @param cint default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')
-#' @param coresToUse if neg., the value is subtracted from available cores, else value = cores to use
+#' @param coresToUse if negative, the value is added to the number of detected
+#'   cores; thus \code{-1} uses all but one core. With the Julia backend this is
+#'   automatically translated into an ML or Bayesian thread allocation unless
+#'   an explicit Julia thread control is supplied in \code{backendArgs}.
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function
 #' @param customPar logical. If set TRUE leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)
 #' @param diff labels for diffusion effects. Have to be either of the character strings of the type "diff_eta1" or "diff_eta2_eta1" (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)
@@ -150,10 +153,6 @@ ctmaInit <- function(
   backend <- backend_resolution$backend
   resolved_backend_args <- backend_resolution$backend_args
   CoTiMAStanctArgs <- backend_resolution$stan_args
-  if (identical(backend, "julia") &&
-      !"julia_threads" %in% names(backendArgs)) {
-    resolved_backend_args$julia_threads <- as.integer(coresToUse)[1L]
-  }
   if (identical(backend, "julia") && doPar > 1L) {
     stop(
       "ctmaInit(backend='julia') currently requires doPar = 1. Use Julia's ",
@@ -346,6 +345,16 @@ ctmaInit <- function(
       coresToUse <- parallel::detectCores() - 1
       Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash.\n"
       message(Msg)
+    }
+
+    if (identical(backend, "julia")) {
+      julia_resources <- .ctmaInitJuliaResources(
+        cores = coresToUse,
+        estimation = requested_estimation,
+        backendArgs = backendArgs,
+        resolved_backend_args = resolved_backend_args
+      )
+      resolved_backend_args <- julia_resources$backend_args
     }
 
     # CHD changed on 19 Sep 2022

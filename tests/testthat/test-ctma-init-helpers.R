@@ -617,3 +617,38 @@ test_that("ctmaInit maps Julia individual variation to pseudo processes only", {
   expect_identical(stan$indVarying, "MANIFEST")
   expect_identical(stan$randomIntercepts, FALSE)
 })
+
+test_that("ctmaInit automatically allocates Julia resources from coresToUse", {
+  ml <- CoTiMA2:::.ctmaInitJuliaResources(
+    63L, "ML", list(),
+    list(multistart = 1L, julia_threads = 1L), announce = FALSE
+  )
+  expect_true(ml$automatic)
+  expect_identical(ml$backend_args$julia_threads, 63L)
+
+  multistart <- CoTiMA2:::.ctmaInitJuliaResources(
+    63L, "ML", list(),
+    list(multistart = 4L, julia_threads = 1L), announce = FALSE
+  )
+  expect_identical(multistart$backend_args$parallel_starts, 4L)
+  expect_identical(multistart$backend_args$threads_per_start, 15L)
+  expect_identical(multistart$backend_args$julia_threads, 63L)
+
+  bayes <- CoTiMA2:::.ctmaInitJuliaResources(
+    63L, "Bayes", list(),
+    list(chains = 4L, julia_threads = 1L), announce = FALSE
+  )
+  expect_identical(bayes$backend_args$parallel_chains, 4L)
+  expect_identical(bayes$backend_args$threads_per_chain, 15L)
+  expect_identical(bayes$backend_args$julia_threads, 1L)
+
+  explicit <- CoTiMA2:::.ctmaInitJuliaResources(
+    63L, "ML", list(threads_per_start = 3L),
+    list(multistart = 4L, julia_threads = 1L,
+         parallel_starts = 1L, threads_per_start = 3L),
+    announce = FALSE
+  )
+  expect_false(explicit$automatic)
+  expect_identical(explicit$backend_args$julia_threads, 1L)
+  expect_identical(explicit$backend_args$parallel_starts, 1L)
+})

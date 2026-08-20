@@ -36,6 +36,66 @@
   )
 }
 
+.ctmaInitJuliaResources <- function(
+    cores, estimation, backendArgs, resolved_backend_args,
+    announce = TRUE) {
+  cores <- suppressWarnings(as.integer(cores)[1L])
+  if (is.na(cores) || cores < 1L) cores <- 1L
+  explicit_controls <- c(
+    "julia_threads", "parallel_starts", "threads_per_start",
+    "parallel_chains", "threads_per_chain"
+  )
+  if (any(explicit_controls %in% names(backendArgs))) {
+    return(list(
+      backend_args = resolved_backend_args,
+      automatic = FALSE,
+      cores = cores
+    ))
+  }
+
+  estimation <- tolower(estimation)
+  if (identical(estimation, "bayes")) {
+    chains <- max(1L, as.integer(resolved_backend_args$chains)[1L])
+    parallel_chains <- min(chains, cores)
+    threads_per_chain <- max(1L, cores %/% parallel_chains)
+    resolved_backend_args$julia_threads <- 1L
+    resolved_backend_args$parallel_chains <- parallel_chains
+    resolved_backend_args$threads_per_chain <- threads_per_chain
+    description <- sprintf(
+      "%d concurrent chain(s) with %d subject thread(s) per chain",
+      parallel_chains, threads_per_chain
+    )
+  } else {
+    starts <- max(1L, as.integer(resolved_backend_args$multistart)[1L])
+    resolved_backend_args$julia_threads <- cores
+    if (starts > 1L) {
+      parallel_starts <- min(starts, cores)
+      threads_per_start <- max(1L, cores %/% parallel_starts)
+      resolved_backend_args$parallel_starts <- parallel_starts
+      resolved_backend_args$threads_per_start <- threads_per_start
+      description <- sprintf(
+        "%d concurrent start(s) with %d subject thread(s) per start; %d main-process threads",
+        parallel_starts, threads_per_start, cores
+      )
+    } else {
+      description <- sprintf("%d Julia subject thread(s)", cores)
+    }
+  }
+  if (isTRUE(announce)) {
+    message(
+      "Note: ctmaInit automatically translated coresToUse into ",
+      description,
+      ". Supply an explicit Julia thread control in backendArgs to override ",
+      "this allocation."
+    )
+  }
+  list(
+    backend_args = resolved_backend_args,
+    automatic = TRUE,
+    cores = cores
+  )
+}
+
 ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   if (is.null(overrides)) {
     return(defaults)

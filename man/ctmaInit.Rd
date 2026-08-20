@@ -61,7 +61,10 @@ ctmaInit(
 
 \item{cint}{default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')}
 
-\item{coresToUse}{if neg., the value is subtracted from available cores, else value = cores to use}
+\item{coresToUse}{if negative, the value is added to the number of detected
+cores; thus \code{-1} uses all but one core. With the Julia backend this is
+automatically translated into an ML or Bayesian thread allocation unless
+an explicit Julia thread control is supplied in \code{backendArgs}.}
 
 \item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
 

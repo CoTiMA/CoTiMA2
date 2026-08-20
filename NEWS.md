@@ -1,3 +1,13 @@
+# CoTiMA2 0.9.95
+
+- Resolves negative `coresToUse` values before allocating Julia resources;
+  for example, `coresToUse = -1` uses every detected core except one. ML,
+  multistart ML, and Bayesian chains receive an automatic allocation unless
+  the user supplies an explicit Julia thread control in `backendArgs`.
+- Labels the elapsed time reported on exit from each principal workflow as its
+  total wall-clock execution time, distinguishing it from nested fit,
+  transformation, or per-study timings.
+
 # CoTiMA2 0.9.94
 
 - Maps `indVarying = "MANIFEST"` and `indVarying = "CINT"` to CoTiMA's
