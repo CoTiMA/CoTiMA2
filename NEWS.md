@@ -1,3 +1,10 @@
+# CoTiMA2 0.12.5
+
+- Suppressed the misleading "No model is fitted" banner when `ctmaFit()`
+  internally prepares a `fit = FALSE` ctsem model for immediate Julia
+  estimation. The banner remains visible when users explicitly request
+  `fit = FALSE`.
+
 # CoTiMA2 0.12.4
 
 - `ctmaGenData(ctmaExtract = FALSE)` now prints a follow-up

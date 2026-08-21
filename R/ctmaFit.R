@@ -1,3 +1,7 @@
+.ctmaShouldShowNoFitBanner <- function(fit, julia_fit_requested = FALSE) {
+  identical(fit, FALSE) && !isTRUE(julia_fit_requested)
+}
+
 #' ctmaFit
 #'
 #' @description Fits a ctsem model with invariant drift effects across primary studies, possible multiple moderators (but all of them of the
@@ -1311,7 +1315,7 @@ ctmaFit <- function(
   #if (allInvModel == FALSE) {
   #fitStanctModel <- suppressMessages(ctsem::ctStanFit(
 
-  if (fit == FALSE) {
+  if (.ctmaShouldShowNoFitBanner(fit, julia_fit_requested)) {
     print(paste0("#################################################################################"))
     print(paste0("#############  No model is fitted, only data and code are generated. ############"))
     print(paste0("#################################################################################"))

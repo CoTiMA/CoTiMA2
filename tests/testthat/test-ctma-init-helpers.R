@@ -259,6 +259,12 @@ test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
   expect_identical(result$controls$julia_threads, 2L)
 })
 
+test_that("ctmaFit suppresses the no-fit banner for internal Julia setup", {
+  expect_true(CoTiMA2:::.ctmaShouldShowNoFitBanner(FALSE, FALSE))
+  expect_false(CoTiMA2:::.ctmaShouldShowNoFitBanner(FALSE, TRUE))
+  expect_false(CoTiMA2:::.ctmaShouldShowNoFitBanner(TRUE, FALSE))
+})
+
 test_that("ctmaInit Julia study dispatcher restores ctsem compatibility", {
   transformed_summary <- list(loglik = -12, npars = 2L)
   testthat::local_mocked_bindings(
