@@ -559,6 +559,96 @@ other random-effect types.  The \code{backendArgs} list contains Julia-specific
 overrides; the top-level \code{chains}, \code{seed}, and \code{init_jitter}
 remain ordinary \code{ctmaReFit()} arguments.
 
+\section{Moderator-associated reduction in random-effect heterogeneity}
+
+Study-level moderators may account for part of the between-study variation in
+a selected DRIFT, DIFFUSION, or T0VAR parameter.  CoTiMA compares this
+variation with \code{ctmaReRedHet()}.  Fit one otherwise comparable model
+without the focal moderators and one with them:
+
+<<re-red-het, purl=FALSE>>=
+preparedNull <- ctmaRePrep(
+  model = pooledWithoutModerators,
+  reDRIFT = reDRIFT,
+  covariance = "independent",
+  parameterization = "noncentered"
+)
+
+preparedModerated <- ctmaRePrep(
+  model = pooledWithModerators,
+  reDRIFT = reDRIFT,
+  covariance = "independent",
+  parameterization = "noncentered"
+)
+
+reNull <- ctmaReFit(
+  preparedNull, estimation = "bayes", backend = "julia",
+  chains = 4, backendArgs = juliaBackendArgs
+)
+
+reModerated <- ctmaReFit(
+  preparedModerated, estimation = "bayes", backend = "julia",
+  chains = 4, backendArgs = juliaBackendArgs
+)
+
+reduction <- ctmaReRedHet(
+  unconditional = reNull,
+  moderated = reModerated,
+  comparison_draws = 10000,
+  seed = 1234,
+  practical_threshold = 0
+)
+
+summary(reduction)
+@
+
+For each random effect, the conventional descriptive pseudo-\(R^2\) is
+
+\[
+  R^2_{\mathrm{heterogeneity}}
+  =
+  1 -
+  \frac{\tau^2_{\mathrm{moderated}}}
+       {\tau^2_{\mathrm{unconditional}}}.
+\]
+
+A value of \(0.60\), for example, means that the fitted residual
+between-study variance is 60\% smaller after accounting for the moderators.
+A negative value is retained and means that the moderated model estimated
+more residual heterogeneity.  It must not be forced to zero.
+
+The models must use the same studies, random-effect selection,
+transformations, covariance structure, and preferably the same priors.
+\code{ctmaRePrep()} removes study-indicator fixed effects for hierarchical
+parameters but retains substantive moderator effects.  The comparison is
+performed on the raw study-effect variance scale, on which the Gaussian
+hierarchical distribution is defined.
+
+For Bayesian fits, \code{ctmaReRedHet()} independently combines draws from the
+two separately fitted posterior distributions and reports an interval and the
+probability that the reduction exceeds \code{practical_threshold}.  This is a
+descriptive cross-model Monte Carlo comparison, not a joint posterior
+distribution and not evidence that the moderators causally explain the
+heterogeneity.  With multiple random effects, the function also reports the
+reduction in the sum of their marginal variances.  Changes in random-effect
+correlations should be inspected separately.
+
+The main arguments are:
+
+\begin{description}
+  \item[\code{unconditional}] The fitted \code{ctmaReFit()} model without the
+    focal moderators.
+  \item[\code{moderated}] The otherwise comparable fitted model containing
+    the moderators.
+  \item[\code{probs}] Lower, median, and upper probabilities for the
+    cross-model Monte Carlo interval.
+  \item[\code{comparison_draws}] Number of independently combined
+    cross-model draw pairs.
+  \item[\code{seed}] Seed for reproducible pairing.
+  \item[\code{practical_threshold}] Reduction threshold used for the reported
+    exceedance probability.
+\end{description}
+
 \section{Convergence and diagnostic guidance}
 
 \subsection{Maximum likelihood}

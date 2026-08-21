@@ -1,3 +1,15 @@
+# CoTiMA2 0.11.0
+
+- Added ctmaReRedHet() to compare residual study-level random-effect
+  variances before and after including moderators. It reports
+  parameter-specific pseudo-R-squared reductions, independent cross-posterior
+  Monte Carlo intervals, threshold probabilities, and an overall reduction in
+  the sum of marginal variances.
+- Added strict comparability checks for studies, random-effect
+  specifications, transformations, covariance structures, and priors.
+- Documented the moderator heterogeneity-reduction workflow and its
+  interpretation limits in the Julia/CoTiMA methodology vignette.
+
 # CoTiMA2 0.10.2
 
 - Corrected `ctmaPub()` author matching across common `Surname, Initials` and
