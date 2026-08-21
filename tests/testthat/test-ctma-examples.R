@@ -37,3 +37,14 @@ test_that("example loading never overwrites silently", {
   ctmaUnloadExamples("exampleA", target)
   expect_identical(target$exampleA, 99)
 })
+
+test_that("all packaged complex examples unload except a changed object", {
+  target <- new.env(parent = emptyenv())
+  loaded <- suppressMessages(ctmaLoadExamples(envir = target))
+  expect_gt(length(loaded), 100L)
+  target$targetVariables1 <- c(target$targetVariables1, "changed")
+  result <- suppressMessages(ctmaUnloadExamples(envir = target))
+  expect_setequal(result$modified, "targetVariables1")
+  expect_setequal(result$removed, setdiff(loaded, "targetVariables1"))
+  expect_identical(ls(target, all.names = TRUE), "targetVariables1")
+})

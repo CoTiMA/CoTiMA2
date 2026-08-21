@@ -8,13 +8,6 @@
   stop("The CoTiMA2 example-data directory could not be found.", call. = FALSE)
 }
 
-.ctmaObjectFingerprint <- function(object) {
-  # serialize() gives an exact representation without requiring another
-  # package. Keeping the raw vector is inexpensive for the small guide inputs
-  # and permits an exact identity check during unloading.
-  serialize(object, NULL, version = 3L)
-}
-
 #' Load CoTiMA2 user-guide example objects explicitly
 #'
 #' @description Loads packaged user-guide objects into a chosen environment.
@@ -59,7 +52,7 @@ ctmaLoadExamples <- function(names = NULL, envir = .GlobalEnv,
     assign(name, value, envir = envir)
     key <- paste0(format(envir), "\r", name)
     assign(key, list(
-      fingerprint = .ctmaObjectFingerprint(value),
+      loaded_value = value,
       previous_exists = previous_exists,
       previous_value = previous_value
     ), envir = .ctma_example_registry)
@@ -95,10 +88,9 @@ ctmaUnloadExamples <- function(names = NULL, envir = .GlobalEnv) {
       absent <- c(absent, name)
       rm(list = key, envir = .ctma_example_registry)
     } else {
-      current <- .ctmaObjectFingerprint(get(name, envir = envir,
-        inherits = FALSE))
+      current <- get(name, envir = envir, inherits = FALSE)
       record <- get(key, envir = .ctma_example_registry, inherits = FALSE)
-      if (identical(current, record$fingerprint)) {
+      if (identical(current, record$loaded_value)) {
         if (isTRUE(record$previous_exists)) {
           assign(name, record$previous_value, envir = envir)
         } else {

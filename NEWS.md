@@ -1,3 +1,12 @@
+# CoTiMA2 0.12.2
+
+- Fixed false modification reports in `ctmaUnloadExamples()` for complex fit
+  objects containing environments, external references, or lazily evaluated
+  components. Loaded values are now retained by reference and compared with
+  `identical()`, relying on R's copy-on-modify behavior. Added an integration
+  test that loads every packaged example, changes one object, and verifies
+  that only this object remains.
+
 # CoTiMA2 0.12.1
 
 - Replaced all internal dependence on the exported `CoTiMAStanctArgs` object
