@@ -18,7 +18,9 @@ ctmaBiG(
 )
 }
 \arguments{
-\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing the fitted ctsem model of each primary study}
+\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing
+fitted primary-study models from the Stan or Julia backend. Julia fits
+must retain transformed ctsem draws.}
 
 \item{activeDirectory}{the directory where to save results (if not specified, it is taken from ctmaInitFit)}
 

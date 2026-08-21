@@ -115,10 +115,10 @@ test_that("backend defaults are isolated between calls", {
   expect_identical(ctmaBackendDefaults()$control$adapt_delta, 0.8)
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.10.0")
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.10.1")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.10.0\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.10.1\\)."
   )
 
   major_functions <- c(

@@ -162,3 +162,154 @@
     k = vapply(analyses, `[[`, integer(1L), "k")
   )
 }
+
+.ctmaBiGExtractStudy <- function(fit, n_latent, parameter_names = NULL) {
+  n_latent <- as.integer(n_latent)[1L]
+  if (is.na(n_latent) || n_latent < 1L) {
+    stop("'n_latent' must be a positive integer.", call. = FALSE)
+  }
+
+  backend <- if (inherits(fit, "ctmaJuliaFit")) "julia" else "stan"
+  transformed_fit <- if (inherits(fit, "ctmaJuliaFit")) fit$ctsem_fit else fit
+  if (is.null(transformed_fit)) {
+    stop(
+      "A Julia primary-study fit has no transformed ctsem fit. Refit with ",
+      "'uncertainty=TRUE' and 'transformed=TRUE', or add transformed samples ",
+      "before calling ctmaBiG().",
+      call. = FALSE
+    )
+  }
+
+  transformedpars <- transformed_fit$stanfit$transformedpars
+  if (is.null(transformedpars)) {
+    stop(
+      "The primary-study fit contains no transformed parameter draws needed ",
+      "by ctmaBiG().",
+      call. = FALSE
+    )
+  }
+
+  required <- c("pop_DRIFT", "pop_DIFFUSIONcov")
+  missing_required <- setdiff(required, names(transformedpars))
+  if (length(missing_required)) {
+    stop(
+      "The transformed primary-study fit is missing: ",
+      paste(missing_required, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  t0_name <- if ("pop_T0cov" %in% names(transformedpars)) {
+    "pop_T0cov"
+  } else if ("pop_T0VAR" %in% names(transformedpars)) {
+    "pop_T0VAR"
+  } else {
+    stop(
+      "The transformed primary-study fit contains neither 'pop_T0cov' nor ",
+      "'pop_T0VAR'.",
+      call. = FALSE
+    )
+  }
+
+  summarise_matrix_draws <- function(draws, label) {
+    dimensions <- dim(draws)
+    if (length(dimensions) != 3L ||
+        dimensions[2L] < n_latent || dimensions[3L] < n_latent) {
+      stop(
+        "Transformed draws for '", label,
+        "' do not have the expected draws-by-row-by-column dimensions.",
+        call. = FALSE
+      )
+    }
+    draws <- draws[, seq_len(n_latent), seq_len(n_latent), drop = FALSE]
+    estimate <- apply(draws, c(2L, 3L), mean, na.rm = TRUE)
+    standard_error <- apply(draws, c(2L, 3L), stats::sd, na.rm = TRUE)
+    list(
+      estimate = as.vector(t(estimate)),
+      standard_error = as.vector(t(standard_error))
+    )
+  }
+
+  components <- list(
+    DRIFT = summarise_matrix_draws(transformedpars$pop_DRIFT, "pop_DRIFT"),
+    DIFFUSION = summarise_matrix_draws(
+      transformedpars$pop_DIFFUSIONcov, "pop_DIFFUSIONcov"),
+    T0VAR = summarise_matrix_draws(transformedpars[[t0_name]], t0_name)
+  )
+  estimate <- unlist(lapply(components, `[[`, "estimate"), use.names = FALSE)
+  standard_error <- unlist(
+    lapply(components, `[[`, "standard_error"), use.names = FALSE)
+
+  if (!is.null(parameter_names)) {
+    if (length(parameter_names) != length(estimate)) {
+      stop(
+        "The number of parameter names does not match the extracted values.",
+        call. = FALSE
+      )
+    }
+    names(estimate) <- names(standard_error) <- parameter_names
+  }
+
+  list(
+    estimate = estimate,
+    standard_error = standard_error,
+    backend = backend,
+    transformed_fit = transformed_fit,
+    t0_component = t0_name
+  )
+}
+
+.ctmaBiGExtractStudies <- function(ctma_init_fit, exclude_studies = integer()) {
+  if (is.null(ctma_init_fit$studyFitList) ||
+      !length(ctma_init_fit$studyFitList)) {
+    stop("The ctmaInit object contains no fitted primary studies.",
+      call. = FALSE)
+  }
+  n_studies <- length(ctma_init_fit$studyFitList)
+  n_latent <- as.integer(ctma_init_fit$n.latent)[1L]
+  exclude_studies <- unique(as.integer(exclude_studies))
+  if (anyNA(exclude_studies) || any(exclude_studies < 1L) ||
+      any(exclude_studies > n_studies)) {
+    stop("'excludeStudies' must contain valid study indices.",
+      call. = FALSE)
+  }
+
+  model_results <- ctma_init_fit$modelResults
+  component_names <- lapply(
+    c("DRIFT", "DIFFUSION", "T0VAR"),
+    function(component) names(model_results[[component]][[1L]])
+  )
+  if (length(component_names[[1L]]) != length(component_names[[2L]])) {
+    component_names[[2L]] <- c(OpenMx::vech2full(component_names[[2L]]))
+    component_names[[3L]] <- c(OpenMx::vech2full(component_names[[3L]]))
+  }
+  parameter_names <- unlist(component_names, use.names = FALSE)
+  expected <- 3L * n_latent^2
+  if (length(parameter_names) != expected) {
+    parameter_names <- c(
+      paste0("DRIFT_", seq_len(n_latent^2)),
+      paste0("DIFFUSION_", seq_len(n_latent^2)),
+      paste0("T0VAR_", seq_len(n_latent^2))
+    )
+  }
+
+  estimates <- matrix(NA_real_, nrow = n_studies, ncol = expected,
+    dimnames = list(NULL, parameter_names))
+  standard_errors <- estimates
+  backends <- rep(NA_character_, n_studies)
+  included <- setdiff(seq_len(n_studies), exclude_studies)
+  for (study in included) {
+    extracted <- .ctmaBiGExtractStudy(
+      ctma_init_fit$studyFitList[[study]], n_latent, parameter_names)
+    estimates[study, ] <- extracted$estimate
+    standard_errors[study, ] <- extracted$standard_error
+    backends[study] <- extracted$backend
+  }
+
+  list(
+    estimates = estimates,
+    standard_errors = standard_errors,
+    backends = backends,
+    included_studies = included,
+    excluded_studies = exclude_studies
+  )
+}

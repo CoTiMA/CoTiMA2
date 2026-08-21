@@ -76,3 +76,74 @@ test_that("ctmaBiG meta-analysis validates its inputs", {
     "between zero and one"
   )
 })
+
+test_that("ctmaBiG extracts identical transformed values from Stan and Julia", {
+  make_draws <- function(offset) {
+    array(seq_len(20) / 10 + offset, dim = c(5, 2, 2))
+  }
+  transformedpars <- list(
+    pop_DRIFT = make_draws(0),
+    pop_DIFFUSIONcov = make_draws(10),
+    pop_T0cov = make_draws(20)
+  )
+  stan_fit <- structure(
+    list(stanfit = list(transformedpars = transformedpars)),
+    class = "ctStanFit"
+  )
+  julia_fit <- structure(list(ctsem_fit = stan_fit), class = "ctmaJuliaFit")
+  parameter_names <- paste0("p", seq_len(12))
+
+  stan <- CoTiMA2:::.ctmaBiGExtractStudy(
+    stan_fit, n_latent = 2, parameter_names = parameter_names)
+  julia <- CoTiMA2:::.ctmaBiGExtractStudy(
+    julia_fit, n_latent = 2, parameter_names = parameter_names)
+
+  expect_identical(stan$backend, "stan")
+  expect_identical(julia$backend, "julia")
+  expect_equal(julia$estimate, stan$estimate)
+  expect_equal(julia$standard_error, stan$standard_error)
+  expect_identical(names(julia$estimate), parameter_names)
+})
+
+test_that("ctmaBiG study extraction handles mixed backends and exclusions", {
+  draws <- array(seq_len(20) / 10, dim = c(5, 2, 2))
+  transformedpars <- list(
+    pop_DRIFT = draws,
+    pop_DIFFUSIONcov = draws + 10,
+    pop_T0VAR = draws + 20
+  )
+  stan_fit <- structure(
+    list(stanfit = list(transformedpars = transformedpars)),
+    class = "ctStanFit"
+  )
+  julia_fit <- structure(list(ctsem_fit = stan_fit), class = "ctmaJuliaFit")
+  parameter_names <- paste0("p", seq_len(4))
+  init_fit <- list(
+    n.latent = 2L,
+    studyFitList = list(stan_fit, julia_fit, stan_fit),
+    modelResults = list(
+      DRIFT = list(stats::setNames(rep(0, 4), parameter_names)),
+      DIFFUSION = list(stats::setNames(rep(0, 4), parameter_names)),
+      T0VAR = list(stats::setNames(rep(0, 4), parameter_names))
+    )
+  )
+
+  result <- CoTiMA2:::.ctmaBiGExtractStudies(init_fit, exclude_studies = 2)
+
+  expect_identical(result$included_studies, c(1L, 3L))
+  expect_identical(result$backends, c("stan", NA_character_, "stan"))
+  expect_true(all(is.na(result$estimates[2, ])))
+  expect_equal(result$estimates[1, ], result$estimates[3, ])
+  expect_error(
+    CoTiMA2:::.ctmaBiGExtractStudies(init_fit, exclude_studies = 4),
+    "valid study indices"
+  )
+})
+
+test_that("ctmaBiG explains missing Julia transformed results", {
+  julia_fit <- structure(list(ctsem_fit = NULL), class = "ctmaJuliaFit")
+  expect_error(
+    CoTiMA2:::.ctmaBiGExtractStudy(julia_fit, 1),
+    "uncertainty=TRUE.*transformed=TRUE"
+  )
+})

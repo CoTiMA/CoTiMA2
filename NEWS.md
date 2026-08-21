@@ -1,3 +1,11 @@
+# CoTiMA2 0.10.1
+
+- Added backend-independent primary-study extraction to `ctmaBiG()`.
+  Transformed results from Stan and Julia `ctmaInit()` fits now enter the same
+  validated meta-analysis implementation, including mixed-backend objects.
+- `ctmaBiG()` now records the detected backend for every included study and
+  gives an actionable error when a Julia fit lacks transformed draws.
+
 # CoTiMA2 0.10.0
 
 - Corrected `ctmaBiG()` common- and random-effects calculations: two-sided

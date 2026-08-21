@@ -5,7 +5,9 @@
 #' PET-PEESE corrections, Egger's tests, and z-curve analysis yielding expected replication and detection rates (ERR, EDR).
 #'
 #'
-#' @param ctmaInitFit fit object created with \code{\link{ctmaInit}} containing the fitted ctsem model of each primary study
+#' @param ctmaInitFit fit object created with \code{\link{ctmaInit}} containing
+#'   fitted primary-study models from the Stan or Julia backend. Julia fits
+#'   must retain transformed ctsem draws.
 #' @param activeDirectory the directory where to save results (if not specified, it is taken from ctmaInitFit)
 #' @param PETPEESEalpha probability level (condition) below which to switch from PET to PEESE (cf. Stanley, 2017, p. 582, below Eq. 2; default p = .10)
 #' @param activateRPB if TRUE, messages (warning, finished) could be send to smart phone (default = FALSE)
@@ -112,78 +114,21 @@ ctmaBiG <- function(
     { # start extracting
       n.latent <- ctmaInitFit$n.latent; n.latent
       if (is.null(activeDirectory)) activeDirectory <- ctmaInitFit$activeDirectory; activeDirectory
-      n.studies <- ctmaInitFit$n.studies; n.studies
-      excludeStudies <- unique(as.integer(excludeStudies))
-      if (anyNA(excludeStudies) || any(excludeStudies < 1L) ||
-          any(excludeStudies > n.studies)) {
-        stop("'excludeStudies' must contain valid study indices.",
-             call. = FALSE)
-      }
-      names1 <- names(ctmaInitFit$modelResults$DRIFT[[1]]); names1
-      names2 <- names(ctmaInitFit$modelResults$DIFFUSION[[1]]); names2
-      names3 <- names(ctmaInitFit$modelResults$T0VAR[[1]]); names3
-
-      if (length(names1) != length(names2)) { # old vs. new ctsem version
-        names2 <- c(OpenMx::vech2full(names2))
-        names3 <- c(OpenMx::vech2full(names3))
-      }
-
-      all_Coeff <- matrix(NA, ncol=(3*(n.latent^2)), nrow=n.studies); all_Coeff
-      all_SE <- matrix(NA, ncol=(3*(n.latent^2)), nrow=n.studies); all_SE
-
-      if ("pop_T0cov" %in% names(ctmaInitFit$studyFitList[[1]]$stanfit$transformedpars)) ctsem341 <- TRUE else ctsem341 <- FALSE
-      for (i in 1:n.studies) {
-        #i <- 1
-        if ("transformedpars" %in% names(ctmaInitFit$studyFitList[[i]]$stanfit)) {        # if maximum likelihood was used
-          if (!(i %in% excludeStudies)) {
-          driftM <- (ctsem::ctCollapse(ctmaInitFit$studyFitList[[i]]$stanfit$transformedpars$pop_DRIFT[, 1:n.latent, 1:n.latent], 1, mean)); driftM
-          driftSE <- (ctsem::ctCollapse(ctmaInitFit$studyFitList[[i]]$stanfit$transformedpars$pop_DRIFT[, 1:n.latent, 1:n.latent], 1, sd)); driftSE
-
-          diffM <- (ctsem::ctCollapse(ctmaInitFit$studyFitList[[i]]$stanfit$transformedpars$pop_DIFFUSIONcov[, 1:n.latent, 1:n.latent], 1, mean)); diffM
-          diffSE <- (ctsem::ctCollapse(ctmaInitFit$studyFitList[[i]]$stanfit$transformedpars$pop_DIFFUSIONcov[, 1:n.latent, 1:n.latent], 1, sd)); diffSE
-
-          transformedpars <- ctmaInitFit$studyFitList[[i]]$stanfit$transformedpars
-          t0_draws <- if ("pop_T0cov" %in% names(transformedpars)) {
-            transformedpars$pop_T0cov
-          } else {
-            transformedpars$pop_T0VAR
-          }
-          T0covM <- ctsem::ctCollapse(
-            t0_draws[, 1:n.latent, 1:n.latent], 1, mean)
-          T0covSE <- ctsem::ctCollapse(
-            t0_draws[, 1:n.latent, 1:n.latent], 1, sd)
-
-          all_Coeff[i,] <- cbind(t(c(t(driftM))), t(c(diffM)), t(c(T0covM))); all_Coeff[i,]
-          all_SE[i,] <- cbind(t(c(t(driftSE))), t(c(diffSE)), t(c(T0covSE))); all_SE[i,]
-          }
-        } else if ("ll" %in% names(ctmaInitFit$studyFitList[[i]]$stanfit)) { # if NUTS sampler was used
-          if (!(i %in% excludeStudies)) {
-            tmp1 <- matrix(99, ncol=n.latent, nrow=n.latent); tmp1
-            toSelect <- which(lower.tri(tmp1, diag=TRUE)); toSelect
-            stanSummary <- summary(ctmaInitFit$studyFitList[[i]]$stanfit)
-            stanSummary <- stanSummary$summary
-            tmp <- grep("pop_DRIFT", rownames(stanSummary)); tmp
-            coefficient1 <- stanSummary[tmp, 1]; coefficient1
-            tmp1 <- stanSummary[tmp, 3]; tmp1
-            tmp <- grep("pop_DIFFUSIONcov", rownames(stanSummary)); tmp
-            coefficient2 <- stanSummary[tmp, 1][toSelect]; coefficient2
-            tmp2 <- stanSummary[tmp, 3][toSelect]; tmp2
-            if (ctsem341 == FALSE) {
-              tmp <- grep("pop_T0VAR", rownames(stanSummary))
-            } else {
-              tmp <- grep("pop_T0cov", rownames(stanSummary))
-            }
-            coefficient3 <- stanSummary[tmp, 1][toSelect]; coefficient3
-            tmp3 <- stanSummary[tmp, 3][toSelect]; tmp3
-            all_Coeff[i,] <- t(as.matrix(c(
-              coefficient1, coefficient2, coefficient3)))
-            tmp4 <- c(tmp1, tmp2, tmp3); tmp4
-            all_SE[i,] <- t(as.matrix(tmp4))
-          }
-        }
-      }
-
-      colnames(all_SE) <- colnames(all_Coeff) <- c(names1, names2, names3)
+      extracted_studies <- .ctmaBiGExtractStudies(
+        ctmaInitFit, exclude_studies = excludeStudies)
+      all_Coeff <- extracted_studies$estimates
+      all_SE <- extracted_studies$standard_errors
+      n.studies <- nrow(all_Coeff); n.studies
+      names1 <- colnames(all_Coeff)[seq_len(n.latent^2)]
+      excludeStudies <- extracted_studies$excluded_studies
+      backend_counts <- table(
+        extracted_studies$backends[extracted_studies$included_studies])
+      message(
+        "Extracted transformed study estimates from ",
+        paste(paste(names(backend_counts), backend_counts, sep = "="),
+          collapse = ", "),
+        " backend fit(s)."
+      )
       allSampleSizes <- ctmaInitFit$statisticsList$allSampleSizes; allSampleSizes
     } # end extracting
     #all_Coeff; all_SE
@@ -616,6 +561,11 @@ ctmaBiG <- function(
 
     results <- list(activeDirectory=activeDirectory,
                     plot.type=c("funnel", "forest"), model.type="BiG",
+                    backend=if (length(unique(stats::na.omit(
+                      extracted_studies$backends))) == 1L) {
+                      unique(stats::na.omit(extracted_studies$backends))
+                    } else "mixed",
+                    studyBackends=extracted_studies$backends,
                     coresToUse=NULL,
                     supplied.studies=n.studies, excludeStudies=excludeStudies, n.studies=(n.studies-length(excludeStudies)),
                     n.latent=n.latent,
