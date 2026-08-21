@@ -90,6 +90,7 @@ ctmaRedHet <- function(activateRPB=FALSE,
       if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
       Msg <- "\nA The two fit objects provided were estimated with different scaleTime-arguments. Undoing time scaling for both fit objects is enforced!"
       message(Msg)
+      undoTimeScaling <- TRUE
       scaleTime1 <- ctmaFitObjectMod$argumentList$scaleTime; scaleTime1
       scaleTime2 <- ctmaFitObject$argumentList$scaleTime; scaleTime2
     } else {
@@ -97,19 +98,15 @@ ctmaRedHet <- function(activateRPB=FALSE,
     }
   }
 
-  # The continuous-time route uses the shared, corrected meta-analytic
-  # calculations and a backend-neutral WEC summary.  The legacy code below is
-  # retained temporarily for discrete-time transformations until their draw
-  # reconstruction is migrated as well.
-  if (is.null(dt)) {
-    return(invisible(.ctmaRedHetContinuous(
-      ctmaFitObject = ctmaFitObject,
-      ctmaFitObjectMod = ctmaFitObjectMod,
-      activeDirectory = activeDirectory,
-      digits = digits,
-      call = match.call()
-    )))
-  }
+  return(invisible(.ctmaRedHetContinuous(
+    ctmaFitObject = ctmaFitObject,
+    ctmaFitObjectMod = ctmaFitObjectMod,
+    activeDirectory = activeDirectory,
+    digits = digits,
+    call = match.call(),
+    dt = dt,
+    undoTimeScaling = undoTimeScaling
+  )))
 
   # Extracting Parameters from Fitted Primary Studies created with CoTiMAprep Function  #####################
 

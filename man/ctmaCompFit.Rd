@@ -21,8 +21,10 @@ or \code{\link{ctmaEqual}}), i.e., the difference between the two -2 times LLs b
 model. The nested structure of the two models is assumed to be given and not checked.
 }
 \examples{
+ctmaLoadExamples(c("CoTiMAFullInv23Fit_6", "CoTiMAFullInvEq23Fit_6"))
 minus2llDiffTest <- ctmaCompFit(CoTiMAFullInv23Fit_6,
                                 CoTiMAFullInvEq23Fit_6)
 summary(minus2llDiffTest)
+ctmaUnloadExamples(c("CoTiMAFullInv23Fit_6", "CoTiMAFullInvEq23Fit_6"))
 
 }

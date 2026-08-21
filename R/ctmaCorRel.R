@@ -6,7 +6,9 @@
 #' @param alphas Vector reliabilities
 #'
 #' @examples
+#' ctmaLoadExamples(c("empcov313", "alphas313"))
 #' empcov313new <- ctmaCorRel(empcov=empcov313, alphas=alphas313)
+#' ctmaUnloadExamples(c("empcov313", "alphas313"))
 #'
 #' @export ctmaCorRel
 #'

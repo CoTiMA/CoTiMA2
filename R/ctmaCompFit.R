@@ -10,9 +10,11 @@
 #' @importFrom stats pchisq
 #'
 #' @examples
+#' ctmaLoadExamples(c("CoTiMAFullInv23Fit_6", "CoTiMAFullInvEq23Fit_6"))
 #' minus2llDiffTest <- ctmaCompFit(CoTiMAFullInv23Fit_6,
 #'                                 CoTiMAFullInvEq23Fit_6)
 #' summary(minus2llDiffTest)
+#' ctmaUnloadExamples(c("CoTiMAFullInv23Fit_6", "CoTiMAFullInvEq23Fit_6"))
 #'
 #' @export ctmaCompFit
 #'
@@ -50,4 +52,3 @@ ctmaCompFit <- function(model1=NULL, model2=NULL) {
   }
   return(list(paste(names(unlist(allResults)), unlist(allResults))))
 }
-

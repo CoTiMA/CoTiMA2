@@ -18,6 +18,8 @@ list that could be used for fitting new CoTiMA models with \code{\link{ctmaInit}
 Extracts information from fitted CoTiMA objects to (re-)crearte list of primary studies originally created with \code{\link{ctmaPrep}}
 }
 \examples{
+ctmaLoadExamples("CoTiMAInitFit_3")
 newStudyList <- ctmaFitToPrep(CoTiMAInitFit_3)
+ctmaUnloadExamples("CoTiMAInitFit_3")
 
 }

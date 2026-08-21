@@ -1,3 +1,14 @@
+# CoTiMA2 0.12.0
+
+- Migrated `ctmaRedHet(dt=)` to a backend-neutral raw-draw map. Discrete-time
+  residual effects are now calculated draw by draw as the difference between
+  matrix exponentials of the complete study DRIFT and its moderator-predicted
+  DRIFT, before estimating residual heterogeneity.
+- Packaged user-guide objects are no longer attached automatically. Use
+  `ctmaLoadExamples()` to load selected examples explicitly and
+  `ctmaUnloadExamples()` to remove only examples that remain exactly
+  unchanged. `ctmaPrep()` now constrains all name-based lookups to its caller.
+
 # CoTiMA2 0.11.1
 
 - Migrated the continuous-time `ctmaRedHet()` path to the corrected shared

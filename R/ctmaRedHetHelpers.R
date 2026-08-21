@@ -65,8 +65,126 @@
   )
 }
 
+.ctmaRedHetFitObject <- function(fit) {
+  out <- fit$studyFitList
+  if (inherits(out, "ctmaJuliaFit")) out <- out$ctsem_fit
+  if (is.null(out$stanfit$rawposterior) &&
+      inherits(fit$engine_fit, "ctmaJuliaFit")) {
+    out <- fit$engine_fit$ctsem_fit
+  }
+  out
+}
+
+.ctmaRedHetTransformRaw <- function(values, transform) {
+  if (is.na(transform) || !nzchar(transform)) return(values)
+  vapply(values, function(value) {
+    eval(parse(text = transform), envir = list(param = value))
+  }, numeric(1L))
+}
+
+.ctmaRedHetDriftDraws <- function(fit, undoTimeScaling = TRUE) {
+  ctfit <- .ctmaRedHetFitObject(fit)
+  posterior <- as.matrix(ctfit$stanfit$rawposterior)
+  if (!nrow(posterior)) stop(
+    "Discrete-time heterogeneity requires raw draws in both fits. For a ",
+    "Julia fit, retain or add transformed samples before calling ctmaRedHet().",
+    call. = FALSE)
+  map <- ctmaParMap(ctfit)
+  drift <- map$rawpopmeans[map$rawpopmeans$matrix == "DRIFT", , drop = FALSE]
+  n_latent <- as.integer(fit$n.latent)[1L]
+  n_studies <- length(fit$studyList)
+  if (nrow(drift) != n_latent^2) stop(
+    "The fitted DRIFT parameter map is incompatible with fit$n.latent.",
+    call. = FALSE)
+
+  ti <- map$tipredeffectparams
+  ti <- ti[ti$rawpopmeans_col %in% drift$rawpopmeans_col, , drop = FALSE]
+  ti_names <- ctfit$ctstanmodelbase$TIpredNames
+  profiles <- as.data.frame(ctfit$data$tipredsdata)
+  if (!length(ti_names) || !nrow(ti)) {
+    profiles <- matrix(numeric(), nrow = n_studies, ncol = 0L)
+  } else {
+    if (is.null(colnames(profiles))) colnames(profiles) <- ti_names
+    profiles <- unique(profiles[, ti_names, drop = FALSE])
+    if (nrow(profiles) != n_studies) stop(
+      "Could not identify exactly one TI-predictor profile per study.",
+      call. = FALSE)
+  }
+  study_dummy_names <- head(ti_names, max(0L, n_studies - 1L))
+  scale_time <- if (isTRUE(undoTimeScaling)) {
+    as.numeric(fit$argumentList$scaleTime)[1L]
+  } else 1
+  if (!is.finite(scale_time)) scale_time <- 1
+
+  base <- posterior[, drift$rawposterior_col, drop = FALSE]
+  transformed <- function(raw) {
+    out <- raw
+    for (j in seq_len(ncol(raw))) {
+      out[, j] <- .ctmaRedHetTransformRaw(raw[, j], drift$transform[j]) *
+        scale_time
+    }
+    out
+  }
+  add_ti <- function(raw, study, include) {
+    if (!nrow(ti)) return(raw)
+    selected <- ti$TI_predictor %in% include
+    for (j in which(selected)) {
+      profile_value <- profiles[study, ti$TI_predictor[j]]
+      if (is.finite(profile_value) && profile_value != 0) {
+        target <- match(ti$rawpopmeans_col[j], drift$rawpopmeans_col)
+        raw[, target] <- raw[, target] +
+          profile_value * posterior[, ti$rawposterior_col[j]]
+      }
+    }
+    raw
+  }
+
+  total <- predicted <- vector("list", n_studies)
+  moderator_names <- setdiff(ti_names, study_dummy_names)
+  for (study in seq_len(n_studies)) {
+    total[[study]] <- transformed(add_ti(base, study, ti_names))
+    predicted[[study]] <- transformed(add_ti(base, study, moderator_names))
+  }
+  list(total = total, predicted = predicted, n_latent = n_latent)
+}
+
+.ctmaRedHetDiscreteEffects <- function(fit, dt, undoTimeScaling = TRUE) {
+  draws <- .ctmaRedHetDriftDraws(fit, undoTimeScaling)
+  n_studies <- length(draws$total)
+  n_parameters <- draws$n_latent^2
+  effect <- standard_error <- matrix(NA_real_, n_studies, n_parameters)
+  for (study in seq_len(n_studies)) {
+    ndraw <- nrow(draws$total[[study]])
+    residual <- matrix(NA_real_, ndraw, n_parameters)
+    for (sample in seq_len(ndraw)) {
+      total_matrix <- matrix(draws$total[[study]][sample, ],
+        draws$n_latent, byrow = TRUE)
+      predicted_matrix <- matrix(draws$predicted[[study]][sample, ],
+        draws$n_latent, byrow = TRUE)
+      residual[sample, ] <- as.numeric(t(
+        OpenMx::expm(dt * total_matrix) -
+          OpenMx::expm(dt * predicted_matrix)
+      ))
+    }
+    effect[study, ] <- colMeans(residual)
+    standard_error[study, ] <- apply(residual, 2L, stats::sd)
+  }
+  parameter_names <- paste0("dt", dt, "_", fit$parameterNames$DRIFT)
+  colnames(effect) <- colnames(standard_error) <- parameter_names
+  list(effects = effect, standard_errors = standard_error,
+    parameter_names = parameter_names)
+}
+
+.ctmaRedHetOneComparison <- function(null, moderated) {
+  null$analysis <- .ctmaBiGMetaAnalysis(null$effects, null$standard_errors)
+  moderated$analysis <- .ctmaBiGMetaAnalysis(
+    moderated$effects, moderated$standard_errors)
+  list(null = null, moderated = moderated,
+    reduction = .ctmaRedHetReduction(null, moderated))
+}
+
 .ctmaRedHetContinuous <- function(ctmaFitObject, ctmaFitObjectMod,
-    activeDirectory, digits, call) {
+    activeDirectory, digits, call, dt = NULL, undoTimeScaling = TRUE) {
   null <- .ctmaRedHetWEC(ctmaFitObject, "'ctmaFitObject'")
   moderated <- .ctmaRedHetWEC(ctmaFitObjectMod, "'ctmaFitObjectMod'")
   if (!identical(dim(null$effects), dim(moderated$effects)) ||
@@ -74,10 +192,10 @@
     stop("The two fits must contain the same studies and DRIFT parameters ",
       "in the same order.", call. = FALSE)
   }
-  null$analysis <- .ctmaBiGMetaAnalysis(null$effects, null$standard_errors)
-  moderated$analysis <- .ctmaBiGMetaAnalysis(
-    moderated$effects, moderated$standard_errors)
-  reduction <- .ctmaRedHetReduction(null, moderated)
+  comparison <- .ctmaRedHetOneComparison(null, moderated)
+  null <- comparison$null
+  moderated <- comparison$moderated
+  reduction <- comparison$reduction
 
   combined <- function(component) {
     out <- cbind(null$analysis[[component]], moderated$analysis[[component]])
@@ -101,6 +219,25 @@
     I2_Drift = 100 * reduction$I2_proportional_reduction
   )
   colnames(legacy_reduction) <- null$parameter_names
+  discrete_results <- NULL
+  discrete_legacy <- "No dt effects estimated."
+  if (!is.null(dt)) {
+    discrete_results <- lapply(dt, function(interval) {
+      discrete_null <- .ctmaRedHetDiscreteEffects(
+        ctmaFitObject, interval, undoTimeScaling)
+      discrete_moderated <- .ctmaRedHetDiscreteEffects(
+        ctmaFitObjectMod, interval, undoTimeScaling)
+      .ctmaRedHetOneComparison(discrete_null, discrete_moderated)
+    })
+    names(discrete_results) <- paste0("Time Interval = ", dt)
+    discrete_legacy <- lapply(discrete_results, function(x) {
+      list(
+        heterogeneity_reduction = x$reduction,
+        unconditional = x$null$analysis,
+        moderated = x$moderated$analysis
+      )
+    })
+  }
   legacy_summary <- list(
     continuousTime = list(
       `fixedEffects (w/o Mod | with Mod)` = round(fixed, digits),
@@ -114,7 +251,7 @@
         "tau-squared. Negative values denote increased residual heterogeneity."
       )
     ),
-    discreteTime = "No dt effects estimated."
+    discreteTime = discrete_legacy
   )
 
   structure(list(
@@ -131,6 +268,7 @@
       unconditional = null[c("effects", "standard_errors")],
       moderated_residual = moderated[c("effects", "standard_errors")]
     ),
+    discrete_time = discrete_results,
     method = paste(
       "Two-stage residual heterogeneity from WEC-reconstructed study DRIFT",
       "effects; the moderated effects exclude substantive moderator",

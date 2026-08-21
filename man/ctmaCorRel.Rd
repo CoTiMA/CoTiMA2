@@ -18,6 +18,8 @@ A corrected correlation matrix (corEmpcov). Corrections leading to r > 1.0 are s
 Disattenuates the entries in a correlation matrix using a vector of reliabilities.
 }
 \examples{
+ctmaLoadExamples(c("empcov313", "alphas313"))
 empcov313new <- ctmaCorRel(empcov=empcov313, alphas=alphas313)
+ctmaUnloadExamples(c("empcov313", "alphas313"))
 
 }

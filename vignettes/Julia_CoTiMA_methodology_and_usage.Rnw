@@ -128,6 +128,37 @@ The Julia \code{Project.toml} and \code{Manifest.toml} describe the Julia
 packages used by the backend.  They make the computational environment more
 reproducible.  They are implementation files rather than model input files.
 
+\section{Loading the user-guide examples explicitly}
+
+CoTiMA2 does not attach the user-guide datasets automatically.  This avoids a
+dangerous ambiguity: a request such as \code{selectedStudies=1:10} must not
+silently use packaged \code{delta_t1}, \code{sampleSize1}, or
+\code{empcov1} objects when the user has not created study 1.  Load only the
+examples required for an exercise:
+
+<<load-examples, purl=FALSE>>=
+ctmaLoadExamples(c(
+  "delta_t1", "sampleSize1", "empcov1",
+  "delta_t4", "sampleSize4", "empcov4"
+))
+
+exampleStudies <- ctmaPrep(selectedStudies = c(1, 4))
+@
+
+With \code{names=NULL}, \code{ctmaLoadExamples()} loads every packaged guide
+object.  Existing objects are not overwritten unless
+\code{overwrite=TRUE}.  After an exercise, use:
+
+<<unload-examples, purl=FALSE>>=
+ctmaUnloadExamples()
+@
+
+Only objects that remain byte-for-byte identical to the examples originally
+loaded by the function are removed.  Modified objects are retained and named
+in a message, so user work cannot be deleted inadvertently.  Both functions
+accept an \code{envir} argument when a dedicated environment is preferable to
+the global environment.
+
 \section{The usual CoTiMA workflow}
 
 The workflow still begins in CoTiMA.  Julia replaces only the estimation
@@ -648,6 +679,51 @@ The main arguments are:
   \item[\code{practical_threshold}] Reduction threshold used for the reported
     exceedance probability.
 \end{description}
+
+\section{Reduction in WEC-based residual heterogeneity}
+
+\code{ctmaRedHet()} provides the corresponding two-stage comparison for
+ordinary pooled \code{ctmaFit()} models fitted with \code{WEC=TRUE}.  Its
+heterogeneity estimate is not the hierarchical variance component estimated
+by \code{ctmaReFit()}.  Instead, it uses the reconstructed study deviations
+and their standard errors:
+
+<<red-het, purl=FALSE>>=
+redHet <- ctmaRedHet(
+  ctmaFitObject = pooledWithoutModerators,
+  ctmaFitObjectMod = pooledWithModerators,
+  dt = c(0.5, 1, 2)
+)
+
+redHet$heterogeneity_reduction
+redHet$discrete_time[["Time Interval = 1"]]$reduction
+@
+
+The primary continuous-time comparison is the sampling-error-adjusted
+two-stage residual \(\tau^2\).  In the moderated model, variation is measured
+around each study's moderator-predicted mean.  The variance of complete study
+effects around one grand mean is not used, because it would count
+moderator-explained variation as remaining heterogeneity.
+
+For every requested \code{dt}, CoTiMA2 reconstructs raw DRIFT draws through
+\code{ctmaParMap()}, separately forms the complete study DRIFT and its
+moderator-predicted DRIFT, and calculates
+
+\[
+  \exp(\mathbf A_{i,\mathrm{complete}}\,dt)
+  -
+  \exp(\mathbf A_{i,\mathrm{predicted}}\,dt)
+\]
+
+for every draw before summarising the residual study effects.  This ordering
+is essential because the matrix exponential is nonlinear.  The same mapped
+raw-draw representation is used for Stan and Julia fits.  Julia fits must
+therefore retain transformed/raw draws; they can be added later with
+\code{ctAddJuliaSamples()} when the required covariance information is stored.
+Negative proportional reductions are retained and indicate an increase in
+residual heterogeneity.  When the unconditional estimate is zero, the ratio
+is undefined and reported as \code{NA}.  Q, \(I^2\), and the unadjusted sample
+variance are secondary diagnostics.
 
 \section{Convergence and diagnostic guidance}
 

@@ -87,3 +87,21 @@ test_that("ctmaRedHet continuous output retains the legacy matrix orientation", 
   expect_s3_class(result, "ctmaRedHet")
   expect_gt(result$heterogeneity_reduction$proportional_reduction, 0)
 })
+
+test_that("discrete residuals are computed after the matrix exponential", {
+  fake_draws <- list(
+    total = list(matrix(c(-0.5, -0.4), ncol = 1)),
+    predicted = list(matrix(c(-0.2, -0.2), ncol = 1)),
+    n_latent = 1L
+  )
+  testthat::local_mocked_bindings(
+    .ctmaRedHetDriftDraws = function(...) fake_draws
+  )
+  fit <- list(n.latent = 1L, parameterNames = list(DRIFT = "V1toV1"))
+  result <- .ctmaRedHetDiscreteEffects(fit, dt = 2)
+  expected <- exp(2 * c(-0.5, -0.4)) - exp(2 * c(-0.2, -0.2))
+  expect_equal(unname(result$effects[1, 1]), mean(expected))
+  expect_equal(unname(result$standard_errors[1, 1]), stats::sd(expected))
+  expect_false(isTRUE(all.equal(result$effects[1, 1],
+    exp(2 * mean(c(-0.3, -0.2))))))
+})

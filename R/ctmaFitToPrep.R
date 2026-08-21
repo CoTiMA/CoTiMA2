@@ -6,7 +6,9 @@
 #' @param reUseEmprawData  whether data should be transferred (will be re-used in subsequent fit attempts)
 #'
 #' @examples
+#' ctmaLoadExamples("CoTiMAInitFit_3")
 #' newStudyList <- ctmaFitToPrep(CoTiMAInitFit_3)
+#' ctmaUnloadExamples("CoTiMAInitFit_3")
 #'
 #' @export ctmaFitToPrep
 #'
@@ -39,4 +41,3 @@ ctmaFitToPrep <- function(ctmaFitObject=NULL, reUseEmprawData=FALSE)
 
   invisible(newStudyList)
 }
-

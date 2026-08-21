@@ -15,9 +15,11 @@
 #'
 #' @examples
 #' \donttest{
+#' ctmaLoadExamples(c("pubList_8", "CoTiMAstudyList_6"))
 #' pubResults_6 <- ctmaPub(getPubObj=pubList_8,
 #'                         primaryStudyList=CoTiMAstudyList_6)
 #' summary(pubResults_6)
+#' ctmaUnloadExamples(c("pubList_8", "CoTiMAstudyList_6"))
 #' }
 #'
 #' @export ctmaPub

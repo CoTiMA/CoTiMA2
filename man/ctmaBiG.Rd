@@ -65,7 +65,9 @@ CoTiMABiG_D_BO <- ctmaBiG(ctmaInitFit=CoTiMAInitFit_D_BO, zcurve=FALSE)
 }
 
 # display results
+ctmaLoadExamples("CoTiMABiG_D_BO")
 summary(CoTiMABiG_D_BO)
+ctmaUnloadExamples("CoTiMABiG_D_BO")
 
 \dontrun{
 # get funnel & forest plots
