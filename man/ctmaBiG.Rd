@@ -52,7 +52,7 @@ precision), and "Z-Curve 2.0 Results". Plot type is plot.type=c("funnel", "fores
 }
 \description{
 Analysis of publication bias and generalizability. The function takes a CoTiMA fit object (created with \code{\link{ctmaInit}})
-and estimates fixed and random effects of single drift coefficients, heterogeneity  (Q, I square, H square, tau square),
+and estimates common- and random-effects meta-analyses of individual drift coefficients, heterogeneity (Q, I square, H square, tau square),
 PET-PEESE corrections, Egger's tests, and z-curve analysis yielding expected replication and detection rates (ERR, EDR).
 }
 \examples{

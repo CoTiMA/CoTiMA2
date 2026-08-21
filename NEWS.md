@@ -1,3 +1,12 @@
+# CoTiMA2 0.10.0
+
+- Corrected `ctmaBiG()` common- and random-effects calculations: two-sided
+  p-values, non-negative DerSimonian--Laird heterogeneity, parameter-specific
+  study counts, corrected H-squared/I-squared intervals, and prediction
+  intervals that include uncertainty in the pooled mean.
+- Corrected T0 covariance standard-error extraction and discrete-time z-curve
+  input selection in `ctmaBiG()`.
+
 # CoTiMA2 0.9.99
 
 - Added `backend` and `backendArgs` to `ctmaEqual()`, with Stan retained as
