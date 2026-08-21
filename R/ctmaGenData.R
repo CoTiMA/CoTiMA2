@@ -1,3 +1,19 @@
+.ctmaGenDataExtractionNote <- function(activeDirectory, resultName = NULL) {
+  object_name <- if (is.null(resultName)) "generatedData" else resultName
+  directory_code <- paste(deparse(activeDirectory), collapse = "")
+  message(
+    "Note: ctmaExtract = FALSE, so the generated CoTiMA input objects were ",
+    "not loaded into the global environment. To create them later, run:\n",
+    "ctmaExtract(activeDirectory = ", directory_code,
+    ", ctmaGenDataList = ", object_name,
+    ", envir = globalenv())",
+    if (is.null(resultName)) paste0(
+      "\nHere, replace 'generatedData' with the name to which you assigned ",
+      "the result of ctmaGenData(), or specify resultName in that call."
+    ) else ""
+  )
+}
+
 #' ctmaGenData
 #'
 #' @description Generates data from lists of parameters (drift, diffusion etc). Experimental!!
@@ -23,6 +39,10 @@
 #' @param n.latent number of latent variables of the model No default (all = NULL).
 #' @param n.manifest number of manifest variables of the model (if left empty it will assumed to be identical with n.latent).
 #' @param randomIntercepts list of (co-)variances matrices of TIpreds (traits). By default all are = 0.
+#' @param resultName optional character name assigned by the user to the value
+#' returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
+#' is inserted into the printed follow-up command. R functions cannot discover
+#' the left-hand side of an assignment automatically.
 #' @param T0means list of Time 0 mean levels. By default all are = 0.
 #' @param T0var list of Time 0 (co-)variance matrices. No default (all = NULL).
 #' @param TIpreds list of time-independent predictors, e.g., the moderators that were used to create the drift matrices. No default (all = NULL).
@@ -78,6 +98,7 @@ ctmaGenData <- function(
     n.latent = NULL,
     n.manifest = NULL,
     randomIntercepts = NULL,
+    resultName = NULL,
     T0means = 0,
     T0var = NULL,
     TIpreds = NULL,
@@ -86,6 +107,13 @@ ctmaGenData <- function(
     useRawData=NULL
 )
 {
+
+  if (!is.null(resultName) &&
+      (!is.character(resultName) || length(resultName) != 1L ||
+       is.na(resultName) || !nzchar(resultName))) {
+    stop("'resultName' must be NULL or one non-empty character string.",
+      call. = FALSE)
+  }
 
   original.options <- getOption("scipen"); original.options
   options(scipen = 999); options("scipen") # turn scientific notation off.
@@ -957,6 +985,8 @@ ctmaGenData <- function(
                 ctmaGenDataList = studies,
                 envir = envir,
                 useRawData = useRawData)
+  } else {
+    .ctmaGenDataExtractionNote(activeDirectory, resultName)
   }
 
   # Return ####

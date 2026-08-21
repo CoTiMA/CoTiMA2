@@ -1,5 +1,5 @@
 .ctma_package_name <- "CoTiMA2"
-.ctma_package_version <- "0.12.3"
+.ctma_package_version <- "0.12.4"
 
 .ctmaVersionNote <- function() {
   message(

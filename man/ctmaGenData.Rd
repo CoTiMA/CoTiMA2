@@ -27,6 +27,7 @@ ctmaGenData(
   n.latent = NULL,
   n.manifest = NULL,
   randomIntercepts = NULL,
+  resultName = NULL,
   T0means = 0,
   T0var = NULL,
   TIpreds = NULL,
@@ -79,6 +80,11 @@ ctmaGenData(
 \item{n.manifest}{number of manifest variables of the model (if left empty it will assumed to be identical with n.latent).}
 
 \item{randomIntercepts}{list of (co-)variances matrices of TIpreds (traits). By default all are = 0.}
+
+\item{resultName}{optional character name assigned by the user to the value
+returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
+is inserted into the printed follow-up command. R functions cannot discover
+the left-hand side of an assignment automatically.}
 
 \item{T0means}{list of Time 0 mean levels. By default all are = 0.}
 

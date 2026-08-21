@@ -1,3 +1,11 @@
+# CoTiMA2 0.12.4
+
+- `ctmaGenData(ctmaExtract = FALSE)` now prints a follow-up
+  `ctmaExtract()` command containing the actual `activeDirectory`. The new
+  optional `resultName` argument inserts the user's result-object name; when
+  it is omitted, the note clearly identifies the placeholder that must be
+  replaced.
+
 # CoTiMA2 0.12.3
 
 - Improved conflict handling in `ctmaLoadExamples()`. Its default error now
