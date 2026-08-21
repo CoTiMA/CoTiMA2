@@ -1,9 +1,13 @@
-#' This are preset arguments
+#' Legacy Stan backend defaults
 #'
 #' @name CoTiMAStanctArgs
 #' @export CoTiMAStanctArgs
+#' @description Deprecated compatibility snapshot of the Stan backend
+#' defaults. New code should use \code{ctmaBackendDefaults("stan")} and pass
+#' modifications through \code{backendArgs}.
 #'
-CoTiMAStanctArgs<-list(test=TRUE,
+.ctmaStanBackendDefaults <- function() {
+  list(test=TRUE,
                        scaleTI=TRUE, scaleMod=FALSE, scaleClus=FALSE,
                        scaleTD=FALSE, scaleLongData=FALSE, scaleTime=1/1,
                        scaleTimeAuto=NULL,
@@ -67,3 +71,9 @@ CoTiMAStanctArgs<-list(test=TRUE,
                                     stepsize = .001),
                        verbose = 0,
                        vb=FALSE)
+}
+
+# Keep a snapshot for source compatibility. Internal code must obtain a fresh
+# list from .ctmaStanBackendDefaults(), so user modification of this exported
+# object cannot change package defaults.
+CoTiMAStanctArgs <- .ctmaStanBackendDefaults()

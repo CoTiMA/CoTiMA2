@@ -2,7 +2,8 @@
 #'
 #' Return a fresh named list of backend controls. Stan remains CoTiMA's
 #' default backend. During the compatibility phase, the Stan result is
-#' identical to \code{CoTiMAStanctArgs}; Julia defaults are grouped by the public
+#' identical in value to the deprecated \code{CoTiMAStanctArgs} snapshot;
+#' Julia defaults are grouped by the public
 #' workflow and estimation method that uses them.
 #'
 #' Model-construction controls such as time scaling and TI-predictor scaling
@@ -35,12 +36,8 @@ ctmaBackendDefaults <- function(
                  "ctmaEqual", "ctmaReFit")) {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
 
-  # Preserve the established Stan defaults exactly during migration. Assigning
-  # the object to a local variable also makes the intended copy-on-modify
-  # behavior explicit to callers.
   if (identical(backend, "stan")) {
-    defaults <- CoTiMAStanctArgs
-    return(defaults)
+    return(.ctmaStanBackendDefaults())
   }
 
   workflow <- match.arg(workflow)

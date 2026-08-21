@@ -304,6 +304,10 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     estimation = c("ML", "Bayes"), workflow = "ctmaFit") {
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
+  if (!is.null(legacy_stan_args)) {
+    .Deprecated("backendArgs", package = "CoTiMA2",
+      old = "CoTiMAStanctArgs")
+  }
   if (is.null(backendArgs)) backendArgs <- list()
   if (!is.list(backendArgs) ||
       (length(backendArgs) && (is.null(names(backendArgs)) ||

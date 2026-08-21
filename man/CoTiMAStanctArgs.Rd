@@ -2,10 +2,13 @@
 % Please edit documentation in R/ctmaStanctArgs.R
 \name{CoTiMAStanctArgs}
 \alias{CoTiMAStanctArgs}
-\title{This are preset arguments}
+\alias{.ctmaStanBackendDefaults}
+\title{Legacy Stan backend defaults}
 \usage{
-CoTiMAStanctArgs
+.ctmaStanBackendDefaults()
 }
 \description{
-This are preset arguments
+Deprecated compatibility snapshot of the Stan backend
+defaults. New code should use \code{ctmaBackendDefaults("stan")} and pass
+modifications through \code{backendArgs}.
 }

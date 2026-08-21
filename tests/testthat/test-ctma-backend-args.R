@@ -114,11 +114,32 @@ test_that("backend defaults are isolated between calls", {
   stan_first$control$adapt_delta <- 0.99
   expect_identical(ctmaBackendDefaults()$control$adapt_delta, 0.8)
 })
+
+test_that("Stan defaults come from a fresh private factory", {
+  first <- CoTiMA2:::.ctmaStanBackendDefaults()
+  first$iter <- 3L
+  first$optimcontrol$finishsamples <- 7L
+  second <- CoTiMA2:::.ctmaStanBackendDefaults()
+  expect_identical(second$iter, 1000)
+  expect_identical(second$optimcontrol$finishsamples, 1000)
+  expect_identical(ctmaBackendDefaults("stan"), CoTiMAStanctArgs)
+})
+
+test_that("legacy Stan argument use is deprecated", {
+  expect_warning(
+    CoTiMA2:::.ctmaResolveFitBackend(
+      backend = "stan",
+      legacy_stan_args = list(iter = 500L),
+      workflow = "ctmaFit"
+    ),
+    "CoTiMAStanctArgs"
+  )
+})
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.12.0")
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.12.1")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.12.0\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.12.1\\)."
   )
 
   major_functions <- c(

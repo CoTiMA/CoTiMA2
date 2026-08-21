@@ -93,14 +93,17 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
     doParallel::registerDoParallel(1)
   }
 
+  if (!is.null(CoTiMAStanctArgs)) {
+    .Deprecated("backendArgs", package = "CoTiMA2",
+      old = "CoTiMAStanctArgs")
+  }
+  CoTiMAStanctArgs <- .ctmaMergeBackendArgs(
+    .ctmaStanBackendDefaults(),
+    if (is.null(CoTiMAStanctArgs)) list() else CoTiMAStanctArgs,
+    path = "CoTiMAStanctArgs"
+  )
   if (!(is.null(finishsamples))) CoTiMAStanctArgs$optimcontrol$finishsamples <- finishsamples
   if (!(is.null(scaleTime))) CoTiMAStanctArgs$scaleTime <- scaleTime
-
-  # Added 17. Aug 2022
-  tmp1 <- names(CoTiMA2::CoTiMAStanctArgs) %in% names(CoTiMAStanctArgs); tmp1
-  tmp2 <- CoTiMA2::CoTiMAStanctArgs
-  if (!(is.null(CoTiMAStanctArgs))) tmp2[tmp1] <- CoTiMAStanctArgs
-  CoTiMAStanctArgs <- tmp2
 
   ########################################################################################################################
 
@@ -174,5 +177,4 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
 
   invisible(results)
 }
-
 

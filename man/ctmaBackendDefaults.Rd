@@ -32,7 +32,8 @@ A fresh named list of backend-specific defaults.
 \description{
 Return a fresh named list of backend controls. Stan remains CoTiMA's
 default backend. During the compatibility phase, the Stan result is
-identical to \code{CoTiMAStanctArgs}; Julia defaults are grouped by the public
+identical in value to the deprecated \code{CoTiMAStanctArgs} snapshot;
+Julia defaults are grouped by the public
 workflow and estimation method that uses them.
 }
 \details{

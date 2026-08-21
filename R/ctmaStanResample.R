@@ -49,7 +49,7 @@ ctmaStanResample <- function(ctmaFittedModel=NULL,
       tmp2 <- ctmaFittedModel$stanfit$transformedpars[[ targetElementXdim[[h]][j] ]]
       for (i in 1:length(currentResults)) {
         tmp3 <- currentResults[[i]]$stanfit$transformedpars[[ targetElementXdim[[h]][j] ]]#[-c(1,2)]
-        tmp4 <- CoTiMAStanctArgs$optimcontrol$finishsamples; tmp4
+        tmp4 <- .ctmaStanBackendDefaults()$optimcontrol$finishsamples; tmp4
         tmp5 <- dim(tmp3)
         tmp5[1] <- tmp5[1] - tmp4; tmp5
         if(length(dim(tmp3)) == 1) tmp3 <- tmp3[-c(1:tmp4)]
@@ -66,4 +66,3 @@ ctmaStanResample <- function(ctmaFittedModel=NULL,
   return(ctmaFittedModel)
 
 }
-

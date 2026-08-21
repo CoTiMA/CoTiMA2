@@ -1,3 +1,12 @@
+# CoTiMA2 0.12.1
+
+- Replaced all internal dependence on the exported `CoTiMAStanctArgs` object
+  with a private factory that returns a fresh Stan-default list for every
+  call. `ctmaBackendDefaults("stan")` is now the canonical public accessor.
+- Retained `CoTiMAStanctArgs` temporarily as a deprecated compatibility
+  snapshot and retained the legacy function arguments with deprecation
+  notices. Removed its redundant user-guide example-data copy.
+
 # CoTiMA2 0.12.0
 
 - Migrated `ctmaRedHet(dt=)` to a backend-neutral raw-draw map. Discrete-time
