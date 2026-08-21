@@ -7,7 +7,8 @@
 ctmaBackendDefaults(
   backend = c("stan", "julia"),
   estimation = NULL,
-  workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit", "ctmaReFit")
+  workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit", "ctmaEqual",
+    "ctmaReFit")
 )
 }
 \arguments{
@@ -22,7 +23,8 @@ ctmaBackendDefaults(
 
 \item{workflow}{Public workflow for which defaults are requested. The
 current Julia workflows are \code{"ctmaJuliaFit"}, \code{"ctmaInit"},
-\code{"ctmaFit"}, \code{"ctmaAllInvFit"}, and \code{"ctmaReFit"}.}
+\code{"ctmaFit"}, \code{"ctmaAllInvFit"}, \code{"ctmaEqual"}, and
+\code{"ctmaReFit"}.}
 }
 \value{
 A fresh named list of backend-specific defaults.

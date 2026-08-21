@@ -9,7 +9,9 @@ ctmaEqual(
   activeDirectory = NULL,
   activateRPB = FALSE,
   digits = 4,
-  coresToUse = 2
+  coresToUse = 2,
+  backend = c("stan", "julia"),
+  backendArgs = list()
 )
 }
 \arguments{
@@ -23,6 +25,11 @@ In most cases probably a model in which (only) two effects were specified with i
 \item{digits}{Number of digits used for rounding (in outputs)}
 
 \item{coresToUse}{If neg., the value is subtracted from available cores, else value = cores to use}
+
+\item{backend}{estimation backend, \code{"stan"} (default) or
+\code{"julia"}.}
+
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
 returns a model where two or more parameters were set equal across primary studies and a log-likelihood difference test

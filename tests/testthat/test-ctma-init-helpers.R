@@ -465,6 +465,26 @@ test_that("ctmaPower exposes and validates backend controls", {
   )
 })
 
+test_that("ctmaEqual exposes and validates backend controls", {
+  expect_identical(eval(formals(ctmaEqual)$backend), c("stan", "julia"))
+  expect_true("backendArgs" %in% names(formals(ctmaEqual)))
+  expect_true("ctmaEqual" %in% eval(formals(ctmaBackendDefaults)$workflow))
+
+  fixture <- list(
+    model.type = "ct",
+    argumentList = list(CoTiMAStanctArgs = NULL, estimation = "ML"),
+    modelResults = list(DRIFT = c(`a (invariant)` = 0, `b (invariant)` = 0))
+  )
+  expect_error(
+    ctmaEqual(
+      ctmaInvariantFit = fixture,
+      backend = "julia",
+      backendArgs = list(not_a_control = TRUE)
+    ),
+    "Unknown backendArgs: not_a_control"
+  )
+})
+
 test_that("ctmaOptimizeFit merges defaults, inherited controls, and overrides", {
   result <- CoTiMA2:::.ctmaResolveOptimizeStanArgs(
     inherited = list(

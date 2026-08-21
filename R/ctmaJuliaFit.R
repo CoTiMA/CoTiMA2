@@ -1989,7 +1989,9 @@ print.summary.ctmaJuliaFitStudy <- function(
       statistics,
       check.names = FALSE
     )
-    rownames(table) <- paste("DRIFT", drift_setup$parname)
+    rownames(table) <- make.unique(
+      paste("DRIFT", drift_setup$parname), sep = "__cell"
+    )
     out[[study_index]] <- table
   }
   names(out) <- paste0("Study ", study_numbers)

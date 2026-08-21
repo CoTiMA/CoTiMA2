@@ -11,6 +11,9 @@
 #' @param activateRPB  set to TRUE to receive push messages with CoTiMA notifications on your phone
 #' @param digits Number of digits used for rounding (in outputs)
 #' @param coresToUse If neg., the value is subtracted from available cores, else value = cores to use
+#' @param backend estimation backend, \code{"stan"} (default) or
+#'   \code{"julia"}.
+#' @param backendArgs named list of controls for the selected backend.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores
@@ -36,24 +39,15 @@ ctmaEqual <- function(
     activeDirectory=NULL,
     activateRPB=FALSE,
     digits=4,
-    coresToUse=2
+    coresToUse=2,
+    backend=c("stan", "julia"),
+    backendArgs=list()
 )
 
 {  # begin function definition (until end of file)
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaEqual")
   on.exit(.ctma_timer(), add = TRUE)
-
-  # use same fitting params as used to fit ctmaInvariantFit
-  CoTiMAStanctArgs <- ctmaInvariantFit$argumentList$CoTiMAStanctArgs
-
-  # check if mutipleDriftFit object is supplied
-  if (! ((ctmaInvariantFit$model.type == "mx") || (ctmaInvariantFit$model.type == "stanct")
-         || (ctmaInvariantFit$model.type == "ct") )) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-    ErrorMsg <- "\nA fitted CoTiMA object with more than a single invariant drift effect (fit of ctmaFit) has to be supplied compare the effects. \nGood luck for the next try!"
-    stop(ErrorMsg)
-  }
 
   # check if fit object is specified
   if (is.null(ctmaInvariantFit)){
@@ -62,7 +56,64 @@ ctmaEqual <- function(
     stop(ErrorMsg)
   }
 
-  if ( length(grep("invariant", names(ctmaInvariantFit$modelResults$DRIFT))) < 2) {
+  julia_input <- inherits(ctmaInvariantFit, "ctmaJuliaFit")
+  supported_model_type <- length(ctmaInvariantFit$model.type) == 1L &&
+    !is.na(ctmaInvariantFit$model.type) &&
+    ctmaInvariantFit$model.type %in% c("mx", "stanct", "ct")
+  # check if mutipleDriftFit object is supplied
+  if (!julia_input && !supported_model_type) {
+    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+    ErrorMsg <- "\nA fitted CoTiMA object with more than a single invariant drift effect (fit of ctmaFit) has to be supplied compare the effects. \nGood luck for the next try!"
+    stop(ErrorMsg)
+  }
+
+  inherited_stan_args <- ctmaInvariantFit$argumentList$CoTiMAStanctArgs
+  inherited_estimation <- ctmaInvariantFit$argumentList$estimation
+  if (is.null(inherited_estimation)) {
+    inherited_optimize <- inherited_stan_args$optimize
+    inherited_estimation <- if (isFALSE(inherited_optimize)) "Bayes" else "ML"
+  }
+  selected_backend <- match.arg(tolower(backend), c("stan", "julia"))
+  backend_resolution <- .ctmaResolveFitBackend(
+    backend = selected_backend,
+    backendArgs = backendArgs,
+    legacy_stan_args = if (identical(selected_backend, "stan") &&
+      !length(backendArgs)) inherited_stan_args else NULL,
+    estimation = inherited_estimation,
+    workflow = "ctmaEqual"
+  )
+  backend <- backend_resolution$backend
+  requested_estimation <- backend_resolution$estimation
+  resolved_backend_args <- backend_resolution$backend_args
+  CoTiMAStanctArgs <- if (identical(backend, "stan")) {
+    .ctmaResolveAllInvStanArgs(overrides = backend_resolution$stan_args)
+  } else {
+    .ctmaResolveAllInvStanArgs(
+      optimize = identical(requested_estimation, "ml"),
+      priors = identical(requested_estimation, "bayes")
+    )
+  }
+
+  input_model <- if (julia_input) {
+    ctmaInvariantFit$source_object$ctModel
+  } else {
+    candidate <- ctmaInvariantFit$studyFitList[[1]]$ctstanmodelbase
+    if (is.null(candidate)) candidate <- ctmaInvariantFit$studyFitList$ctstanmodelbase
+    candidate
+  }
+  if (is.null(input_model)) {
+    stop("The supplied fit does not contain its ctsem model specification.", call. = FALSE)
+  }
+  drift_rows_all <- which(input_model$pars$matrix == "DRIFT")
+  ti_effect_columns <- paste0(input_model$TIpredNames, "_effect")
+  invariant_rows <- if (length(ti_effect_columns)) {
+    drift_rows_all[apply(
+      input_model$pars[drift_rows_all, ti_effect_columns, drop = FALSE],
+      1L, function(x) all(!as.logical(x))
+    )]
+  } else drift_rows_all
+  invariant_names <- as.character(input_model$pars$param[invariant_rows])
+  if (length(invariant_names) < 2L) {
     if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
     ErrorMsg <- "\nA fitted CoTiMA object was supplied, but is has to have more than a single invariant drift effect to compare the effects. \nGood luck for the next try!"
     stop(ErrorMsg)
@@ -73,15 +124,15 @@ ctmaEqual <- function(
   #######################################################################################################################
   ################################################# Check Cores To Use ##################################################
   #######################################################################################################################
-  if  (length(coresToUse) > 0) {
-    if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-  }
-
-  if (coresToUse >= parallel::detectCores()) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
-    coresToUse <- parallel::detectCores() - 1
-    Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash."
-    message(Msg)
+  resource_resolution <- .ctmaResolveCores(
+    coresToUse, backend = backend, workflow = "ctmaEqual"
+  )
+  coresToUse <- resource_resolution$resolved
+  if (identical(backend, "julia")) {
+    julia_resources <- .ctmaInitJuliaResources(
+      coresToUse, requested_estimation, backendArgs, resolved_backend_args
+    )
+    resolved_backend_args <- julia_resources$backend_args
   }
 
 
@@ -93,34 +144,41 @@ ctmaEqual <- function(
 
   start.time <- Sys.time(); start.time
   {
-    n.latent <- length(ctmaInvariantFit$modelResults$DRIFT)^.5; n.latent
-    if (is.null(activeDirectory)) activeDirectory <- ctmaInvariantFit$activeDirectory; activeDirectory
-    n.studies <- unlist(ctmaInvariantFit$n.studies); n.studies
-    allTpoints <- ctmaInvariantFit$statisticsList$allTpoints; allTpoints
-    maxTpoints <- max(allTpoints); maxTpoints
-    allDeltas <- ctmaInvariantFit$statisticsList$allDeltas; allDeltas
-    maxDelta <- max(allDeltas); maxDelta
-    manifestNames <- ctmaInvariantFit$studyFitList$ctstanmodel$manifestNames; manifestNames
-    parameterNames <- ctmaInvariantFit$parameterNames; parameterNames
-    driftNames <- ctmaInvariantFit$parameterNames$DRIFT; driftNames
-    targetNames <- names(ctmaInvariantFit$modelResults$DRIFT[grep("invariant", names(ctmaInvariantFit$modelResults$DRIFT))]); targetNames
+    n.latent <- input_model$n.latent; n.latent
+    if (is.null(activeDirectory)) {
+      activeDirectory <- ctmaInvariantFit$activeDirectory
+      if (is.null(activeDirectory)) {
+        activeDirectory <- ctmaInvariantFit$source_object$argumentList$activeDirectory
+      }
+    }
+    n.studies <- if (julia_input) input_model$n.TIpred + 1L else unlist(ctmaInvariantFit$n.studies)
+    statisticsList <- ctmaInvariantFit$statisticsList
+    studyList <- ctmaInvariantFit$studyList
+    if (julia_input) {
+      if (is.null(studyList)) studyList <- ctmaInvariantFit$source_object$studyList
+      parameterNames <- list(
+        DRIFT = as.character(input_model$pars$param[drift_rows_all])
+      )
+    } else parameterNames <- ctmaInvariantFit$parameterNames
+    driftNames <- parameterNames$DRIFT
+    targetNames <- invariant_names
     # CHD 30.11.2024
     randomIntercepts <- ctmaInvariantFit$argumentList$randomIntercepts
+    if (julia_input && is.null(randomIntercepts)) {
+      randomIntercepts <- ctmaInvariantFit$source_object$argumentList$randomIntercepts
+    }
+    if (is.null(randomIntercepts)) randomIntercepts <- FALSE
   }
 
   # copy previous model
-  prevStanctModel <- ctmaInvariantFit$studyFitList[[1]]$ctstanmodelbase
-  if (is.null(prevStanctModel)) prevStanctModel <- ctmaInvariantFit$studyFitList$ctstanmodelbase
-  prevStanctModelFit <- summary(ctmaInvariantFit$studyFitList[[1]])
-  if (!("npars" %in% names(prevStanctModelFit))) prevStanctModelFit <- summary(ctmaInvariantFit$studyFitList)
-  #prevStanctModelFit
+  prevStanctModel <- input_model
 
   # identify Drift coefficents that were fixed (across all TI, which is just a check)
   tmpRow <- which(prevStanctModel$pars$matrix == "DRIFT"); tmpRow
   # CHD 28.11.2024
   if ( (randomIntercepts != "MANIFEST") & (randomIntercepts != "CINT") ) {
-    equalDriftPos <- grep("invariant", names(ctmaInvariantFit$modelResults$DRIFT)); equalDriftPos
-    tmpRow <- tmpRow[equalDriftPos]; tmpRow
+    tmpRow <- invariant_rows
+    equalDriftPos <- match(tmpRow, drift_rows_all)
   }
   if ( (randomIntercepts == "MANIFEST") | (randomIntercepts == "CINT") ) {
     equalDriftPos <- grep("DRIFT", prevStanctModel$pars$matrix); equalDriftPos
@@ -138,8 +196,13 @@ ctmaEqual <- function(
   newDriftLabel <- paste(stanctModel$pars[targetDriftRow, "param"], collapse = "_eq_"); newDriftLabel
   stanctModel$pars[targetDriftRow, "param"] <- newDriftLabel
 
-  prevEst <- ctmaInvariantFit$studyFitList[[1]]$stanfit$rawest; prevEst
-  if (is.null(prevEst)) prevEst <- ctmaInvariantFit$studyFitList$stanfit$rawest
+  previous_fit <- if (julia_input) ctmaInvariantFit else ctmaInvariantFit$studyFitList[[1]]
+  if (is.null(previous_fit)) previous_fit <- ctmaInvariantFit$studyFitList
+  prevEst <- if (inherits(previous_fit, "ctmaJuliaFit")) {
+    as.numeric(coef(previous_fit, type = "raw"))
+  } else {
+    previous_fit$stanfit$rawest
+  }
   # correct for having appropriate inits
   tmp1 <- which(tmpRow %in% targetDriftRow); tmp1
   newInits <- mean(prevEst[tmp1]); newInits
@@ -150,13 +213,25 @@ ctmaEqual <- function(
 
 
   prevData <- ctmaInvariantFit$data
+  if (julia_input && is.null(prevData)) prevData <- ctmaInvariantFit$source_object$data
 
   priors <- FALSE
   if (!(is.null(CoTiMAStanctArgs$priors))) priors <- CoTiMAStanctArgs$priors else priors <- FALSE
 
   CoTiMAStanctArgs$optimcontrol$bootstrapUncertainty <- NULL
 
-  fitStanctModel <- ctsem::ctFit(
+  if (identical(backend, "julia")) {
+    fitStanctModel <- .ctmaInitJuliaStudyFit(
+      datalong = prevData,
+      model = stanctModel,
+      same_initial_times = FALSE,
+      stan_args = CoTiMAStanctArgs,
+      backend_args = resolved_backend_args,
+      estimation = requested_estimation,
+      start_values = if (julia_input) NULL else prevEst,
+      digits = digits
+    )
+  } else fitStanctModel <- ctsem::ctFit(
     inits=prevEst,
     datalong = prevData,
     ctstanmodel = stanctModel,
@@ -185,11 +260,14 @@ ctmaEqual <- function(
     verbose=CoTiMAStanctArgs$verbose,
     cores=coresToUse)
 
-  if (!(is.null(CoTiMAStanctArgs$resample))) {
+  if (identical(backend, "stan") && !(is.null(CoTiMAStanctArgs$resample))) {
     fitStanctModel <- ctmaStanResample(ctmaFittedModel=fitStanctModel) #, CoTiMAStanctArgs=CoTiMAStanctArgs)
   }
-
-  equalDriftStanctFit <- summary(fitStanctModel, digits=digits)
+  equalDriftStanctFit <- if (inherits(fitStanctModel, "ctmaJuliaFit")) {
+    fitStanctModel$ctsem_summary
+  } else {
+    summary(fitStanctModel, digits=digits)
+  }
 
   # Extract estimates & statistics
   # account for changes in ctsem 3.4.1
@@ -215,7 +293,10 @@ ctmaEqual <- function(
   driftNamesTmpBackup <- driftNamesTmp
   driftNamesTmp[equalDriftPos] <- paste0(driftNamesTmp[equalDriftPos], " (invariant & equal)"); driftNamesTmp
   if ( (randomIntercepts != "MANIFEST") & (randomIntercepts != "CINT") ) {
-    rownames(equalDrift_Coeff)[tmp1] <- driftNamesTmp
+    # A shared equality parameter can be reported once for each affected
+    # matrix cell. Keep data-frame row names unique while retaining the common
+    # parameter label in the displayed text.
+    rownames(equalDrift_Coeff)[tmp1] <- make.unique(driftNamesTmp, sep = "__cell")
   }
 
   if ( (randomIntercepts == "MANIFEST") | (randomIntercepts == "CINT") ) {
@@ -282,26 +363,41 @@ ctmaEqual <- function(
 
   # results is built again after test for equality
   results <- list(activeDirectory=activeDirectory,
+                  backend=backend,
+                  backendArgs=resolved_backend_args,
+                  resource_resolution=resource_resolution,
                   plot.type=NULL, model.type="stanct",
                   #time=list(start.time=start.time, end.time=end.time, time.taken=time.taken),
                   coresToUse=coresToUse, n.studies=n.studies,
                   n.latent=n.latent,
-                  studyList=ctmaInvariantFit$studyList, studyFitList=fitStanctModel,
-                  data=NULL, statisticsList=ctmaInvariantFit$statisticsList,
+                  studyList=studyList, studyFitList=fitStanctModel,
+                  data=prevData, statisticsList=statisticsList,
                   modelResults=list(DRIFT=model_Drift_Coef, DIFFUSION=model_Diffusion_Coef, T0VAR=model_T0var_Coef, CINT=NULL),
-                  parameterNames=ctmaInvariantFit$parameterNames,
-                  CoTiMAStanctArgs=CoTiMAStanctArgs,
+                  parameterNames=parameterNames,
+                  CoTiMAStanctArgs=if (identical(backend, "stan")) CoTiMAStanctArgs else NULL,
+                  argumentList=list(
+                    backend=backend,
+                    backendArgs=resolved_backend_args,
+                    CoTiMAStanctArgs=if (identical(backend, "stan")) CoTiMAStanctArgs else NULL,
+                    estimation=requested_estimation,
+                    randomIntercepts=randomIntercepts,
+                    coresToUse=coresToUse
+                  ),
                   equalDrift=newDriftLabel,
                   summary=list(#model=paste(targetNames, collapse=" equal to "),
                     model=newDriftLabel,
                     estimates=equalDrift_Coeff,
                     minus2ll=equalDrift_Minus2LogLikelihood,
                     n.parameters = round(equalDrift_estimatedParameters, digits),
-                    scaleTime=ctmaInvariantFit$summary$scaleTime))
+                    scaleTime=if (is.null(ctmaInvariantFit$summary$scaleTime)) 1 else ctmaInvariantFit$summary$scaleTime))
   class(results) <- "CoTiMAFit"
 
   # model comparison
-  compFit <- ctmaCompFit(ctmaInvariantFit, results)[[1]][-7]
+  comparison_input <- ctmaInvariantFit
+  if (is.null(comparison_input$summary$model)) {
+    comparison_input$summary$model <- paste(targetNames, collapse = " invariant")
+  }
+  compFit <- ctmaCompFit(comparison_input, results)[[1]][-7]
   results$summary$ll_diff_test <- compFit
 
   invisible(results)

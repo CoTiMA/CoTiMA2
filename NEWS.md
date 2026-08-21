@@ -1,3 +1,15 @@
+# CoTiMA2 0.9.99
+
+- Added `backend` and `backendArgs` to `ctmaEqual()`, with Stan retained as
+  the default and Julia ML/Bayesian fitting routed through the shared backend
+  infrastructure.
+- `ctmaEqual()` now accepts both conventional `CoTiMAFit` inputs and the
+  compact `ctmaJuliaFit` objects returned by Julia-based `ctmaFit()` calls.
+- Equality-constrained study-parameter summaries now use unique display row
+  names when several matrix cells share one parameter.
+- Fixed `ctmaEqual(NULL)` so that it reports the intended input error instead
+  of dereferencing the missing object first.
+
 # CoTiMA2 0.9.98
 
 - Added `backend` and `backendArgs` to `ctmaPower()`. Its internal invariant
