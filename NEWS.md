@@ -1,3 +1,15 @@
+# CoTiMA2 0.11.1
+
+- Migrated the continuous-time `ctmaRedHet()` path to the corrected shared
+  two-stage meta-analysis calculations used by `ctmaBiG()`.
+- Heterogeneity reduction is now based on WEC-reconstructed residual study
+  effects around moderator-predicted study means. The aligned result table
+  reports unconditional and moderated residual variance and proportional
+  reduction, while retaining Q, I-squared, and descriptive dispersion as
+  secondary diagnostics.
+- Added backend-neutral extraction, explicit handling of zero denominators and
+  negative reductions, S3 print/summary methods, and validation tests.
+
 # CoTiMA2 0.11.0
 
 - Added ctmaReRedHet() to compare residual study-level random-effect
