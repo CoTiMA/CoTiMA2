@@ -30,12 +30,37 @@ test_that("example loading never overwrites silently", {
   )
   target <- new.env(parent = emptyenv())
   target$exampleA <- 99
-  expect_error(ctmaLoadExamples("exampleA", target), "already exist")
+  expect_error(
+    ctmaLoadExamples("exampleA", target),
+    "Remove or rename.*overwrite = TRUE.*ctmaSecuredObjects"
+  )
   expect_identical(target$exampleA, 99)
-  ctmaLoadExamples("exampleA", target, overwrite = TRUE)
+  expect_message(
+    ctmaLoadExamples("exampleA", target, overwrite = TRUE),
+    "Secured 1 existing object"
+  )
   expect_identical(target$exampleA, 1)
+  expect_identical(target$ctmaSecuredObjects$exampleA, 99)
   ctmaUnloadExamples("exampleA", target)
   expect_identical(target$exampleA, 99)
+  expect_identical(target$ctmaSecuredObjects$exampleA, 99)
+})
+
+test_that("repeated overwrites preserve every secured value", {
+  directory <- withr::local_tempdir()
+  exampleA <- 1
+  save(exampleA, file = file.path(directory, "exampleA.rda"))
+  testthat::local_mocked_bindings(
+    .ctmaExampleDirectory = function() directory,
+    .ctmaVersionNote = function() invisible(NULL)
+  )
+  target <- new.env(parent = emptyenv())
+  target$exampleA <- 98
+  suppressMessages(ctmaLoadExamples("exampleA", target, overwrite = TRUE))
+  target$exampleA <- 99
+  suppressMessages(ctmaLoadExamples("exampleA", target, overwrite = TRUE))
+  expect_identical(target$ctmaSecuredObjects$exampleA, 98)
+  expect_identical(target$ctmaSecuredObjects$exampleA.1, 99)
 })
 
 test_that("all packaged complex examples unload except a changed object", {

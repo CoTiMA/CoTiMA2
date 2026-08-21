@@ -18,7 +18,10 @@
 #' packaged example objects are loaded.
 #' @param envir Target environment; defaults to the global environment.
 #' @param overwrite Whether existing objects may be overwritten. The default
-#' is \code{FALSE}.
+#' is \code{FALSE}. With \code{TRUE}, displaced objects are copied to the
+#' named list \code{ctmaSecuredObjects} in \code{envir}; unchanged loaded
+#' examples are still replaced by their original values when
+#' \code{ctmaUnloadExamples()} is called.
 #' @return Invisibly, the names loaded.
 #' @export
 ctmaLoadExamples <- function(names = NULL, envir = .GlobalEnv,
@@ -35,8 +38,33 @@ ctmaLoadExamples <- function(names = NULL, envir = .GlobalEnv,
   conflicts <- names[vapply(names, exists, logical(1L), envir = envir,
     inherits = FALSE)]
   if (length(conflicts) && !isTRUE(overwrite)) stop(
-    "Object(s) already exist and were not overwritten: ",
-    paste(conflicts, collapse = ", "), call. = FALSE)
+    "The following object(s) already exist and were not overwritten: ",
+    paste(conflicts, collapse = ", "), ".\n",
+    "Remove or rename these objects before calling ctmaLoadExamples() again, ",
+    "or use overwrite = TRUE. With overwrite = TRUE, their current values ",
+    "are first backed up in 'ctmaSecuredObjects'; remove that backup later ",
+    "with rm(ctmaSecuredObjects) only when you are sure it is no longer needed.",
+    call. = FALSE)
+
+  if (length(conflicts)) {
+    secured <- if (exists("ctmaSecuredObjects", envir = envir,
+      inherits = FALSE)) {
+      get("ctmaSecuredObjects", envir = envir, inherits = FALSE)
+    } else list()
+    if (!is.list(secured)) stop(
+      "Cannot secure existing example objects because 'ctmaSecuredObjects' ",
+      "already exists and is not a list. Rename or remove it first.",
+      call. = FALSE)
+    backup_names <- make.unique(c(names(secured), conflicts))
+    backup_names <- tail(backup_names, length(conflicts))
+    for (index in seq_along(conflicts)) {
+      secured[[backup_names[index]]] <- get(conflicts[index], envir = envir,
+        inherits = FALSE)
+    }
+    assign("ctmaSecuredObjects", secured, envir = envir)
+    message("Secured ", length(conflicts), " existing object(s) in ",
+      "ctmaSecuredObjects: ", paste(backup_names, collapse = ", "), ".")
+  }
 
   loaded <- character()
   for (name in names) {

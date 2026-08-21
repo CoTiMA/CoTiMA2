@@ -1,3 +1,10 @@
+# CoTiMA2 0.12.3
+
+- Improved conflict handling in `ctmaLoadExamples()`. Its default error now
+  explains how to remove or rename conflicting objects or deliberately use
+  `overwrite = TRUE`. Deliberately overwritten values are additionally saved
+  in `ctmaSecuredObjects`, including distinct backups across repeated loads.
+
 # CoTiMA2 0.12.2
 
 - Fixed false modification reports in `ctmaUnloadExamples()` for complex fit

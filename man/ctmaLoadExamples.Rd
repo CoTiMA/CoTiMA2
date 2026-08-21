@@ -13,7 +13,10 @@ packaged example objects are loaded.}
 \item{envir}{Target environment; defaults to the global environment.}
 
 \item{overwrite}{Whether existing objects may be overwritten. The default
-is \code{FALSE}.}
+is \code{FALSE}. With \code{TRUE}, displaced objects are copied to the
+named list \code{ctmaSecuredObjects} in \code{envir}; unchanged loaded
+examples are still replaced by their original values when
+\code{ctmaUnloadExamples()} is called.}
 }
 \value{
 Invisibly, the names loaded.
