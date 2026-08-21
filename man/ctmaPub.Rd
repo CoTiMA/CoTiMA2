@@ -20,7 +20,7 @@ ctmaPub(
 
 \item{primaryStudyList}{vector with numbers of studies (e.g., c(1,3); requires source1 and source3 to be available)}
 
-\item{yearsToExclude}{years to exclude from publications}
+\item{yearsToExclude}{calendar years whose publication counts are excluded}
 
 \item{recency}{years before targetYear that are considered for recency analysis}
 

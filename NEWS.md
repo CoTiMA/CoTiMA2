@@ -1,3 +1,12 @@
+# CoTiMA2 0.10.2
+
+- Corrected `ctmaPub()` author matching across common `Surname, Initials` and
+  `Initials; Surname` formats and stopped treating labels such as `Study1` as
+  authors.
+- Corrected recency aggregation for functions other than `sum`, and corrected
+  exclusion of individual publication years.
+- Added input validation and returned author-matching diagnostics.
+
 # CoTiMA2 0.10.1
 
 - Added backend-independent primary-study extraction to `ctmaBiG()`.
