@@ -1,3 +1,11 @@
+# CoTiMA2 0.14.7
+
+- Removed captured scalar and array aliases from threaded likelihood and
+  gradient reductions. Each worker now updates only its explicitly indexed
+  partial accumulator. Subject-level diagnostics established that the
+  numerical subject kernel itself was exactly reproducible and localized the
+  race to this reduction layer.
+
 # CoTiMA2 0.14.6
 
 - Subject-parallel likelihood and gradient loops now use static thread

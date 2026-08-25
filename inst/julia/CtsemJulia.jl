@@ -837,13 +837,11 @@ function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false,
         # Keep each subject block on one Julia thread. This avoids task
         # migration while dense numerical kernels are active.
         Threads.@threads :static for task_index in eachindex(ranges)
-            ll = zero(eltype(x))
             for si in ranges[task_index]
                 localraw = rawpop + TIP * vec(@view d.tipreds[si, :])
-                ll += subject_loglik(
+                partials[task_index] += subject_loglik(
                     localraw, d, d.firstrow[si], d.lastrow[si])
             end
-            partials[task_index] = ll
         end
         return sum(partials)
     else
@@ -962,9 +960,8 @@ function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
         ranges = subject_ranges(d.nsubjects)
         partials = [zeros(eltype(x), length(x)) for _ in eachindex(ranges)]
         Threads.@threads :static for task_index in eachindex(ranges)
-            g = partials[task_index]
             for si in ranges[task_index]
-                add_subject_score!(g, si)
+                add_subject_score!(partials[task_index], si)
                 done = Threads.atomic_add!(completed, 1) + 1
                 progress_every > 0 && done % progress_every == 0 &&
                     println("subject-score progress: ", done, "/", d.nsubjects)
