@@ -1021,13 +1021,21 @@ finalFit <- ctmaFit(
 @
 
 The ranking criterion approximates an optimizer iteration as one gradient plus
-two likelihood evaluations.  It measures computational throughput, not the
-number of iterations required for convergence, so the complete-fit runtime
-remains model dependent. After choosing the best throughput configuration,
+two likelihood evaluations. Each candidate is measured repeatedly and median
+times are used. Before comparing thread counts, serial and concurrent
+likelihoods and gradients must agree within strict numerical tolerances. If a
+concurrent component fails this check, it remains on the deterministic serial
+path for the complete fit and is not presented as a parallel speed
+recommendation. The check is performed once at the beginning of a fit; the
+backend does not switch numerical paths during optimization.
+
+The throughput pilot does not determine the number of iterations required for
+convergence, so complete-fit runtime remains model dependent. After choosing
+the best valid throughput configuration,
 \code{ctmaFitConfig()} also runs short joint (\code{carefulFit=FALSE}) and
 staged (\code{carefulFit=TRUE}) optimizer pilots. It recommends the alternative
-with the greater objective improvement per elapsed second. The default is five
-iterations per stage; change this with, for example,
+using both objective improvement per elapsed second and reduction of the raw
+gradient. The default is five iterations per stage; change this with, for example,
 \code{pilot_iterations=10L}. Models without time-invariant effects need no
 staged optimization, so only \code{carefulFit=FALSE} is tested. These short
 pilots are a heuristic and do not establish convergence.

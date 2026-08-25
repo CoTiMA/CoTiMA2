@@ -1,3 +1,15 @@
+# CoTiMA2 0.14.6
+
+- Subject-parallel likelihood and gradient loops now use static thread
+  assignment. A new subject-level consistency diagnostic localizes any
+  remaining serial-versus-parallel discrepancy.
+- ctmaFitConfig() no longer ranks thread counts when both concurrent
+  components have fallen back to their deterministic serial implementations.
+  Candidate timings are repeated and ranked by their medians.
+- Short carefulFit pilots now consider raw-gradient reduction in addition to
+  objective improvement per second, making their recommendation more relevant
+  to eventual convergence.
+
 # CoTiMA2 0.14.5
 
 - Added an independent repeatability and serial-agreement gate for concurrent

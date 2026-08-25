@@ -20,6 +20,8 @@
 #' @param candidate_carefulFit Logical values selecting joint (`FALSE`) and
 #'   staged (`TRUE`) short optimizer pilots.
 #' @param pilot_iterations Maximum optimizer iterations per pilot stage.
+#' @param benchmark_repetitions Number of repeated likelihood and gradient
+#'   evaluations per candidate. Medians reduce selection by timing noise.
 #' @param warmup Whether to run one untimed Julia gradient to exclude most
 #'   compilation cost from the comparison.
 #' @param verbose Print progress and the recommendation.
@@ -37,6 +39,7 @@ ctmaFitConfig <- function(
     candidate_chunksizes = NULL,
     candidate_carefulFit = c(FALSE, TRUE),
     pilot_iterations = 5L,
+    benchmark_repetitions = 2L,
     warmup = TRUE,
     verbose = TRUE) {
   .ctmaVersionNote()
@@ -72,6 +75,12 @@ ctmaFitConfig <- function(
   pilot_iterations <- suppressWarnings(as.integer(pilot_iterations)[1L])
   if (is.na(pilot_iterations) || pilot_iterations < 1L) stop(
     "'pilot_iterations' must be a positive integer.", call. = FALSE
+  )
+  benchmark_repetitions <- suppressWarnings(
+    as.integer(benchmark_repetitions)[1L]
+  )
+  if (is.na(benchmark_repetitions) || benchmark_repetitions < 1L) stop(
+    "'benchmark_repetitions' must be a positive integer.", call. = FALSE
   )
 
   started <- proc.time()[["elapsed"]]
@@ -160,6 +169,10 @@ ctmaFitConfig <- function(
       )
     }
   }
+  parallel_likelihood_safe <- !is.null(parallel_backend_check) &&
+    isTRUE(parallel_backend_check$likelihood$safe)
+  parallel_gradient_safe <- !is.null(parallel_backend_check) &&
+    isTRUE(parallel_backend_check$gradient$safe)
 
   if (is.null(candidate_subject_threads)) {
     candidate_subject_threads <- unique(c(
@@ -173,6 +186,13 @@ ctmaFitConfig <- function(
     !is.na(candidate_subject_threads) & candidate_subject_threads >= 1L &
       candidate_subject_threads <= pool
   ]
+  if (!parallel_likelihood_safe && !parallel_gradient_safe) {
+    candidate_subject_threads <- 1L
+    if (isTRUE(verbose) && pool > 1L) message(
+      "Concurrent likelihood and gradient validation failed; benchmarking ",
+      "the deterministic serial path only."
+    )
+  }
   if (!length(candidate_subject_threads)) stop(
     "No candidate_subject_threads value lies between 1 and julia_threads.",
     call. = FALSE
@@ -229,21 +249,33 @@ ctmaFitConfig <- function(
     JuliaCall::julia_eval(sprintf(
       "CtsemJulia.set_subject_threads!(%d)", subjects
     ))
-    likelihood <- system.time(JuliaCall::julia_eval(sprintf(
-      paste0("CtsemJulia.ctsem_loglik_by_subject(ctma_rawest,ctma_sd;",
-             "threaded=%s)"),
-      if (subjects > 1L) "true" else "false"
-    )))[["elapsed"]]
-    gradient <- system.time(JuliaCall::julia_eval(sprintf(
-      paste0("CtsemJulia.ctsem_gradient_by_subject(ctma_rawest,ctma_sd;",
-             "chunksize=%d,progress_every=0,threaded=%s)"),
-      chunk, if (subjects > 1L) "true" else "false"
-    )))[["elapsed"]]
+    likelihood_times <- gradient_times <- numeric(benchmark_repetitions)
+    for (repetition in seq_len(benchmark_repetitions)) {
+      likelihood_times[repetition] <- system.time(
+        JuliaCall::julia_eval(sprintf(
+          paste0("CtsemJulia.ctsem_loglik_by_subject(ctma_rawest,ctma_sd;",
+                 "threaded=%s)"),
+          if (subjects > 1L) "true" else "false"
+        ))
+      )[["elapsed"]]
+      gradient_times[repetition] <- system.time(
+        JuliaCall::julia_eval(sprintf(
+          paste0("CtsemJulia.ctsem_gradient_by_subject(ctma_rawest,ctma_sd;",
+                 "chunksize=%d,progress_every=0,threaded=%s)"),
+          chunk, if (subjects > 1L) "true" else "false"
+        ))
+      )[["elapsed"]]
+    }
+    likelihood <- stats::median(likelihood_times)
+    gradient <- stats::median(gradient_times)
     rows[[length(rows) + 1L]] <- data.frame(
       subject_threads = subjects, chunksize = chunk,
       likelihood_seconds = unname(likelihood),
       gradient_seconds = unname(gradient),
-      weighted_seconds = unname(gradient + 2 * likelihood)
+      weighted_seconds = unname(gradient + 2 * likelihood),
+      repetitions = benchmark_repetitions,
+      likelihood_parallel = subjects > 1L && parallel_likelihood_safe,
+      gradient_parallel = subjects > 1L && parallel_gradient_safe
     )
   }
   benchmarks <- do.call(rbind, rows)
@@ -258,6 +290,13 @@ ctmaFitConfig <- function(
            "threaded=%s)"),
     if (best_subjects > 1L) "true" else "false"
   )))[1L]
+  initial_maximum_absolute_gradient <- as.numeric(JuliaCall::julia_eval(
+    sprintf(
+      paste0("maximum(abs,CtsemJulia.ctsem_gradient_by_subject(",
+             "ctma_rawest,ctma_sd;chunksize=%d,progress_every=0,threaded=%s))"),
+      best_chunk, if (best_subjects > 1L) "true" else "false"
+    )
+  ))[1L]
   nti <- as.integer(dimensions$ntipredeffects)[1L]
   if (nti < 1L) candidate_carefulFit <- FALSE
   pilot_rows <- list()
@@ -315,13 +354,26 @@ ctmaFitConfig <- function(
     optimizer_pilots,
     ifelse(success & elapsed > 0, objective_improvement / elapsed, NA_real_)
   )
+  optimizer_pilots$gradient_reduction_factor <- with(
+    optimizer_pilots,
+    ifelse(
+      success & is.finite(maximum_absolute_gradient) &
+        maximum_absolute_gradient > 0,
+      initial_maximum_absolute_gradient / maximum_absolute_gradient,
+      NA_real_
+    )
+  )
+  optimizer_pilots$convergence_adjusted_score <- with(
+    optimizer_pilots,
+    improvement_per_second * sqrt(pmax(gradient_reduction_factor, 0))
+  )
   successful_pilots <- which(
     optimizer_pilots$success &
-      is.finite(optimizer_pilots$improvement_per_second)
+      is.finite(optimizer_pilots$convergence_adjusted_score)
   )
   recommended_careful <- if (length(successful_pilots)) {
     optimizer_pilots$carefulFit[successful_pilots[
-      which.max(optimizer_pilots$improvement_per_second[successful_pilots])
+      which.max(optimizer_pilots$convergence_adjusted_score[successful_pilots])
     ]]
   } else resolved$carefulFit
   recommended <- resolved
@@ -339,7 +391,10 @@ ctmaFitConfig <- function(
     optimizer_pilots = optimizer_pilots,
     resolved_backend_args = resolved, recommended = recommended,
     ranking_rule = "gradient_seconds + 2 * likelihood_seconds",
-    optimizer_ranking_rule = "objective improvement per elapsed second",
+    optimizer_ranking_rule = paste0(
+      "objective improvement per elapsed second, multiplied by the square ",
+      "root of the raw-gradient reduction factor"
+    ),
     note = paste0(
       "The recommendation ranks evaluation throughput at one common starting ",
       "vector. Complete-fit runtime also depends on optimizer conditioning and ",

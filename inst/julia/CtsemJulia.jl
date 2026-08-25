@@ -19,7 +19,7 @@ export ctsem_loglik, ctsem_negloglik, ctsem_gradient, ctsem_optimize,
        ctsem_nuts_parallel, ctsem_optimize_multistart,
        check_supported, set_subject_threads!, subject_threads,
        validate_parallel_gradient!, validate_parallel_likelihood!,
-       validate_parallel_backend!, tform
+       validate_parallel_backend!, validate_parallel_subjects, tform
 
 const LOG2PI = log(2pi)
 const SUBJECT_THREADS = Ref{Int}(1)
@@ -834,7 +834,9 @@ function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false,
     if threaded && SUBJECT_THREADS[] > 1
         ranges = subject_ranges(d.nsubjects)
         partials = [zero(eltype(x)) for _ in eachindex(ranges)]
-        Threads.@threads :dynamic for task_index in eachindex(ranges)
+        # Keep each subject block on one Julia thread. This avoids task
+        # migration while dense numerical kernels are active.
+        Threads.@threads :static for task_index in eachindex(ranges)
             ll = zero(eltype(x))
             for si in ranges[task_index]
                 localraw = rawpop + TIP * vec(@view d.tipreds[si, :])
@@ -853,6 +855,43 @@ function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false,
         end
         return ll
     end
+end
+
+"Compare serial and parallel likelihood contributions subject by subject."
+function validate_parallel_subjects(rawest_r, sd;
+                                    relative_tolerance::Real=1e-12)
+    check_supported(sd)
+    x = fvec(rawest_r)
+    d = prepare_subject_data(sd)
+    rawpop = x[1:d.nparams]
+    tipar = x[d.nparams+1:end]
+    TIP = zeros(eltype(x), d.nparams, d.ntipred)
+    for j in axes(TIP, 2), p in axes(TIP, 1)
+        ix = d.tie_setup[p, j]
+        ix > 0 && (TIP[p, j] = tipar[ix])
+    end
+    contribution(si) = subject_loglik(
+        rawpop + TIP * vec(@view(d.tipreds[si, :])), d,
+        d.firstrow[si], d.lastrow[si])
+    serial = [contribution(si) for si in 1:d.nsubjects]
+    parallel = similar(serial)
+    ranges = subject_ranges(d.nsubjects)
+    Threads.@threads :static for task_index in eachindex(ranges)
+        for si in ranges[task_index]
+            parallel[si] = contribution(si)
+        end
+    end
+    differences = abs.(serial .- parallel)
+    scales = max.(1.0, abs.(serial), abs.(parallel))
+    relative = differences ./ scales
+    worst = argmax(relative)
+    (safe=all(isfinite, serial) && all(isfinite, parallel) &&
+          maximum(relative) <= relative_tolerance,
+     maximum_relative_error=maximum(relative),
+     differing_subjects=count(>(relative_tolerance), relative),
+     worst_subject=worst,
+     worst_serial=serial[worst],
+     worst_parallel=parallel[worst])
 end
 
 "Check repeatability and serial agreement before enabling parallel likelihoods."
@@ -922,7 +961,7 @@ function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
         completed = Threads.Atomic{Int}(0)
         ranges = subject_ranges(d.nsubjects)
         partials = [zeros(eltype(x), length(x)) for _ in eachindex(ranges)]
-        Threads.@threads :dynamic for task_index in eachindex(ranges)
+        Threads.@threads :static for task_index in eachindex(ranges)
             g = partials[task_index]
             for si in ranges[task_index]
                 add_subject_score!(g, si)

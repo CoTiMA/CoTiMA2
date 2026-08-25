@@ -32,6 +32,8 @@ test_that("the packaged Julia project declares the backend dependencies", {
   expect_true(any(grepl("Optim", project, fixed = TRUE)))
   expect_true(any(grepl("using ForwardDiff", backend, fixed = TRUE)))
   expect_true(any(grepl("using Optim", backend, fixed = TRUE)))
+  expect_true(any(grepl("validate_parallel_subjects", backend, fixed = TRUE)))
+  expect_true(any(grepl("Threads.@threads :static", backend, fixed = TRUE)))
 })
 
 test_that("model-derived Julia starts respect ctsem matrix transforms", {

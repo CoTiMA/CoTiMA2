@@ -24,7 +24,15 @@ test_that("ctmaFitConfig exposes both backend routes and tuning controls", {
   expect_true(all(c(
     "ctmaInitFit", "...", "backend", "backendArgs", "time_limit",
     "candidate_subject_threads", "candidate_chunksizes",
-    "candidate_carefulFit", "pilot_iterations"
+    "candidate_carefulFit", "pilot_iterations", "benchmark_repetitions"
   ) %in% arguments))
   expect_identical(eval(formals(ctmaFitConfig)$backend), c("julia", "stan"))
+})
+
+test_that("Julia configuration uses repeat timing and convergence-aware pilots", {
+  body_text <- paste(deparse(body(ctmaFitConfig)), collapse = "\n")
+  expect_match(body_text, "stats::median", fixed = TRUE)
+  expect_match(body_text, "gradient_reduction_factor", fixed = TRUE)
+  expect_match(body_text, "convergence_adjusted_score", fixed = TRUE)
+  expect_match(body_text, "deterministic serial path only", fixed = TRUE)
 })

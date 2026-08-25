@@ -13,6 +13,7 @@ ctmaFitConfig(
   candidate_chunksizes = NULL,
   candidate_carefulFit = c(FALSE, TRUE),
   pilot_iterations = 5L,
+  benchmark_repetitions = 2L,
   warmup = TRUE,
   verbose = TRUE
 )
@@ -38,6 +39,9 @@ effects.}
 \item{pilot_iterations}{Positive number of optimizer iterations per stage and
 per \code{carefulFit} candidate. These pilots identify a promising strategy;
 they are not intended to converge.}
+\item{benchmark_repetitions}{Number of repeated likelihood and gradient
+evaluations per candidate. Median timings reduce selection by measurement
+noise.}
 \item{warmup}{Whether to perform one untimed Julia gradient evaluation before
 the measured grid.}
 \item{verbose}{Whether to print progress and the recommendation.}
@@ -52,8 +56,10 @@ benchmark table, resolved backend controls, and recommended
 Creates the same unfitted model setup as \code{ctmaFit()} and performs a
 bounded backend pilot. Julia ML pilots rank combinations of runtime-adjustable
 subject concurrency and ForwardDiff chunk size at a common raw starting
-vector. Short optimizer pilots then compare \code{carefulFit=FALSE} and
-\code{carefulFit=TRUE} by objective improvement per elapsed second. For Stan,
+vector. Unsafe parallel components are excluded from thread comparisons.
+Short optimizer pilots compare \code{carefulFit=FALSE} and
+\code{carefulFit=TRUE} using both objective improvement per elapsed second and
+raw-gradient reduction. For Stan,
 supplied controls are validated and retained and setup cost is reported;
 pooled ctsem/Stan optimization does not expose the equivalent subject/chunk
 tuning grid.
