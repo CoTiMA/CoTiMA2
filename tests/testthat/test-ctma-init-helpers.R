@@ -224,6 +224,21 @@ test_that("ctmaFit resolves Julia ML and Bayesian controls", {
   )
 })
 
+test_that("Julia backend requests point users to the installation guide", {
+  expect_message(
+    resolved <- CoTiMA2:::.ctmaResolveFitBackend(
+      backend = "julia", estimation = "ML", workflow = "ctmaFit"
+    ),
+    'vignette\\("Julia_Install", package = "CoTiMA2"\\)'
+  )
+  expect_identical(resolved$backend, "julia")
+  expect_silent(
+    CoTiMA2:::.ctmaResolveFitBackend(
+      backend = "stan", estimation = "ML", workflow = "ctmaFit"
+    )
+  )
+})
+
 test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism", {
   expect_identical(eval(formals(ctmaInit)$backend), c("stan", "julia"))
   defaults <- ctmaBackendDefaults("julia", "ML", "ctmaInit")
@@ -263,6 +278,56 @@ test_that("ctmaFit suppresses the no-fit banner for internal Julia setup", {
   expect_true(CoTiMA2:::.ctmaShouldShowNoFitBanner(FALSE, FALSE))
   expect_false(CoTiMA2:::.ctmaShouldShowNoFitBanner(FALSE, TRUE))
   expect_false(CoTiMA2:::.ctmaShouldShowNoFitBanner(TRUE, FALSE))
+})
+
+test_that("Julia resource note reports effective Julia and BLAS threads", {
+  expect_message(
+    CoTiMA2:::.ctmaJuliaThreadNote(8L, 1L),
+    "8 Julia pool thread\\(s\\).*8 concurrent subject task.*1 BLAS"
+  )
+})
+
+test_that("ctmaFit-style automatic Julia resources use all resolved cores", {
+  configured <- CoTiMA2:::.ctmaInitJuliaResources(
+    cores = 9L,
+    estimation = "ML",
+    backendArgs = list(),
+    resolved_backend_args = ctmaBackendDefaults("julia", "ML", "ctmaFit"),
+    announce = FALSE,
+    workflow = "ctmaFit"
+  )
+  expect_true(configured$automatic)
+  expected_pool <- CoTiMA2:::.ctmaResolveJuliaThreads("auto")
+  expect_identical(configured$backend_args$julia_threads, expected_pool)
+  expect_identical(configured$backend_args$subject_threads, expected_pool)
+  expect_identical(configured$backend_args$blas_threads, 1L)
+
+  explicit <- CoTiMA2:::.ctmaInitJuliaResources(
+    cores = 9L,
+    estimation = "ML",
+    backendArgs = list(julia_threads = 3L),
+    resolved_backend_args = utils::modifyList(
+      ctmaBackendDefaults("julia", "ML", "ctmaFit"),
+      list(julia_threads = 3L)
+    ),
+    announce = FALSE,
+    workflow = "ctmaFit"
+  )
+  expect_false(explicit$automatic)
+  expect_identical(explicit$backend_args$julia_threads, 3L)
+})
+
+test_that("automatic Julia resource notes identify their calling workflow", {
+  expect_message(
+    CoTiMA2:::.ctmaInitJuliaResources(
+      cores = 6L,
+      estimation = "ML",
+      backendArgs = list(),
+      resolved_backend_args = ctmaBackendDefaults("julia", "ML", "ctmaEqual"),
+      workflow = "ctmaEqual"
+    ),
+    "ctmaEqual automatically selected.*Julia pool thread.*subject task.*1 BLAS"
+  )
 })
 
 test_that("ctmaInit Julia study dispatcher restores ctsem compatibility", {

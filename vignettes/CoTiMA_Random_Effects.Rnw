@@ -1,0 +1,1629 @@
+% !Rnw weave = knitr
+%\VignetteIndexEntry{Study-Level Random Effects in CoTiMA2}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.7cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage[round,authoryear]{natbib}
+\setlength{\emergencystretch}{3em}
+\hbadness=3000
+
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,
+  citecolor=blue!55!black,urlcolor=blue!55!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
+
+\title{Study-Level Random Effects in Continuous-Time Meta-Analysis:\\
+  From CoTiMA-FE to CoTiMA-RE}
+\author{C. Dormann, T. Hagen, \& $\widehat{\textnormal{C}}$. G. Petee}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE, purl=FALSE>>=
+knitr::opts_chunk$set(
+  echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE,
+  purl = FALSE, comment = "#>", tidy = FALSE, size = "small"
+)
+options(width = 90)
+@
+
+\begin{abstract}
+Continuous-time meta-analysis (CoTiMA) estimates continuous-time dynamic
+models from the participant-level longitudinal data of several primary
+studies. In the current study fixed-effects formulation (CoTiMA-FE), study differences
+can be represented by $K-1$ time-independent dummy or effect-coded predictors.
+This permits every selected model parameter to differ between studies, but it
+treats those differences as unrelated fixed coefficients and consequently
+does not provide partial pooling or an explicit distribution of study effects.
+We describe an extension in which selected drift, diffusion, and initial-state
+parameters have study-level random effects. The extension defines study
+effects on ctsem's unconstrained parameter scale, before parameter-specific
+transformations are applied, and retains a separate level for parameters that
+also vary between persons. We then distinguish this joint hierarchical model
+from a post-hoc procedure implemented in
+\code{CoTiMA\_RE\_moments.R}. The latter reconstructs
+study-specific posterior draws from an already fitted CoTiMA-FE model and summarizes
+their empirical between-study distribution. Reproducible R workflows for both
+approaches are provided.
+\end{abstract}
+
+\noindent\textbf{Keywords:} continuous-time structural equation model;
+individual participant data meta-analysis; multilevel model; partial pooling;
+study heterogeneity; ctsem; Stan
+
+\section{Purpose and scope}
+
+The purpose of CoTiMA-RE is to estimate a population
+distribution of continuous-time model parameters across primary studies. The
+target is study-level heterogeneity, not merely person-level heterogeneity.
+For example, the autoregressive drift of a construct may differ between
+studies because their populations, measurements, or settings differ. When the
+included studies are viewed as a sample from a broader population of studies,
+a hierarchical distribution is usually a more appropriate representation than
+$K-1$ unrelated study coefficients.
+
+Three levels must be kept conceptually separate:
+\begin{enumerate}
+  \item repeated observations within persons;
+  \item persons within studies, including optional individually varying ctsem
+    parameters; and
+  \item study-specific deviations from the across-study parameter mean.
+\end{enumerate}
+CoTiMA-RE is intended to add the third level without removing the second.
+Thus, a drift parameter may be fixed across persons but random across studies,
+or it may vary at both levels. In the latter case, the study effect shifts the
+study-specific mean of the person-level parameter distribution.
+
+\subsection{Terminology: FE, RE, FI, and RI}
+
+The suffixes \emph{FE} and \emph{RE} refer here exclusively to variation
+\emph{between studies}. CoTiMA-FE represents study differences by fixed study
+indicators, whereas CoTiMA-RE treats study deviations as draws from a
+population distribution and partially pools their estimates. This terminology
+avoids overloading FI and RI, which are already established in CoTiMA and CLPM
+work as abbreviations for \emph{fixed intercept} and \emph{random intercept}.
+
+RI describes variation between individuals in their levels of the variables
+or latent processes. RE describes variation between studies in model
+parameters, most commonly drift effects. The two distinctions are orthogonal.
+For example, \emph{RI CoTiMA-RE} denotes a random-intercept CoTiMA that also
+contains study-level random effects. A model with fixed person-level
+intercepts can likewise be fitted as CoTiMA-FE or CoTiMA-RE, depending on how
+between-study variation is modeled.
+
+\section{Continuous-time model}
+
+Let $s=1,\ldots,K$ index studies, $i=1,\ldots,n_s$ persons, and $t$ continuous
+time. A linear stochastic differential equation for a vector of latent
+processes $\bm\eta_{is}(t)$ is
+\begin{equation}
+  d\bm\eta_{is}(t)
+  = \left[\bm A_{is}\bm\eta_{is}(t)+\bm b_{is}\right]dt
+    + \bm G_{is}\,d\bm W_{is}(t),
+  \label{eq:sde}
+\end{equation}
+where $\bm A$ is the drift matrix, $\bm b$ is the continuous-time intercept,
+and $\bm Q=\bm G\bm G^\top$ is the diffusion covariance matrix. A common
+measurement model is
+\begin{equation}
+  \bm y_{is}(t)=\bm\Lambda\bm\eta_{is}(t)+\bm\tau_{is}
+    +\bm\varepsilon_{is}(t),
+  \qquad \bm\varepsilon_{is}(t)\sim\Normal(\bm0,\bm\Theta).
+  \label{eq:measurement}
+\end{equation}
+The initial state has mean $\bm\mu_{0,is}$ and covariance $\bm P_{0,is}$.
+ctsem evaluates the implied discrete-time transition and covariance matrices
+for each observed time interval; irregular observation intervals therefore do
+not have to be made equal \citep{Driver2017}.
+
+\subsection{Raw and constrained parameter scales}
+
+Many parameters cannot be sampled directly on their reported scale. For a
+substantive parameter $p$, let $\eta_{isp}$ denote its unconstrained (raw)
+value and let $g_p(\cdot)$ denote its ctsem transformation. The reported value
+is
+\begin{equation}
+  \theta_{isp}=g_p(\eta_{isp}).
+  \label{eq:transform}
+\end{equation}
+Examples include softplus-type transformations for positive variances and
+special transformations that preserve stable diagonal drift effects. The
+transformation is parameter-specific and is recorded in
+\code{ctstanmodelbase\$pars\$transform}. Because $g_p$ is generally nonlinear,
+\begin{equation}
+  g_p(a+b) \ne g_p(a)+g_p(b).
+  \label{eq:nonlinear}
+\end{equation}
+Predictor and random effects must therefore be added on the raw scale and the
+complete result transformed afterwards.
+
+For covariance matrices, ctsem may instead use raw standard deviations and an
+unconstrained correlation/Cholesky representation. Random effects on these
+components must be applied before the positive-definite covariance matrix is
+constructed. Adding an arbitrary random number directly to a variance or
+covariance after transformation would not in general preserve positive
+definiteness.
+
+\subsection{Time-homogeneous parameters, standardization, and diffusion}
+
+CoTiMA and ordinary ctsem models assume that DRIFT and DIFFUSION are constant
+over continuous time within a study. A ctsem regime model can relax this by
+using time-dependent predictors. We call the usual assumption
+\emph{time-homogeneity of the dynamic parameters}. It must be distinguished
+from \emph{covariance stationarity of the stochastic process}.
+
+For a stable drift matrix, the estimated DRIFT matrix $\bm A_s$ and diffusion
+covariance $\bm Q_s$ imply a unique asymptotic covariance
+$\bm P_{\infty,s}$. These three quantities satisfy the continuous-time
+Lyapunov equation
+\begin{equation}
+  \bm A_s\bm P_{\infty,s}+\bm P_{\infty,s}\bm A_s^\top+\bm Q_s=\bm0.
+  \label{eq:lyapunov}
+\end{equation}
+In a ctsem summary, these correspond to \code{DRIFT},
+\code{DIFFUSIONcov}, and \code{asymDIFFUSIONcov}. Thus the numerical check
+\begin{verbatim}
+A %*% S + S %*% t(A) + Q
+\end{verbatim}
+should return a matrix close to zero, apart from numerical error. In current
+ctsem the usual computational direction is that $\bm A_s$ and $\bm Q_s$ are
+estimated and $\bm P_{\infty,s}$ is derived from them. The equality is
+therefore an identity and useful consistency check; it does not show that
+$\bm Q_s$ was derived from T0VAR.
+
+The stochastic process is covariance-stationary from time zero only when its
+initial covariance additionally satisfies
+$\bm P_{0,s}=\bm P_{\infty,s}$. Current CoTiMA does not impose this equality.
+Only if $\bm P_{\infty,s}$ is independently fixed or otherwise imposed does
+Equation~\ref{eq:lyapunov} instead determine the complete diffusion covariance
+as
+\begin{equation}
+  \bm Q_s=-\left(\bm A_s\bm P_{\infty,s}
+                  +\bm P_{\infty,s}\bm A_s^\top\right).
+  \label{eq:deterministic-diffusion}
+\end{equation}
+In that special formulation, both diagonal and off-diagonal diffusion
+elements are deterministic.
+
+That special constraint is \emph{not} the current CoTiMA formulation. The
+time-zero covariance $\bm P_{0,s}$ is estimated freely. An earlier option
+constrained it to the asymptotic covariance, but that option is no longer
+valid. Consequently, current CoTiMA estimates DRIFT, DIFFUSION, and T0VAR as
+distinct parameter sets and derives asymDIFFUSIONcov from DRIFT and
+DIFFUSIONcov. Neither the diagonal nor the off-diagonal elements of DIFFUSION
+can be calculated from DRIFT and the freely estimated T0VAR matrix.
+
+The CoTiMA-RE interface uses three logical selection matrices to specify
+which model parameters are allowed to vary randomly between studies. The
+matrix \code{reDRIFT} selects entries of the drift matrix,
+\code{reDIFFUSION} selects entries of the process-noise or diffusion matrix,
+and \code{reT0VAR} selects entries of the time-zero variance--covariance
+matrix. Each selection matrix has the same row and column dimensions as its
+corresponding ctsem parameter matrix. A \code{TRUE} entry requests a
+study-level random effect for that parameter; a \code{FALSE} entry keeps that
+parameter common across studies. We refer to these logical matrices below as
+the random-effect selection masks.
+
+Many CoTiMA applications use correlation matrices or variables standardized
+within each measurement occasion. Researchers may also combine raw data with
+correlation-matrix studies after standardizing the raw variables by occasion.
+This data scaling does not itself impose Equation~\ref{eq:lyapunov} and does
+not make DIFFUSION deterministic. Therefore, if process-noise variances or
+covariances are expected to differ between studies, the corresponding free
+lower-triangular entries of the \code{reDIFFUSION} selection matrix may
+appropriately be set to \code{TRUE}.
+If they are left \code{FALSE}, the model deliberately assumes a common
+DIFFUSION parameter across studies; it is not computing study-specific
+DIFFUSION values from the study-specific DRIFT effects.
+
+For the time-zero covariance matrix, the \code{reT0VAR} selection should
+follow the intended heterogeneity rather than a stationarity identity. In a
+univariate analysis of variables standardized to unit variance at time zero,
+setting the sole \code{reT0VAR} entry to \code{FALSE} is usually a parsimonious
+choice when study variation in that initial variance is not of substantive
+interest. The underlying T0 variance remains a freely estimated CoTiMA
+parameter unless it was explicitly fixed in the ctsem model. In a
+multivariate standardized analysis, diagonal random effects can likewise be
+omitted, while free lower-triangular off-diagonal T0 covariance/correlation
+elements may be selected to allow initial associations to vary between
+studies. With raw-scale data, or when initial variances themselves are expected
+to differ, diagonal T0VAR random effects may also be appropriate.
+
+\section{Current CoTiMA-FE}
+
+Suppose $\bm x_s$ contains substantive study-level moderators and
+$\bm d_s$ contains $K-1$ dummy or effect-coded study indicators. For parameter
+$p$, the current CoTiMA-FE formulation can be written on the raw scale as
+\begin{equation}
+  \eta_{isp}
+   = \alpha_p + \bm x_s^\top\bm\beta_p
+     + \bm d_s^\top\bm\gamma_p + v_{isp},
+  \label{eq:fi}
+\end{equation}
+followed by Equation~\ref{eq:transform}. Here $\alpha_p$ is a grand or
+reference-study raw parameter, $\bm\beta_p$ contains moderator effects,
+$\bm\gamma_p$ contains the $K-1$ study-indicator effects, and $v_{isp}$ is an
+optional person-level deviation. When parameter $p$ is not individually
+varying, $v_{isp}=0$.
+
+This formulation is flexible: by assigning the indicator effects to drift,
+diffusion, and time-zero parameters, every study can obtain its own parameter
+value. It is nevertheless a fixed-effects representation of study membership.
+It estimates $K-1$ coefficients per affected parameter, imposes no common
+heterogeneity distribution, and does not shrink imprecisely estimated studies
+towards an across-study mean. The number of coefficients grows linearly with
+$K$ for every affected parameter.
+
+The suffix ``FE'' in CoTiMA-FE refers specifically to this fixed
+study-indicator formulation. It does not mean that all substantive parameters
+are invariant across studies, and it does not describe whether person-level
+intercepts are fixed or random.
+
+\section{Hierarchical CoTiMA-RE}
+
+In CoTiMA-RE, the study indicators used solely to reproduce study-specific
+parameters are replaced by a study-level latent deviation:
+\begin{align}
+  \eta_{isp}
+    &= \alpha_p + \bm x_s^\top\bm\beta_p + u_{sp}+v_{isp},
+    \label{eq:re-linear}\\
+  \bm u_s &\sim \Normal(\bm0,\bm\Sigma_{\mathrm{study}}),
+    \label{eq:re-distribution}\\
+  \bm\Sigma_{\mathrm{study}}
+    &=\operatorname{diag}(\bm\tau)\,
+      \bm\Omega\,
+      \operatorname{diag}(\bm\tau),
+    \label{eq:re-covariance-decomposition}\\
+  \theta_{isp} &=g_p(\eta_{isp}).
+    \label{eq:re-transform}
+\end{align}
+The vector $\bm u_s$ contains the selected study effects, such as one or more
+drift, diffusion, or time-zero parameters. The vector
+$\bm\tau=(\tau_1,\ldots,\tau_P)^\top$ contains their marginal between-study
+standard deviations, and $\bm\Omega$ is their study-effect correlation
+matrix. Hence
+\begin{equation}
+  \tau_p=\sqrt{\Sigma_{\mathrm{study},pp}},
+  \qquad
+  \Sigma_{\mathrm{study},pq}=\tau_p\tau_q\Omega_{pq}.
+  \label{eq:re-covariance-elements}
+\end{equation}
+The $\tau_p$ quantify residual between-study heterogeneity after the moderators
+in $\bm x_s$ have been included. The off-diagonal elements of $\bm\Omega$ are
+correlations between study deviations, while the corresponding off-diagonal
+elements of $\bm\Sigma_{\mathrm{study}}$ are covariances. With independent
+study effects, $\bm\Omega=\bm I$ and therefore
+$u_{sp}\sim\Normal(0,\tau_p^2)$.
+
+If a parameter also varies across persons, a separate distribution is used,
+for example
+\begin{equation}
+  v_{isp}\mid s \sim \Normal(0,\sigma^2_{\mathrm{person},p}).
+  \label{eq:person}
+\end{equation}
+Equations~\ref{eq:re-linear} and \ref{eq:person} imply that $u_{sp}$ shifts the
+mean of the person-level distribution in study $s$. Study and person variance
+components are distinguishable because all persons from a study share the same
+$u_{sp}$, whereas $v_{isp}$ differs between persons. They can nevertheless be
+weakly identified when $K$ is small, when studies contain few persons, or when
+the same parameter is poorly informed by the observation schedule.
+
+\subsection{Centred and non-centred parameterizations}
+
+The centred parameterization estimates the study deviations directly:
+\begin{equation}
+  \bm u_s \sim \Normal\!\left(\bm0,
+  \operatorname{diag}(\bm\tau)\bm\Omega
+  \operatorname{diag}(\bm\tau)\right).
+  \label{eq:centred}
+\end{equation}
+It is often efficient when every study contains enough information to identify
+its own dynamic parameters.
+
+The mathematically equivalent non-centred parameterization is
+\begin{align}
+  \bm z_s &\sim \Normal(\bm0,\bm I),\\
+  \bm u_s &= \operatorname{diag}(\bm\tau)\bm L_\Omega\bm z_s,
+  \label{eq:noncentred}
+\end{align}
+where $\bm L_\Omega$ is the Cholesky factor of the study-effect correlation
+matrix. With independent study effects, $\bm L_\Omega=\bm I$. The full model
+can use an LKJ prior for the correlation matrix and weakly informative positive
+priors for $\bm\tau$ \citep{Stan2026}.
+
+The two formulations define the same Bayesian model but can have very
+different Hamiltonian Monte Carlo geometry. Non-centred effects are often
+preferable for sparse or weakly informed studies; centred effects are often
+preferable when each study effect is precisely informed. The argument
+\code{parameterization} accepts \code{"centered"}, \code{"noncentered"}, or
+\code{"auto"}. The current transparent automatic rule selects the centred
+form when the median study contains at least 20 persons and the non-centred
+form otherwise. Study size is only a proxy for information, so short diagnostic
+fits and HMC diagnostics remain necessary. For joint/conditional ML, unlike
+Bayesian inference or marginal ML, the optimized latent-variable mode depends
+on the chosen parameterization.
+
+\subsection{Independent, equicorrelated, full, and block covariance structures}
+
+Let $q$ denote the number of selected study-level random parameters. CoTiMA-RE
+now supports three global correlation structures. With uncorrelated random
+effects (URE),
+\begin{equation}
+  \bm\Omega=\bm I_q.
+\end{equation}
+This is selected with \code{covariance = "independent"} (alias
+\code{"ure"}). With equicorrelated random effects (ERE), every pairwise
+correlation is represented by one common parameter,
+\begin{equation}
+  \bm\Omega(\rho)=(1-\rho)\bm I_q+\rho\bm J_q,
+  \qquad -\frac{1}{q-1}<\rho<1.
+  \label{eq:ere}
+\end{equation}
+This is selected with \code{covariance = "equicorrelated"}; aliases
+\code{"equal"} and \code{"ere"} are accepted. Heterogeneity SDs remain
+parameter-specific, so equal correlations do not imply equal variances or
+equal covariances. With correlated random effects (CRE), an unrestricted
+correlation matrix is estimated through its Cholesky factor using
+\code{covariance = "full"} (alias \code{"cre"}). URE, ERE, and CRE estimate
+zero, one, and $q(q-1)/2$ correlation parameters, respectively. When $q=2$,
+ERE and CRE are identical.
+
+Equicorrelation is also known as compound symmetry or exchangeable
+correlation. It is a well-established parsimonious covariance structure, but
+it can be substantively strong when random effects represent very different
+parameters. A common correlation between two DRIFT effects need not plausibly
+equal a DRIFT--DIFFUSION or DIFFUSION--T0VAR correlation.
+
+A block structure addresses this limitation:
+\begin{equation}
+ \bm\Sigma_{\mathrm{study}}=
+ \operatorname{blockdiag}(\bm\Sigma_1,\ldots,\bm\Sigma_B).
+ \label{eq:block-covariance}
+\end{equation}
+Each block can independently use URE, ERE, or CRE, while all between-block
+correlations are fixed to zero. By default, selected DRIFT, DIFFUSION, and
+T0VAR parameters form separate blocks. Advanced users can assign individual
+matrix cells to custom blocks. Blocks with one member are automatically
+treated as independent; in two-member blocks ERE and CRE estimate the same
+single correlation.
+
+For approximately 10 studies, independent effects remain the safest starting
+point. A useful next model often uses an equicorrelated DRIFT block and
+independent DIFFUSION and T0VAR blocks. A full DRIFT block can be considered
+with more studies and a modest number of random drift parameters. A single
+global ERE structure is less attractive when it mixes parameter families.
+Block independence is itself a restriction: if DRIFT--DIFFUSION heterogeneity
+correlations are scientifically important, those effects must be placed in
+the same custom block or a future factor structure should be considered.
+
+With roughly 10 studies, estimating many study-effect correlations is usually
+ambitious; independent or equicorrelated blocks are safer. With 20--50 studies,
+full within-block covariance can be considered when the number of random
+parameters is modest and the posterior is well behaved. A factor or sparse
+covariance structure is preferable when many dynamic parameters are random.
+These are practical guidelines rather than hard thresholds.
+
+\subsection{What constitutes the RE fit?}
+
+The hierarchical model estimates $\alpha_p$, moderator effects, heterogeneity
+parameters, and all $\bm u_s$ jointly from the longitudinal likelihood. Its
+study-specific estimates are partially pooled posterior estimates. This is the
+intended inferential model when studies are treated as draws from a population
+of studies. It is not obtained merely by calculating the sample standard
+deviation of separately reconstructed study estimates.
+
+The package implementation in \code{ctmaRePrep()} modifies the Stan text
+generated by ctsem. It adds a study index, centred or non-centred study effects, their
+scale and optional correlation parameters, and study-specific raw parameters
+before ctsem applies its internal transformations. The user-facing masks
+\code{reDRIFT}, \code{reDIFFUSION}, and \code{reT0var} select the affected
+matrix cells.
+
+\subsection{Bayesian, MAP, and ML estimation}
+
+\code{ctmaReFit()} offers three fitting modes. Bayesian estimation samples the full
+posterior. Maximum a posteriori (MAP) estimation maximizes the same posterior
+density, including the ctsem priors and the study-level scale and correlation
+priors. MAP is faster than sampling and can be useful during development, but
+a local curvature approximation around the mode is not a substitute for a
+skewed or multimodal posterior.
+
+For marginal maximum likelihood, the contribution of study $s$ would be
+\begin{equation}
+  L_s(\bm\psi,\bm\Sigma_{\mathrm{study}})
+  =\int p(\bm y_s\mid\bm u_s,\bm\psi)
+    p(\bm u_s\mid\bm\Sigma_{\mathrm{study}})\,d\bm u_s,
+  \label{eq:marginal-likelihood}
+\end{equation}
+and the likelihood is $\prod_s L_s$. This integral can be high-dimensional
+because the longitudinal ctsem likelihood is nonlinear in transformed dynamic
+parameters. The current implementation does not yet implement adaptive quadrature
+or a Laplace approximation to Equation~\ref{eq:marginal-likelihood}.
+
+The available \code{estimation = "ml"} option is therefore explicitly a
+\emph{joint/conditional ML} mode. It retains the Gaussian density defining the
+study effects, removes ctsem parameter priors and study-level hyperpriors, and
+optimizes over the study effects together with the structural parameters. It
+is useful as an experimental likelihood-based estimate, but it is not
+marginal ML. Heterogeneity may consequently be biased or collapse to the
+boundary. A future publication-quality marginal-ML implementation should
+integrate the study effects, preferably using a Laplace approximation with
+automatic differentiation; Bayesian sampling is currently the safer fully
+hierarchical analysis.
+
+\section{Post-hoc moment reconstruction}
+
+The exported \code{ctmaReMoments()} function serves a different purpose. It
+starts from an existing CoTiMA-FE fit in which $K-1$ study indicators affect model
+parameters. For posterior draw $d$, parameter $p$, and study design row
+$\bm d_s$, it reconstructs
+\begin{align}
+  \eta_{sp}^{(d)}
+    &= \alpha_p^{(d)}+\sum_{j=1}^{K-1}d_{sj}\gamma_{pj}^{(d)},
+    \label{eq:reconstruct}\\
+  \theta_{sp}^{(d)}&=g_p\!\left(\eta_{sp}^{(d)}\right).
+    \label{eq:reconstruct-transform}
+\end{align}
+It then calculates, within every posterior draw, empirical moments over the
+$K$ transformed study parameters:
+\begin{align}
+  \bar\theta_p^{(d)}&=K^{-1}\sum_{s=1}^K\theta_{sp}^{(d)},\\
+  \tau_p^{(d)}&=\left\{\frac{1}{K-1}\sum_{s=1}^K
+    \left(\theta_{sp}^{(d)}-\bar\theta_p^{(d)}\right)^2\right\}^{1/2},
+    \label{eq:empirical-sd}\\
+  \Sigma_{pq}^{(d)}&=\frac{1}{K-1}\sum_{s=1}^K
+    \left(\theta_{sp}^{(d)}-\bar\theta_p^{(d)}\right)
+    \left(\theta_{sq}^{(d)}-\bar\theta_q^{(d)}\right).
+\end{align}
+Posterior means and credible intervals are subsequently obtained across draws.
+This is a posterior, draw-wise empirical method-of-moments summary of the CoTiMA-FE
+study parameters. It propagates joint posterior uncertainty from that model,
+but it is not full-information maximum likelihood and does not refit a
+hierarchical random-effects distribution. In particular, it provides no
+partial pooling and can confound sampling uncertainty in study estimates with
+genuine heterogeneity. It is useful for auditing, describing, and initializing
+a CoTiMA-RE model, but should not be presented as equivalent to the joint
+CoTiMA-RE fit.
+
+\subsection{Optional inverse-variance study weighting}
+
+Equal weighting targets the empirical distribution over studies and remains
+the default. As a sensitivity analysis, \code{ctmaReMoments()} can calculate a
+parameter-specific precision weight from the transformed study draws. Let
+\begin{equation}
+  \widehat{\mathrm{SE}}_{sp}
+  =\operatorname{SD}_{d}\!\left(\theta_{sp}^{(d)}\right),
+  \qquad
+  w_{sp}=\widehat{\mathrm{SE}}_{sp}^{-2},
+  \qquad
+  \widetilde w_{sp}=\frac{w_{sp}}{\sum_r w_{rp}}.
+\end{equation}
+The weighted mean and SD within draw $d$ are
+\begin{align}
+  \bar\theta_{p,w}^{(d)}
+    &=\sum_s\widetilde w_{sp}\theta_{sp}^{(d)},\\
+  \tau_{p,w}^{2(d)}
+    &=\frac{\sum_s\widetilde w_{sp}
+      \left(\theta_{sp}^{(d)}-\bar\theta_{p,w}^{(d)}\right)^2}
+      {1-\sum_s\widetilde w_{sp}^{,2}}.
+\end{align}
+The denominator is algebraically equivalent to
+$\sum w-(\sum w^2)/(\sum w)$ before normalization and reduces to the usual
+$K-1$ correction under equal weights. The effective number of studies is
+\begin{equation}
+  K_{\mathrm{eff},p}
+  =\frac{(\sum_s w_{sp})^2}{\sum_s w_{sp}^2}
+  =\left(\sum_s\widetilde w_{sp}^{,2}\right)^{-1}.
+\end{equation}
+
+The SEs are computed after the ctsem transformation. With a Bayesian CoTiMA-FE
+fit they are posterior SDs; with an optimization-based fit whose
+\code{rawposterior} draws were generated from Hessian-based uncertainty, they
+are Hessian/optimization-based SDs. \code{SEsource = "auto"} records the source
+from the fit's \code{args\$optimize} flag when available. Explicit
+\code{"posterior"} and \code{"hessian"} requests validate that flag and stop
+when it contradicts the requested source.
+
+Precision weighting changes the estimand by giving more influence to more
+precisely estimated studies. It should therefore normally accompany, rather
+than replace, the equal-weight analysis. Furthermore, each parameter has its
+own weights, so there is no unique joint weight for cross-parameter covariance
+and correlation matrices. Consequently, \code{covarianceDraws} and
+\code{correlationDraws} remain equally weighted and the returned
+\code{covarianceWeighting} field records that choice.
+
+\subsection{Why the script reads raw posterior columns}
+
+The numerical source is \code{fit\$stanfit\$rawposterior}. The columns labelled
+\code{rawpopmeans} and \code{tipredeffectparams} by \code{ctExtract()} are
+convenient summaries of parts of the same parameterization, but using their
+posterior means would lose nonlinear posterior information. The script maps
+each substantive label to its raw-posterior column, combines corresponding
+columns draw by draw, and only then applies the parameter transformation.
+
+The main functions are summarized in Table~\ref{tab:functions}.
+
+\noindent\textbf{Important distinction.} The post-hoc workflow is now
+available from the package through the exported \path{ctmaReMoments()}
+function. It accepts either a CoTiMA full-fit object or its pooled ctsem fit,
+uses the raw posterior draws, and returns an object summarized by
+\path{summary()}. The lower-level \code{ct\_...} functions in
+Table~\ref{tab:functions} remain in \path{CoTiMA_RE_moments.R} as development
+and diagnostic utilities. Both interfaces analyze an already fitted
+CoTiMA-FE model post hoc and do not fit the hierarchical model.
+The hierarchical package interface defines two principal user-facing functions,
+\path{ctmaRePrep()} and \path{ctmaReFit()}; hierarchical results are summarized
+through the standard \path{summary()} generic. The companion exported
+\path{ctmaReMLFit()} function supplies experimental parallel multistart ML.
+
+\begingroup\small
+\begin{longtable}{>{\raggedright\arraybackslash}p{.36\textwidth}
+                  >{\raggedright\arraybackslash}p{.57\textwidth}}
+\caption{Main functions in \code{CoTiMA\_RE\_moments.R}.}
+\label{tab:functions}\\
+\toprule
+Function & Purpose\\
+\midrule
+\endfirsthead
+\toprule
+Function & Purpose\\
+\midrule
+\endhead
+\path{ctmaReMoments()} & Exported package interface that performs the complete
+post-hoc reconstruction, moment calculation, optional matrix reconstruction,
+and optional person-level covariance summary.\\
+\path{ctmaParMap()} & Exported package interface accepting a CoTiMA or ctsem fit
+and mapping model parameters to raw-posterior columns.\\
+\path{ct_parameter_map()} & Maps labels and matrix coordinates to columns of
+raw population means, TI effects, individual-level scales, correlations, and
+\code{rawposterior}. It also preserves the semantic label MANIFESTMEANS when
+ctsem internally represents an individually varying manifest mean through an
+augmented initial-state parameter.\\
+\path{ct_constrain_rawposterior()} & Invokes ctsem's own constraint machinery
+for the raw posterior, when constrained ctsem quantities are required.\\
+\path{ct_study_design()} & Obtains one row of TI predictor values per study,
+or validates a supplied study design matrix.\\
+\path{ct_study_parameter_draws()} & Reconstructs raw study parameters and
+applies their transformations draw by draw.\\
+\path{ct_parameter_matrices()} & Reassembles named parameter draws into
+matrix form, including drift, diffusion, T0 means, manifest means, and T0
+variance/covariance quantities when represented in the fit.\\
+\path{ct_random_effect_summary()} & Calculates study estimates and empirical
+between-study means, standard deviations, covariances, and correlations.\\
+\path{ct_individual_random_effects()} & Reports person-level variation and
+its covariance mapping separately from study-level heterogeneity.\\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\section{R workflow: post-hoc summaries from a CoTiMA-FE fit}
+
+For ordinary use, the complete workflow is now:
+
+<<posthoc-package-interface, purl=FALSE>>=
+momentFit <- ctmaReMoments(
+  CoTiMAFullFit,
+  probs = c(.025, .975),
+  cores = 4,
+  include_matrices = TRUE,
+  include_individual = TRUE
+)
+
+momentSummary <- summary(momentFit)
+momentFit$studyParameters
+momentFit$distributionParameters
+
+# Recommended precision-weighted sensitivity analysis:
+weightedMomentFit <- ctmaReMoments(
+  CoTiMAFullFit,
+  weighting = "inverse_variance",
+  SEsource = "auto",
+  include_matrices = FALSE,
+  include_individual = FALSE
+)
+weightedMomentFit$studySE
+weightedMomentFit$studyWeights
+weightedMomentFit$effectiveNumberOfStudies
+@
+
+The empirical mean and sample SD are calculated across the $K$ reconstructed
+study parameters within every posterior draw. Studies receive equal weight,
+the variance uses denominator $K-1$, and no hierarchical shrinkage is applied.
+The weighted sensitivity analysis uses fixed, parameter-specific inverse-SE-
+squared weights estimated across the transformed draws and reports the
+effective number of contributing studies.
+An explicit \code{study\_design} should be supplied when additional moderators
+create more than one TI-predictor row per study.
+
+\subsection{Extracting the ctsem fit}
+
+Both \code{ctmaReMoments()} and \code{ctmaParMap()} accept either the complete
+CoTiMA full-fit object or its pooled fitted ctsem object. The package resolves
+\code{studyFitList} automatically when it contains one pooled fit. A
+\code{ctmaInitFit()} object with $K$ separately fitted studies is ambiguous and
+is rejected; in that case, the user must supply one explicitly selected ctsem
+fit. The selected fit must contain \code{stanfit\$rawposterior} for moment
+estimation. A \code{ctModel} specification without fitted draws is
+insufficient.
+
+<<extract-helper, purl=FALSE>>=
+cotimaFit <- readRDS("CoTiMA_full_fit.rds")
+
+# Both calls are supported and return the same mapping.
+mapFromCoTiMA <- ctmaParMap(cotimaFit)
+mapFromCtsem <- ctmaParMap(cotimaFit$studyFitList)
+@
+
+The optional \code{est} argument checks dimensions against
+\code{ctsem::ctExtract()}, but all mapping and moment calculations use the
+absolute columns of \code{stanfit\$rawposterior}:
+
+<<posthoc-load, purl=FALSE>>=
+obj <- readRDS("CoTiMA_RE_WEC_f1.rds")
+
+# Optional consistency check against ctExtract output:
+est <- ctsem::ctExtract(obj)
+map <- ctmaParMap(obj, est = est)
+map$rawpopmeans
+map$tipredeffectparams
+map$individually_varying
+map$random_effect_covariance
+@
+
+The \code{rawposterior\_col} entries are the columns actually used for the
+calculations. The \code{rawpopmeans\_col} and
+\code{tipredeffectparams\_col} entries are indices within their respective
+blocks, so they need not equal their absolute raw-posterior column numbers.
+
+\subsection{Define or recover the study design}
+
+When all TI predictors are study indicators and there is exactly one unique TI
+row per study, the design can usually be recovered automatically. Otherwise,
+supplying it explicitly is safer. Its columns must have the same names and use
+the same coding as the fitted ctsem model.
+
+<<posthoc-design, purl=FALSE>>=
+# Example for eight studies and seven treatment-coded indicators:
+Xstudy <- cbind(
+  TI1 = c(0, 1, 0, 0, 0, 0, 0, 0),
+  TI2 = c(0, 0, 1, 0, 0, 0, 0, 0),
+  TI3 = c(0, 0, 0, 1, 0, 0, 0, 0),
+  TI4 = c(0, 0, 0, 0, 1, 0, 0, 0),
+  TI5 = c(0, 0, 0, 0, 0, 1, 0, 0),
+  TI6 = c(0, 0, 0, 0, 0, 0, 1, 0),
+  TI7 = c(0, 0, 0, 0, 0, 0, 0, 1)
+)
+rownames(Xstudy) <- paste0("Study_", 1:8)
+@
+
+For effect coding, the reference row is normally $(-1,\ldots,-1)$ rather than
+$(0,\ldots,0)$. The supplied matrix must reproduce the coding used during
+fitting; changing it after fitting changes the implied study parameters.
+
+\subsection{Compute and inspect the results}
+
+<<posthoc-estimates, purl=FALSE>>=
+momentFit <- ctmaReMoments(
+  obj,
+  study_design = Xstudy,
+  probs = c(.025, .975),
+  cores = 4,
+  include_matrices = TRUE,
+  include_individual = TRUE
+)
+momentSummary <- summary(momentFit)
+
+# Study-specific transformed posterior summaries:
+momentFit$studyParameters
+
+# Empirical between-study moments, summarized across posterior draws:
+momentFit$distributionParameters
+momentFit$covarianceDraws
+momentFit$correlationDraws
+
+# Draws can be retained for custom contrasts or plots:
+momentFit$rawStudyDraws
+momentFit$transformedStudyDraws
+
+# Reconstructed matrices (including T0VAR/T0COV where available):
+momentFit$studyMatrices
+momentFit$matrixSummary
+
+# Person-level covariance results, when parameters are individually varying:
+momentFit$individualRandomEffects
+@
+
+If T0 variance/covariance entries are absent, inspect
+\code{map\$random\_effect\_covariance}. In a model with individually varying
+initial states, ctsem may encode T0 covariance through the person-level raw SD
+and correlation/Cholesky blocks rather than as ordinary raw population means.
+The mapping deliberately reports both participating raw-mean columns and the
+relevant raw-posterior SD/correlation columns.
+
+The returned object has classes
+\code{c("CoTiMAFit", "CoTiMAReMoments")}. Its \code{summary()} method returns
+the study estimates, empirical distribution parameters, optional matrix
+summary, and optional person-level covariance summary, while printing a brief
+reminder that the analysis uses equal study weights and no partial pooling.
+For an inverse-variance analysis, the note instead identifies the
+parameter-specific precision weighting and its SE source.
+
+\subsection{Moment-function argument reference}
+
+\begin{description}
+  \item[\code{fit}] For \code{ctmaReMoments()} and \code{ctmaParMap()}, either
+  a CoTiMA full-fit object containing one pooled ctsem fit or the pooled ctsem
+  fit itself. A list of separate primary-study fits is rejected as ambiguous.
+
+  \item[\code{est = NULL}] Optional \code{ctsem::ctExtract()} result accepted
+  by \code{ctmaParMap()}. It validates the dimensions of
+  \code{rawpopmeans} and \code{tipredeffectparams}; the returned absolute
+  \code{rawposterior\_col} indices remain the source used by the moment
+  calculations.
+
+  \item[\code{study\_design = NULL}] Optional numeric matrix with one row per
+  study and one column for every TI predictor, named and coded exactly as in
+  \code{ctstanmodelbase\$TIpredNames}. With no additional moderators, unique TI
+  rows are normally recovered automatically. An explicit matrix is required
+  when moderators create multiple TI profiles within a study or when the
+  intended moderator reference values must be chosen deliberately.
+
+  \item[\code{probs = c(.025, .975)}] Lower and upper probabilities for the
+  interval summaries. Exactly two increasing values strictly between zero and
+  one are required.
+
+  \item[\code{weighting = "equal"}] Weighting used for each parameter's
+  empirical mean and between-study SD. \code{"equal"} targets the distribution
+  over studies. \code{"inverse\_variance"} uses fixed parameter-specific
+  inverse-SE-squared weights estimated from the transformed study draws and is
+  recommended as a sensitivity analysis.
+
+  \item[\code{SEweighting = NULL}] Optional logical convenience alias.
+  \code{TRUE} overrides \code{weighting} with \code{"inverse\_variance"};
+  \code{FALSE} overrides it with \code{"equal"}. The explicit
+  \code{weighting} argument is clearer for new code.
+
+  \item[\code{SEsource = "auto"}] Interpretation and validation of the draws
+  used to calculate study SEs. \code{"auto"} uses the original fit's
+  \code{args\$optimize} flag when available. \code{"posterior"} requires a fit
+  that does not report optimization, whereas \code{"hessian"} requires an
+  optimization-based fit. All modes calculate the SE as the across-draw SD of
+  the transformed study parameter in \code{stanfit\$rawposterior}.
+
+  \item[\code{cores = 2}] Cores passed to \code{ctsem::ctExtract()} only when
+  an individually varying parameter summary is requested. The reconstruction
+  of study parameters itself is a direct array calculation.
+
+  \item[\code{include\_matrices = TRUE}] Reconstruct DRIFT, DIFFUSION, T0VAR,
+  MANIFESTVAR, and other mapped parameter matrices for every study and draw,
+  and create \code{matrixSummary}. Setting this to \code{FALSE} reduces memory
+  and runtime when only parameter-level moments are needed.
+
+  \item[\code{include\_individual = TRUE}] When parameters also vary between
+  people, call the public \code{ctsem::ctExtract()} interface and report their
+  covariance, correlation, T0VAR, and T0cov quantities separately from
+  between-study heterogeneity. It can be disabled for a faster study-only
+  analysis.
+\end{description}
+
+The principal return elements are \code{parameterMap}, \code{studyDesign},
+\code{rawStudyDraws}, \code{transformedStudyDraws},
+\code{studyParameters}, \code{distributionParameters},
+\code{studySE}, \code{studyWeights}, \code{effectiveNumberOfStudies},
+\code{covarianceDraws}, \code{correlationDraws}, \code{covarianceWeighting}, \code{studyMatrices},
+\code{matrixSummary}, and \code{individualRandomEffects}. The
+\code{method}, \code{weighting}, and \code{SEsource} fields explicitly
+identify the analysis as post-hoc empirical moments and record whether equal
+or parameter-specific inverse-variance study weighting was used.
+
+\section{R workflow: specifying and fitting the hierarchical RE model}
+
+\textbf{Required starting point.} The recommended starting point is the
+unfitted setup returned by \code{ctmaFit(..., fit = FALSE)}. This call creates
+the pooled CoTiMA data and ctsem model specification but does not estimate the
+model. The pooled model may represent the $K$ studies with ordinary dummy
+coding, scaled dummy coding (\code{scaleTI = TRUE}), or weighted effect coding
+(\code{WEC = TRUE}). Separate study fits from \code{ctmaInitFit()} are not a
+substitute for this one pooled setup.
+
+<<re-extract-full-fit, purl=FALSE>>=
+cotimaSetup <- ctmaFit(
+  ctmaInitFit = initialFit,
+  fit = FALSE
+)
+# Supply any remaining substantive model arguments in the call above.
+stopifnot(inherits(cotimaSetup, "CoTiMAFit"))
+
+# CoTiMA places the K - 1 study indicators before additional moderators.
+K <- length(initialFit$studyList)
+studyDummyNames <- cotimaSetup$ctModel$TIpredNames[seq_len(K - 1L)]
+@
+
+The explicit \code{studyDummyNames} route is recommended when substantive
+moderators are present, because categorical moderators may themselves occupy
+several later TI columns and \code{n.moderators} need not equal that column
+count. Coding values need not be 0/1: only the $K$ distinct row profiles are
+used, so \code{scaleTI = TRUE} and \code{WEC = TRUE} are supported.
+
+\subsection{Store the requested random-effect masks}
+
+With \code{fit = FALSE}, \code{ctmaFit()} returns the data, the ctsem model
+specification, and an \code{argumentList}. The latter retains
+\code{sameInitialTimes} and \code{CoTiMAStanctArgs}, allowing
+\code{ctmaRePrep()} to reproduce relevant ctsem setup options. The user may
+define the random-effect masks before preparation. Each mask must be an
+$n_{\mathrm{latent}}\times n_{\mathrm{latent}}$ logical matrix. Matrix rows and
+columns follow the corresponding ctsem matrix convention.
+
+<<re-masks, purl=FALSE>>=
+n.latent <- cotimaSetup$ctModel$n.latent
+
+cotimaSetup$argumentList$randomEffect$reDRIFT <-
+  matrix(FALSE, n.latent, n.latent)
+cotimaSetup$argumentList$randomEffect$reDIFFUSION <-
+  matrix(FALSE, n.latent, n.latent)
+cotimaSetup$argumentList$randomEffect$reT0var <-
+  matrix(FALSE, n.latent, n.latent)
+
+# Illustrative selections; adapt them to the substantive model.
+# Standardization does not make DIFFUSION deterministic in current CoTiMA.
+cotimaSetup$argumentList$randomEffect$reDRIFT[1, 1] <- TRUE
+cotimaSetup$argumentList$randomEffect$reDIFFUSION[1, 1] <- TRUE
+cotimaSetup$argumentList$randomEffect$reT0var[1, 1] <- TRUE
+@
+
+The implementation reads \code{reT0var} case-insensitively, so it also accepts
+\code{reT0VAR}. A selected cell must be a free parameter. Selecting a fixed
+cell, an upper-triangular duplicate, or a model expression that has no raw
+population parameter produces an error before Stan is compiled.
+
+\subsection{Prepare and fit}
+
+The data contain a TI variable named \code{study}, constant within each person,
+whose values identify studies. It is used as an index and must not also be
+estimated as an ordinary linear predictor of the same parameters. Substantive
+moderators can remain in the data. By default, \code{ctmaRePrep()} removes the
+identified study-indicator effects only for parameters selected as
+hierarchical, renumbers the retained TI effects, and leaves later substantive
+moderator effects active. This prevents an accidental fixed-plus-random study
+hybrid.
+
+If \code{study} is absent, the preparation function attempts to reconstruct
+study membership from the study-dummy TI variables. It recognizes ordinary
+dummy coding, weighted effect coding, and centred or scaled versions of both.
+Detection uses the two- or three-level row patterns rather than requiring the
+values 0, 1, or $-1$. Candidate columns must share the same parameter-effect
+pattern and $K-1$ columns must produce exactly $K$ distinct TI profiles. A
+message reports the columns and number of studies used. If detection is
+ambiguous, specify the columns explicitly:
+
+<<re-infer-study, purl=FALSE>>=
+prepared <- ctmaRePrep(
+  cotimaSetupWithoutStudyColumn,
+  study_dummy_ti = c("TI1", "TI2"),
+  covariance = "independent"
+)
+@
+
+This conservative check prevents a binary substantive moderator from being
+silently interpreted as part of the study identifier.
+
+When \code{ctmaRePrep()} receives this unfitted \code{CoTiMAFit} object, it
+prints a note and calls \code{ctsem::ctFit(..., fit = FALSE)} internally to
+generate the necessary Stan code and Stan data. This generates code only; it
+does not estimate the intermediate model. The former manual step
+\code{ctsemSetup <- ctsem::ctFit(..., fit = FALSE)} is therefore no longer
+required. The prepared object retains both representations:
+
+\begin{itemize}
+  \item \code{prepared\$CoTiMASetup} is the original object returned by
+  \code{ctmaFit(..., fit = FALSE)};
+  \item \code{prepared\$ctsemModelSetup} is the complete ctsem setup,
+  including the generated Stan representation and \code{ctstanmodelbase}; and
+  \item \code{prepared\$original} is the ctsem setup used as the source for
+  the study-random-effect Stan patch.
+\end{itemize}
+
+\section{Complete hierarchical-function argument reference}
+
+This section documents the package-integrated interface in CoTiMA version
+\code{1.0.4}. The live signatures can always be checked with
+\code{args(ctmaRePrep)} and \code{args(ctmaReFit)}. Fitted objects are
+summarized with the standard \code{summary()} generic.
+
+\subsection{Preparation arguments}
+
+\begin{description}
+  \item[\code{model}] Either the unfitted \code{CoTiMAFit} object returned by
+  \code{ctmaFit(..., fit = FALSE)}, or an already generated ctsem setup
+  containing Stan text, Stan data, setup information, and the base ctsem
+  model. In the first case, \code{ctmaRePrep()} generates the ctsem setup
+  internally.
+
+  \item[\code{study\_id = NULL}] Optional vector of study labels. Its length
+  must equal either the number of ctsem subjects or the number of data rows.
+  When supplied at row level, the value must be constant within person. Labels
+  need not be consecutive integers; the function internally maps them to
+  $1,\ldots,K$ and retains the original labels for reporting.
+
+  \item[\code{study\_id\_ti = NULL}] Name or column number of an existing TI
+  predictor containing study membership. If neither \code{study\_id} nor this
+  argument is supplied, a TI named \code{study} is used automatically. The
+  identifier must not have ordinary TI effects enabled in the ctsem parameter
+  table.
+
+  \item[\code{study\_dummy\_ti = NULL}] Optional names or column numbers of the
+  $K-1$ study-dummy TI predictors from which membership should be reconstructed
+  when \code{study} is absent. If omitted, the function searches TI predictors
+  with enabled effects, groups them by their parameter-effect pattern, accepts
+  two- or three-level scaled or unscaled coding, and requires $K-1$ columns to
+  generate exactly $K$ profiles. Supply this argument when automatic detection
+  is ambiguous.
+
+  \item[\code{reDRIFT = NULL}] Logical
+  $n_{\mathrm{latent}}\times n_{\mathrm{latent}}$ mask selecting drift cells
+  with study-level random effects. \code{NULL} reads
+  \code{argumentList\$randomEffect\$reDRIFT}.
+
+  \item[\code{reDIFFUSION = NULL}] Logical matrix selecting diffusion cells.
+  \code{NULL} reads the stored \code{reDIFFUSION} mask. Selected cells must be
+  free parameters; for symmetric covariance structures, select only the model's
+  free/lower-triangular representation. Current CoTiMA estimates DIFFUSION
+  separately from the freely estimated T0VAR matrix. Thus both diagonal and
+  off-diagonal diffusion cells may have study-level random effects when that
+  heterogeneity is intended. Leaving a cell \code{FALSE} constrains that
+  diffusion parameter to be common across studies; it does not derive it from
+  DRIFT and T0VAR.
+
+  \item[\code{reT0VAR = NULL}] Logical matrix selecting time-zero variance or
+  covariance cells. The stored spelling \code{reT0var} is accepted
+  case-insensitively. When ctsem has absorbed T0 covariance into its
+  individually varying initial-state distribution, diagonal selections act on
+  raw SDs and lower-triangular selections act on the unconstrained correlation
+  basis. For standardized univariate data, the sole diagonal is often left
+  \code{FALSE} as a parsimonious heterogeneity assumption, although the T0
+  variance itself remains freely estimated unless explicitly fixed. For
+  standardized multivariate data, diagonal random effects may likewise be
+  omitted while free lower-triangular off-diagonal cells may be selected to
+  model study-varying initial correlations.
+
+  \item[\code{covariance = "independent"}] Study-effect covariance structure.
+  \code{"independent"} estimates one heterogeneity SD per selected parameter
+  and fixes their correlations to zero. \code{"equicorrelated"} estimates one
+  common correlation, \code{"full"} estimates an unrestricted Cholesky
+  correlation matrix, and \code{"block"} uses the block definitions below.
+  Aliases \code{"ure"}, \code{"ere"}, and \code{"cre"} are accepted;
+  \code{"equal"} is also an alias for \code{"equicorrelated"}.
+
+  \item[\code{covarianceBlocks = NULL}] With automatic matrix blocks under
+  \code{covariance = "block"}, a named list assigning a structure to every
+  selected family. The workflow below illustrates an equicorrelated DRIFT
+  block with independent DIFFUSION and T0VAR blocks. Only matrix families
+  containing selected random parameters need to be named.
+
+  \item[\code{reBlocks = NULL}] Optional advanced cell-level assignment. Supply
+  a named list containing $n_{\mathrm{latent}}\times n_{\mathrm{latent}}$
+  character matrices named DRIFT, DIFFUSION, and T0VAR as needed. Every cell
+  selected by its RE mask must have exactly one nonmissing block name. A custom
+  block may contain parameters from different ctsem matrices.
+
+  \item[\code{blockStructures = NULL}] Named character vector or list assigning
+  \code{"independent"}, \code{"equicorrelated"}, or \code{"full"} to every
+  custom block in \code{reBlocks}. Between-block correlations are fixed to
+  zero. Automatic matrix blocks instead use \code{covarianceBlocks}.
+
+  \item[\code{parameterization = "auto"}] Representation of the latent study
+  effects. \code{"centered"} estimates study deviations directly;
+  \code{"noncentered"} estimates standard-normal scores and constructs the
+  deviations from their SDs and optional correlation factor. \code{"auto"}
+  selects centred effects when the median study has at least 20 persons and
+  non-centred effects otherwise, and prints the choice and study-size range.
+
+  \item[\code{init = "auto"}] Initialization policy. Automatic initialization
+  uses posterior medians from \code{fit\$stanfit\$rawposterior}, with optimized
+  raw estimates as fallback. Study values are reconstructed on ctsem's raw
+  scale from ordinary dummy, scaled-dummy, or WEC predictors before the fixed
+  study effects are removed. \code{"random"} delegates initialization to the
+  backend; an expert may instead supply a list or function.
+
+  \item[\code{init\_jitter = 0.02}] Small reproducible raw-scale perturbation
+  applied separately to Bayesian chains and parallel optimization starts.
+
+  \item[\code{remove\_study\_fixed\_effects = TRUE}] Remove the identified
+  study-indicator effects for parameters selected in the RE masks and renumber
+  the remaining TI effects. Later substantive moderators remain active. Set
+  this to \code{FALSE} only for a deliberate fixed-plus-random hybrid model.
+
+  \item[\code{sd\_prior = 0.25}] Positive half-normal scale for each raw-scale
+  study-effect SD. A scalar is recycled over random parameters; otherwise its
+  length must equal the number of selected cells. It is used for Bayesian and
+  MAP estimation and disabled in ML mode.
+
+  \item[\code{lkj\_eta = 2}] LKJ shape for full correlation blocks and the LKJ
+  kernel restricted to each equicorrelation family. Values above one
+  increasingly favor correlations near zero. It is unused by independent
+  blocks and disabled in ML mode.
+
+  \item[\code{verbose = TRUE}] Print study-ID reconstruction messages and
+  preparation information. Set to \code{FALSE} for silent preparation.
+\end{description}
+
+\subsection{Fitting arguments}
+
+\begin{description}
+  \item[\code{prepared}] Object returned by
+  \code{ctmaRePrep()}.
+
+  \item[\code{estimation = "bayes"}] Estimation target. \code{"bayes"}
+  samples the posterior; \code{"map"} optimizes the posterior including ctsem
+  priors and study hyperpriors; \code{"ml"} removes these priors and maximizes
+  the joint/conditional likelihood. The present ML option does not integrate
+  out study effects and is therefore not marginal ML.
+
+  \item[\code{method = NULL}] Backward-compatibility alias. \code{"sample"}
+  maps to \code{estimation = "bayes"}; \code{"optimize"} maps to
+  \code{"map"}. New code should use \code{estimation}.
+
+  \item[\code{cores = 2}] Number of parallel Bayesian chains that may run.
+  A single \code{rstan::optimizing()} call uses one core; use
+  \code{ctmaReMLFit()} for parallel independent ML starts. For CRAN examples
+  and tests, do not use more than two cores.
+
+  \item[\code{chains = 4}] Number of Markov chains for Bayesian estimation.
+  Ignored by MAP and ML.
+
+  \item[\code{iter = 2000}] Total iterations per Bayesian chain, including
+  warm-up under rstan defaults, or the maximum optimizer iterations for MAP
+  and ML. It can be overridden through \code{fit\_args}.
+
+  \item[\code{seed = 1234}] Random-number seed passed to rstan sampling or
+  optimization. Optimizer-specific controls belong in \code{fit\_args}.
+
+  \item[\code{init = NULL}] Optional fitting-stage override. \code{NULL} uses
+  the policy stored by \code{ctmaRePrep()}, normally automatic initialization.
+  \code{"random"}, a list, or a function overrides it.
+
+  \item[\code{init\_jitter = NULL}] Optional override for the jitter stored in
+  the prepared object.
+
+  \item[\code{verbose = TRUE}] Print four high-level stages, elapsed time, and
+  rstan optimizer progress. It also controls the backend's native verbosity.
+
+  \item[\code{refresh = 100}] Number of sampling or optimization iterations
+  between rstan progress updates. Set to zero to suppress iteration output.
+
+  \item[\code{optimizer\_uncertainty = "none"}] Uncertainty method after MAP
+  or ML optimization. The choices are documented separately below. The default
+  returns transformed point estimates and avoids a dense joint Hessian.
+
+  \item[\code{compile\_args = list()}] Named arguments passed to
+  \code{rstan::stan\_model()}, for example
+  \code{list(auto\_write = TRUE)}. These affect compilation, not estimation.
+
+  \item[\code{fit\_args = list()}] Named arguments forwarded to the backend:
+  \code{rstan::sampling()} for Bayesian estimation or
+  \code{rstan::optimizing()} for MAP/ML. They override wrapper defaults.
+  Sampling examples include \code{warmup} and \code{control}; optimizer
+  examples include \code{algorithm}, \code{iter}, and tolerance arguments.
+  The wrapper manages \code{object}, \code{data}, \code{seed},
+  \code{as\_vector}, \code{hessian}, and \code{verbose}.
+\end{description}
+
+\subsection{Values of \code{optimizer\_uncertainty}}
+
+These options operate on the complete joint parameter vector, including latent
+study effects. Consequently, methods that require a dense covariance matrix
+may be unstable or prohibitively expensive in a large model.
+
+In the current package version, only \code{"none"} is enabled for
+MAP/ML. All other values are retained in the interface so their intended ctsem
+meaning is documented and a targeted error can be returned, but they stop
+before compilation. ctsem's post-optimization machinery is not currently
+compatible with the custom study-membership data and dynamically compiled
+model. Use Bayesian estimation when intervals are required.
+
+\begin{description}
+  \item[\code{"none"}] Return the optimized point only. Stan still applies all
+  parameter transformations. This is the recommended default for exploratory
+  MAP/ML fitting with many study effects. It supplies no interval estimate.
+
+  \item[\code{"hessian"}] Intended to use ctsem's finite-difference Hessian and invert the
+  observed curvature. This can fail with NA gradients, boundary heterogeneity
+  estimates, weak identification, or hundreds of joint parameters---as in the
+  reported ``Non-finite covariance values'' error. It is currently disabled.
+
+  \item[\code{"surrogate"}] Intended to fit a local quadratic surrogate around the optimum
+  and use its curvature. By default ctsem evaluates at least
+  $\max(4P,50)$ local directions for $P$ parameters, so it can be very costly
+  when all study effects are included. It is currently disabled.
+
+  \item[\code{"is"}] Intended for Hessian-based importance sampling followed by uncertainty
+  estimation from the weighted importance-sampling distribution. This still
+  needs a usable initial Hessian covariance and therefore does not automatically
+  solve a Hessian failure. It is currently disabled.
+
+  \item[\code{"bootstrap"}] In ctsem, this is a one-step score bootstrap with
+  Hessian ``bread.'' It is currently rejected by the study-RE wrapper because
+  ctsem's subject-score subsets do not subset the custom \code{study\_id}
+  array. Without that safeguard, Stan reports a data-dimension mismatch.
+
+  \item[\code{"fullbootstrap"}] In ctsem, this resamples independent subjects
+  and fully re-optimizes every sample. It is currently rejected for the same
+  reason: the resampling code does not carry the custom study-membership array
+  into each reconstructed Stan data set.
+
+  \item[\code{"sandwich"}] Robust sandwich covariance using Hessian bread and
+  score-covariance meat. It is currently rejected because construction of the
+  score matrix uses incompatible one-subject Stan data subsets.
+
+  \item[\code{"opg"}] Outer-product-of-gradients score-information
+  approximation. It is currently rejected because it also requires subject
+  subsets that omit subsetting \code{study\_id}.
+\end{description}
+
+These names remain documented to distinguish possible future uncertainty
+methods, but their former ctsem-specific controls are not forwarded to
+\code{rstan::optimizing()}. At present, use Bayesian estimation when interval
+estimates are required.
+
+\subsection{Summary arguments}
+
+\begin{description}
+  \item[\code{object}] Object returned by \code{ctmaReMoments()},
+  \code{ctmaReFit()}, or \code{ctmaReMLFit()}. Hierarchical-fit classes include \code{CoTiMAFit} and
+  \code{CoTiMAStudyREFit}; the latter lets \code{summary.CoTiMAFit()} route
+  the request to the hierarchical RE summary while preserving the established
+  summary behavior for ordinary CoTiMA fits.
+  \item[\code{probs}] Quantile probabilities; the default is
+  \code{c(.025,.5,.975)}. With \path{optimizer_uncertainty = "none"}, only one
+  transformed point is available, so all quantile columns equal that estimate.
+  A \code{CoTiMAReMoments} object instead retains the two interval
+  probabilities supplied to \code{ctmaReMoments()}.
+\end{description}
+
+<<re-fit, purl=FALSE>>=
+prepared <- ctmaRePrep(
+  cotimaSetup,
+  study_dummy_ti = studyDummyNames,
+  covariance = "independent",  # or "equicorrelated", "full", "block"
+  parameterization = "auto",   # or "centered", "noncentered"
+  init = "auto",
+  init_jitter = 0.02,
+  remove_study_fixed_effects = TRUE,
+  sd_prior = 0.5,
+  lkj_eta = 2
+)
+
+# Inspect exactly what will vary before compiling.
+prepared$specification[, c(
+  "matrix", "row", "col", "parameter", "block",
+  "person_varying", "interpretation", "transform"
+)]
+prepared$covariance_blocks
+
+# A recommended parsimonious matrix-block model:
+prepared_block <- ctmaRePrep(
+  ctsemFit,
+  study_dummy_ti = studyDummyNames,
+  covariance = "block",
+  covarianceBlocks = list(
+    DRIFT = "equicorrelated",
+    DIFFUSION = "independent",
+    T0VAR = "independent"
+  ),
+  parameterization = "auto",
+  init = "auto"
+)
+
+# Advanced example: cell-level blocks for a bivariate model. Only cells whose
+# corresponding reDRIFT/reDIFFUSION/reT0VAR mask is TRUE need assignments.
+customBlocks <- list(
+  DRIFT = matrix(c("auto", "cross", "cross", "auto"), 2, 2,
+    byrow = TRUE),
+  DIFFUSION = matrix(c("noise", NA, "noise", "noise"), 2, 2,
+    byrow = TRUE),
+  T0VAR = matrix(c(NA, NA, "initial", NA), 2, 2,
+    byrow = TRUE)
+)
+
+prepared_custom_block <- ctmaRePrep(
+  ctsemFit,
+  study_dummy_ti = studyDummyNames,
+  covariance = "block",
+  reBlocks = customBlocks,
+  blockStructures = c(
+    auto = "equicorrelated",
+    cross = "equicorrelated",
+    noise = "full",
+    initial = "independent"
+  ),
+  parameterization = "auto",
+  init = "auto"
+)
+
+# Full Bayesian posterior sampling:
+# Automatic raw-scale values from the pooled CoTiMA-FE fit are jittered by chain.
+re_fit <- ctmaReFit(
+  prepared,
+  estimation = "bayes",
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  verbose = TRUE,
+  refresh = 100
+)
+
+re_summary <- summary(re_fit)
+re_summary
+
+# Maximum a posteriori estimation. This uses ctsem priors plus the
+# study-effect SD and correlation priors. Automatic constrained initial values
+# are passed directly to rstan::optimizing().
+map_fit <- ctmaReFit(
+  prepared,
+  estimation = "map",
+  cores = 1,
+  optimizer_uncertainty = "none"
+)
+map_summary <- summary(map_fit)
+map_fit$prior_switches
+
+# Experimental joint/conditional maximum likelihood. This removes parameter
+# and hyperpriors, but retains N(0, Sigma_study) as the study-effect model.
+# It does NOT integrate out the study effects and is not marginal ML.
+ml_fit <- ctmaReFit(
+  prepared,
+  estimation = "ml",
+  cores = 1,
+  optimizer_uncertainty = "none"
+)
+ml_summary <- summary(ml_fit)
+ml_fit$prior_switches
+
+@
+
+The resulting hierarchical fits have classes
+\code{c("CoTiMAFit", "CoTiMAStudyREFit", "ctmaStudyREFit")}. Consequently,
+users call \code{summary(re\_fit)} rather than a separate RE-summary function.
+The package's \code{summary.CoTiMAFit()} method checks for the
+\code{CoTiMAStudyREFit} subclass and delegates to the internal RE summary;
+it also checks for \code{CoTiMAReMoments} and delegates to the internal moment
+summary. Moment objects report equal-weight empirical study moments, whereas
+hierarchical fit objects report population, heterogeneity, correlation, and
+partially pooled study estimates. In both cases,
+ordinary CoTiMA fits continue to print their stored \code{summary} element.
+The older snake-case function names remain aliases for compatibility but are
+not used in new code.
+
+The returned hierarchical summary contains both
+\code{study\_sd\_raw} and \code{study\_sd\_transformed}. The former reports
+$\tau_p$ on ctsem's unconstrained estimation scale. The latter reports the
+model-implied standard deviation of the complete transformed parameter
+distribution $g_p(\alpha_p+u_{sp})$, with
+$u_{sp}\sim\mathcal N(0,\tau_p^2)$. It is calculated separately for every
+posterior draw using numerical Gaussian quadrature and then summarized across
+draws. This is important because, for a nonlinear $g_p$,
+\code{g(tau)} is not a standard deviation. The transformed table is available
+for parameters having a scalar ctsem transformation, such as DRIFT and
+DIFFUSION parameters. T0 covariance components are omitted from that table
+because their final scale depends jointly on the complete Cholesky matrix;
+their study-specific final values remain in \code{study\_T0VAR} and
+\code{study\_T0cov}.
+
+<<re-summary-output, eval=FALSE, purl=FALSE>>=
+re_summary <- summary(re_fit)
+re_summary$study_sd_raw
+re_summary$study_sd_transformed
+@
+
+\subsection{Experimental parallel multistart joint ML}
+
+The exported \code{ctmaReMLFit()} function avoids ctsem's private optimizer and
+calls \code{rstan::optimizing()} directly. One
+Stan optimization is not multithreaded. Instead, \code{ctmaReMLFit()} compiles
+the modified model once, launches independent starting values on forked
+macOS/Linux worker processes, rejects failed or non-finite solutions, and
+retains the solution with the largest joint objective. This uses multiple
+cores to search for local modes; it does not turn the estimator into marginal
+ML and does not make its objective invariant to centred versus non-centred
+latent coordinates.
+
+<<re-parallel-ml, purl=FALSE>>=
+parallel_ml_fit <- ctmaReMLFit(
+  prepared,
+  parameterization = "centered",
+  cores = 4,
+  n_starts = 8,
+  init = "auto",
+  init_jitter = 0.02,
+  seed = 1234,
+  algorithm = "LBFGS",
+  iter = 2000,
+  refresh = 100
+)
+parallel_ml_summary <- summary(parallel_ml_fit)
+
+# Compare convergence and objective values across starts.
+vapply(parallel_ml_fit$attempts, `[[`, numeric(1), "value")
+lapply(parallel_ml_fit$attempts,
+  function(x) x[c("ok", "error", "warnings")])
+@
+
+The principal arguments are \code{cores}, the maximum concurrent workers;
+\code{n\_starts}, the total independent optimizations; \code{init}, a common
+initialization specification or function (\code{"auto"} uses independently
+jittered copies of the FI-based template); \code{algorithm}, \code{iter}, and
+\code{refresh}, passed to RStan optimization; \code{compile\_args} and
+\code{optim\_args}, for additional named backend controls; and
+\code{poll\_seconds}, which controls how often the parent process checks for
+completed starts. The function currently stops on Windows because compiled
+RStan model pointers cannot safely be sent to ordinary PSOCK workers without
+independent worker setup or recompilation.
+
+With \code{verbose = TRUE} (the default), the wrapper reports four stages:
+Stan compilation, fitting, extraction of results, and completion, together
+with elapsed time. Informational text uses the automatically wrapped
+81-character message boxes customary in CoTiMA. Genuine warnings and errors
+remain R conditions so calling code can detect them. During Bayesian estimation, \code{refresh} controls how
+often Stan prints iteration progress. During MAP and ML optimization, the
+wrapper enables rstan's optimizer messages. Use \code{verbose = FALSE}
+and \code{refresh = 0} for silent execution. Compilation and optimization do
+not expose a reliable percentage-complete value, so the stage messages avoid
+displaying a misleading progress bar.
+
+By default, MAP and ML use \code{optimizer\_uncertainty = "none"}. This returns
+transformed point estimates without attempting a dense Hessian over all study
+effects. The summary's lower, median, and upper columns then equal the point
+estimate. Optimization-based uncertainty can be re-enabled only in a future
+implementation that correctly carries study membership
+through study-aware transformed-sample and subject-subsetting machinery. The
+current implementation rejects all non-\code{"none"} values before fitting.
+Profile likelihood, a study-aware parametric bootstrap, or a correctly
+implemented marginal-information matrix would be preferable for
+likelihood-based intervals; Bayesian sampling is presently implemented.
+
+MAP and conditional ML now call the exported \code{rstan::optimizing()}
+interface directly; they no longer retrieve ctsem's unexported
+\code{stanoptimis()} function. MAP sets both ctsem's ordinary prior switch and
+the study-hyperprior switch to one. Conditional ML sets both switches to zero,
+while retaining the Gaussian study-effect density that defines the random
+effects. The optimizer returns constrained parameters and transformed
+parameters directly, which are passed to the common CoTiMA-RE summary.
+
+A single \code{rstan::optimizing()} run uses one core. Bayesian sampling can
+still run chains in parallel, and \code{ctmaReMLFit()} uses several cores for
+independent ML starts. Preparation retains
+\code{standata\$recompile = 1} as a marker that the generated Stan program was
+modified and is not ctsem's original cached model.
+
+Versions before \code{2026-08-10.17} incorrectly interpreted ctsem's
+\code{whenvecp} coding. ctsem selects entries that are \emph{not} zero; setting
+a selected raw parameter to zero therefore disabled its subject-level
+transformation. The corrected code stores the raw parameter's own index in
+\code{whenvecp}, activates the second \code{matsetup} gate, refreshes the
+selected system matrices and JAx, and rejects stale prepared objects in the
+parallel optimizer. A deterministic one-evaluation check confirmed that forced
+study effects then produce distinct subject DRIFT matrices. After refitting,
+exact equality can still occur legitimately when a heterogeneity SD is
+estimated at zero; inspect
+\code{results\$study\_sd\_raw} and
+\code{results\$study\_effects\_raw} to distinguish that boundary solution from
+the former scheduling error.
+
+If the exact argument names of the local ctsem backend differ, inspect
+\path{args(ctmaReFit)} and the generated \code{prepared} object.
+The preparation step is deterministic and can be tested without running an
+expensive model.
+
+\subsection{Person-level and study-level variation in the same parameter}
+
+No special mask is required for the combination. The existing
+\code{indvarying} setting in \code{ctstanmodelbase\$pars} determines whether a
+parameter has person-level variation; the corresponding \code{re...} mask
+adds study-level variation. Before fitting, inspect the generated
+specification:
+
+<<two-level-check, purl=FALSE>>=
+spec <- prepared$specification
+
+subset(spec, person_varying)[, c(
+  "parameter", "interpretation", "transform"
+)]
+subset(spec, !person_varying)[, c(
+  "parameter", "interpretation", "transform"
+)]
+@
+
+For a person-varying drift or diffusion parameter, the study effect shifts the
+mean of that person's raw parameter distribution. If T0 variation has been
+absorbed into ctsem's individual initial-state covariance, the implementation maps
+a selected T0 diagonal to its raw SD and a lower-triangular off-diagonal to its
+unconstrained correlation basis. Warnings and errors should be treated as
+model-specification diagnostics, not suppressed automatically.
+
+CoTiMA's alternative random-intercept construction uses one zero-drift pseudo
+process per substantive latent. These processes can be recognized by T0-mean
+parameter names such as \code{MeanV1\_cint}. Their freely estimated T0
+(co)variances describe the distribution of person-level random intercepts,
+although ctsem need not mark the corresponding T0VAR row itself as
+\code{indvarying}. Consequently, \code{ctmaRePrep()} recognizes this naming
+pattern. A selected pseudo-process diagonal is labelled as a study-varying
+variance of a person-level random intercept; a selected off-diagonal is labelled
+as a study-varying random-intercept covariance component. This classification
+changes the reported interpretation, not the Stan parameter mapping: the study
+effect already acts on the appropriate freely estimated T0 (co)variance.
+
+\section{Diagnostics and reporting}
+
+Centred and non-centred parameterizations should be compared through short
+diagnostic runs before committing to long sampling. The central HMC quantities
+are divergences, the proportion of iterations that reach
+\code{max\_treedepth}, step size, leapfrog count, energy/BFMI, effective sample
+size, and between-chain $\widehat R$. A one-chain test cannot establish
+convergence, and a 50-draw test cannot support substantive inference. If most
+iterations reach maximum tree depth, merely increasing the limit can multiply
+runtime without correcting posterior geometry. With a modest parameter count
+but strong posterior correlations, a longer adaptation phase and
+\code{metric = "dense\_e"} can be tested through
+\code{fit\_args = list(warmup = ..., control = list(metric = "dense\_e"))}.
+Persistent saturation under both parameterizations indicates that structural
+reparameterization or scaling, rather than a longer production run, should be
+investigated.
+
+An article reporting CoTiMA-RE should state:
+\begin{enumerate}
+  \item which model matrices and cells had study-level random effects;
+  \item whether those parameters also varied between persons;
+  \item the raw-scale transformations used by ctsem;
+  \item the covariance structure of $\bm u_s$ and all priors;
+  \item the number of studies, persons per study, and observation schedules;
+  \item posterior means and uncertainty intervals for population parameters,
+    heterogeneity SDs, correlations, and study-specific deviations;
+  \item convergence diagnostics, effective sample sizes, divergences, and
+    posterior predictive checks; and
+  \item sensitivity analyses for heterogeneity priors and covariance structure.
+\end{enumerate}
+
+Heterogeneity on the raw scale is computationally fundamental but may not be
+substantively intuitive. Report transformed study-specific parameters and
+derived dynamic quantities as well. The \code{study\_sd\_transformed} summary
+component gives the model-implied transformed-scale SD for scalar transformed
+parameters. Because nonlinear transformations make the transformed
+distribution asymmetric, this quantity is computed from the transformed
+distribution for every posterior draw, rather than by transforming a raw SD
+or only transforming posterior means.
+
+\section{Integration into the CoTiMA package}
+
+The implementation is now integrated into ordinary package files. The shared
+preparation, Stan-patching, fitting, and summary helpers, together with the
+exported \code{ctmaRePrep()} and \code{ctmaReFit()}, are stored in
+\path{R/ctmaReFit.R}. The exported parallel multistart optimizer
+\code{ctmaReMLFit()} is stored in \path{R/ctmaReMLFit.R}. The established
+moment interface \code{ctmaReMoments()} and its internal reconstruction and
+summary helpers are stored in \path{R/ctmaReMoments.R}; the exported mapping
+function \code{ctmaParMap()} and its object-resolution helpers are stored in
+\path{R/ctmaParMap.R}. The established
+\code{summary.CoTiMAFit()} method remains defined only in
+\path{R/ctmaSummary.R}; it routes objects inheriting from
+\code{CoTiMAStudyREFit} to the internal \code{.ctmaReSummary()}. The top-level
+\code{CoTiMAReMoments} objects are routed to
+\code{.ctmaReMomentsSummary()}. The top-level
+scripts with corresponding names are development loaders and are excluded
+from the source package, so they do not duplicate namespace definitions.
+
+Roxygen documentation exports \code{ctmaRePrep()}, \code{ctmaReFit()},
+\code{ctmaReMLFit()}, \code{ctmaReMoments()}, and \code{ctmaParMap()}, together
+with the existing S3 summary method. All dot-prefixed helpers remain internal. Because
+the implementation calls \code{rstan::} functions directly, \code{rstan} must
+be declared in \code{DESCRIPTION}; \code{Suggests} is appropriate if
+CoTiMA-RE is optional and every entry point checks
+\code{requireNamespace("rstan", quietly=TRUE)}, whereas \code{Imports} is
+appropriate if it becomes mandatory package functionality. Long model fits
+must not run in CRAN examples or routine tests.
+
+Package code now uses public rstan interfaces for Bayesian sampling, MAP,
+single-start conditional ML, and parallel multistart conditional ML. It no
+longer depends on ctsem's unexported \code{stanoptimis()} implementation. This
+removes a fragile dependency on ctsem internals and is safer for CRAN
+submission.
+
+The generated Stan patch depends on identifiable insertion anchors in ctsem's
+model text. The package therefore retains explicit anchor-count errors and
+records the ctsem version in every prepared object. Fast package tests cover
+covariance aliases, automatic and custom block construction, invalid selected
+cells, ML/MAP prior switches, study-effect draw dimensions, CoTiMA/ctsem
+parameter-map input routes, raw-posterior column mapping, and equal-weight
+moment calculations. Further tests
+should be added for each supported ctsem release, dummy/WEC/scaled-study
+reconstruction, parameter ordering, initialization dimensions, and Stan syntax
+generation. One small optional integration test can fit a very short model
+when rstan is available. Saved compiled Stan models and platform-specific
+binaries are excluded from the source package.
+
+Study-effect variances are difficult to estimate with very small $K$. With
+$K=3$, a hierarchical model can be fitted only under strong regularization and
+its heterogeneity posterior will be heavily prior-sensitive. For the anticipated
+range $K=10$--$50$, begin with a small, theory-driven set of random parameters
+and independent study effects. Add correlations only when the number of
+studies and the likelihood provide adequate information.
+
+\section{Recommended interpretation}
+
+The package functions support two related but different questions. \code{ctmaReMoments()}
+asks: ``What empirical distribution is implied by the study-specific fixed
+effects in this already fitted CoTiMA-FE model?'' The hierarchical
+\code{ctmaRePrep()}--\code{ctmaReFit()} workflow asks: ``What
+population distribution of study effects is supported when study heterogeneity
+is estimated jointly with the longitudinal model?'' The first is valuable for
+verification and exploration. The hierarchical workflow is the appropriate primary analysis
+when the inferential aim is generalization to a population of studies.
+\code{ctmaReMLFit()} is an experimental multistart implementation of the same
+joint/conditional ML objective and is primarily useful for optimization
+diagnostics; it is not a marginal-ML replacement for the Bayesian model.
+
+\section*{Reproducibility notes}
+
+The following commands knit this document in RStudio or from the R console.
+
+<<knit-document, purl=FALSE>>=
+knitr::knit2pdf(
+  "CoTiMA_Random_Effects.Rnw",
+  clean = FALSE
+)
+
+# Record package versions used for an analysis:
+sessionInfo()
+citation("CoTiMA")
+citation("ctsem")
+@
+
+The source requires repeated LaTeX passes because citations, equation
+references, table references, and PDF bookmarks are recorded in auxiliary
+files during the first pass. The RStudio directive at the top selects knitr.
+If a local RStudio configuration nevertheless runs only one \code{pdflatex}
+pass, use the \code{knit2pdf()} command above. Keeping \code{clean = FALSE}
+retains the \code{.tex} and \code{.log} files for troubleshooting.
+
+All example chunks are set to \code{eval = FALSE} so that the manuscript can
+be knitted without private fit files or a Stan toolchain. For a fully
+reproducible supplement, change selected chunks to \code{eval = TRUE}, use
+project-relative paths, and archive the fitted object together with the exact
+CoTiMA, ctsem, Stan, and R versions.
+
+\begin{thebibliography}{9}
+
+\bibitem[Carpenter et~al.(2017)]{Carpenter2017}
+Carpenter, B., Gelman, A., Hoffman, M. D., Lee, D., Goodrich, B., Betancourt,
+M., Brubaker, M., Guo, J., Li, P., and Riddell, A. (2017).
+Stan: A probabilistic programming language.
+\emph{Journal of Statistical Software}, 76(1), 1--32.
+\doi{10.18637/jss.v076.i01}.
+
+\bibitem[Driver et~al.(2017)]{Driver2017}
+Driver, C. C., Oud, J. H. L., and Voelkle, M. C. (2017).
+Continuous time structural equation modeling with R package ctsem.
+\emph{Journal of Statistical Software}, 77(5), 1--35.
+\doi{10.18637/jss.v077.i05}.
+
+\bibitem[Stan Development Team(2026)]{Stan2026}
+Stan Development Team (2026).
+\emph{Stan Reference Manual}.
+\url{https://mc-stan.org/docs/reference-manual/}.
+
+\end{thebibliography}
+
+\end{document}

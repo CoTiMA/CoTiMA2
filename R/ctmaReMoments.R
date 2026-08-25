@@ -76,9 +76,6 @@ ctmaReMoments <- function(
     cores = 2,
     include_matrices = TRUE,
     include_individual = TRUE) {
-  .ctmaVersionNote()
-  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReMoments")
-  on.exit(.ctma_timer(), add = TRUE)
 
   if (!is.numeric(probs) || length(probs) != 2L || any(!is.finite(probs)) ||
       any(probs <= 0 | probs >= 1) || probs[1L] >= probs[2L]) {

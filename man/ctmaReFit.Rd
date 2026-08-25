@@ -65,9 +65,7 @@ experimental \code{"julia"} backend.}
 \item{backendArgs}{Named overrides for Julia controls such as
 \code{julia_threads}, \code{warmup}, \code{samples}, \code{metric},
 \code{target_accept}, \code{max_depth}, \code{parallel_chains}, and
-\code{threads_per_chain}. Set \code{nuts_progress = TRUE} to report
-aggregate progress across chains and \code{progress_every} to control
-the number of NUTS iterations between worker updates (default 25).}
+\code{threads_per_chain}.}
 }
 \value{
 A \code{"CoTiMAFit"} object with subtype

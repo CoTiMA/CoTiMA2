@@ -443,6 +443,16 @@ ctmaFit <- function(
       coresToUse, backend = backend, workflow = "ctmaFit"
     )
     coresToUse <- resource_resolution$resolved
+    if (identical(backend, "julia")) {
+      julia_resources <- .ctmaInitJuliaResources(
+        cores = coresToUse,
+        estimation = requested_estimation,
+        backendArgs = backendArgs,
+        resolved_backend_args = resolved_backend_args,
+        workflow = "ctmaFit"
+      )
+      resolved_backend_args <- julia_resources$backend_args
+    }
   }
 
   #######################################################################################################################
@@ -479,14 +489,6 @@ ctmaFit <- function(
         ErrorMsg <- "\nThe number of binaries provided is incorrect! \nGood luck for the next try!"
         stop(ErrorMsg)
       }
-
-      if ( (!(is.null(binaries.orig))) & (indVarying != 'CINT') & (!(is.null(binaries.orig))) & (!all(binaries == 0)) ) {
-        if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-        ErrorMsg <- "\nYou specified binary variables. You also need to specify \"indVarying=\'CINT\'\". \nGood luck for the next try!"
-        stop(ErrorMsg)
-      }
-
-      if ( (!(is.null(binaries.orig))) & !all(binaries == 0) ) message("Effects of binaries on cints not implemented yet.")
 
       n.studies <- unlist(ctmaInitFit$n.studies); n.studies
       allTpoints <- ctmaInitFit$statisticsList$allTpoints; allTpoints
@@ -923,6 +925,11 @@ ctmaFit <- function(
     # define Names (labels in compiled output) and Params (= labels for ctsem models)
     if (is.null(moderatedDrift) & ( (!(is.null(mod.number))) | (!(is.null(ind.mod.number)))) ) moderatedDrift <- "all" # will be changed by ctmaLabels
 
+    location_specs <- .ctma_normalize_location_specs(
+      cint, manifestMeans, n.latent, n.var)
+    cint <- location_specs$cint
+    manifestMeans <- location_specs$manifestMeans
+
     namesAndParams <- ctmaLabels(
       n.latent=n.latent,
       n.manifest=n.manifest,
@@ -1284,6 +1291,12 @@ ctmaFit <- function(
       stanctModel$pars[(stanctModel$pars$matrix %in% 'CINT'), ][tmp2, tmp1] <- TRUE
     }
   } # end if ((randomIntercepts == "CINT") | (randomIntercepts == "MANIFEST") )
+
+  .ctma_check_binary_intercepts(
+    stanctModel, binaries.orig,
+    process_intercepts = randomIntercepts %in% c("CINT", "MANIFEST") ||
+      indVarying %in% c("CINT", "MANIFEST")
+  )
 
   if (!(optimize)) {
     customPar <- FALSE

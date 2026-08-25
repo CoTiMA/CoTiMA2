@@ -97,7 +97,7 @@
       left <- "######## "
       right <- " #########"
       content_width <- width - nchar(left) - nchar(right)
-      lines <- strwrap(paste0("Note: ", text), width = content_width)
+      lines <- strwrap(paste0("Just a note: ", text), width = content_width)
       border <- strrep("#", width)
       print(border)
       for (line in lines) print(paste0(
@@ -261,9 +261,6 @@ ctmaReMLFit <- function(
     compile_args = list(),
     optim_args = list(),
     verbose = TRUE) {
-  .ctmaVersionNote()
-  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReMLFit")
-  on.exit(.ctma_timer(), add = TRUE)
 
   if (!inherits(prepared, "ctmaStudyREModel")) stop(
     "prepared must be returned by ctmaRePrep()."

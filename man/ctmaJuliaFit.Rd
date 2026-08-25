@@ -14,9 +14,9 @@ ctmaJuliaFit(
   tolerance = 1e-06,
   optimize = FALSE,
   estimation = NULL,
-  uncertainty = FALSE,
+  uncertainty = TRUE,
   inits = NULL,
-  maxiters = 100L,
+  maxiters = 5000L,
   chunksize = 7L,
   gradient_tolerance = 0.001,
   function_relative_tolerance = 0,
@@ -45,7 +45,8 @@ ctmaJuliaFit(
   threads_per_chain = NULL,
   performance_warning = TRUE,
   show_trace = TRUE,
-  julia_threads = 1L,
+  julia_threads = "auto",
+  subject_threads = "auto",
   blas_threads = 1L
 )
 }
@@ -170,6 +171,13 @@ backend for maximum-likelihood estimation.}
 \item{julia_threads}{Number of Julia threads used to evaluate independent
 subject likelihoods and gradients. This must be set when Julia starts;
 consequently, use `initialize=TRUE` when changing it.}
+
+\item{subject_threads}{Maximum number of concurrent subject tasks used by this
+fit. Unlike \code{julia_threads}, this can be changed between fits in the same
+R session. \code{"auto"} uses the complete Julia thread pool. Numeric
+likelihoods use these tasks directly; gradients use them only after an
+automatic serial-versus-parallel AD consistency check passes. Hessians use the
+serial-safe path.}
 
 \item{blas_threads}{Number of BLAS threads. One avoids competing with other
 jobs and is generally appropriate for the small ctsem matrices here.}

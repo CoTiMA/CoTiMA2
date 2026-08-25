@@ -67,7 +67,9 @@ ctmaFit(
 
 \item{allInvModel}{estimates a model with all parameters invariant (DRIFT, DIFFUSION, T0VAR) if set TRUE (defautl = FALSE)}
 
-\item{binaries}{which manifest is a binary. Still experimental}
+\item{binaries}{Indicator vector identifying binary manifest variables.
+Their response location must be estimated through a freely estimated
+connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{catsToCompare}{when performing contrasts for categorical moderators, the categories (values, not positions) for which effects are set equal}
 
@@ -79,8 +81,7 @@ ctmaFit(
 
 \item{coresToUse}{if negative, the value is subtracted from available cores, else value = cores to use}
 
-\item{CoTiMAStanctArgs}{legacy named list of Stan/ctsem controls. Retained
-for compatibility; use \code{backendArgs} in new code. Do not supply both.}
+\item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
 
 \item{ctmaInitFit}{object to which all single ctsem fits of primary studies has been assigned to (i.e., what has been returned by \code{\link{ctmaInit}})}
 
@@ -164,20 +165,10 @@ for compatibility; use \code{backendArgs} in new code. Do not supply both.}
 
 \item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
 
-\item{backend}{estimation backend. \code{"stan"} remains the default;
-\code{"julia"} prepares the same ctsem model and data and then calls the
-validated Julia ML or Bayesian engine.}
+\item{backend}{estimation backend. \code{"stan"} is the default; use
+\code{"julia"} for the Julia backend.}
 
-\item{backendArgs}{named backend-specific controls. With the default Stan
-backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
-completed from \code{ctmaBackendDefaults("stan")}. With the Julia
-backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
-"ctmaFit")}. For Julia, \code{optimize = TRUE} selects ML and
-\code{optimize = FALSE} selects Bayesian NUTS. A supplied \code{iter}
-becomes \code{maxiters} for ML and is split equally between warmup and
-retained draws for Bayesian estimation; explicit \code{chains} is passed
-to Bayesian estimation. Julia-specific controls in \code{backendArgs}
-remain the preferred way to configure the engine.}
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,

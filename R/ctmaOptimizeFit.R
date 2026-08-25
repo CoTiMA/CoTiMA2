@@ -131,6 +131,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaOptimizeFit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  julia_backend_overrides <- backendArgs
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   if (identical(backend, "julia")) {
     if (is.null(ctmaFitFit) || !is.null(ctStanFit)) {
@@ -179,6 +180,16 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
         coresToUse, backend = backend, workflow = "ctmaOptimizeFit"
       )
       coresToUse <- resource_resolution$resolved
+      if (identical(backend, "julia")) {
+        julia_resources <- .ctmaInitJuliaResources(
+          cores = coresToUse,
+          estimation = "ML",
+          backendArgs = julia_backend_overrides,
+          resolved_backend_args = backendArgs,
+          workflow = "ctmaOptimizeFit"
+        )
+        backendArgs <- julia_resources$backend_args
+      }
     }
 
     if (!(is.null(ctStanFit))) {

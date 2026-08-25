@@ -18,9 +18,7 @@ ctmaBiG(
 )
 }
 \arguments{
-\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing
-fitted primary-study models from the Stan or Julia backend. Julia fits
-must retain transformed ctsem draws.}
+\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing the fitted ctsem model of each primary study}
 
 \item{activeDirectory}{the directory where to save results (if not specified, it is taken from ctmaInitFit)}
 
@@ -54,7 +52,7 @@ precision), and "Z-Curve 2.0 Results". Plot type is plot.type=c("funnel", "fores
 }
 \description{
 Analysis of publication bias and generalizability. The function takes a CoTiMA fit object (created with \code{\link{ctmaInit}})
-and estimates common- and random-effects meta-analyses of individual drift coefficients, heterogeneity (Q, I square, H square, tau square),
+and estimates fixed and random effects of single drift coefficients, heterogeneity  (Q, I square, H square, tau square),
 PET-PEESE corrections, Egger's tests, and z-curve analysis yielding expected replication and detection rates (ERR, EDR).
 }
 \examples{
@@ -65,9 +63,11 @@ CoTiMABiG_D_BO <- ctmaBiG(ctmaInitFit=CoTiMAInitFit_D_BO, zcurve=FALSE)
 }
 
 # display results
+\dontrun{
 ctmaLoadExamples("CoTiMABiG_D_BO")
 summary(CoTiMABiG_D_BO)
 ctmaUnloadExamples("CoTiMABiG_D_BO")
+}
 
 \dontrun{
 # get funnel & forest plots

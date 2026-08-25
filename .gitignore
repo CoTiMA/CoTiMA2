@@ -3,3 +3,11 @@
 .RData
 /doc/
 /Meta/
+/inst/doc/
+
+.DS_Store
+*.Rcheck/
+*.tar.gz
+
+*[Kk]opie*
+*KOPIE*

@@ -1,8 +1,8 @@
 Package: CoTiMA2
 Type: Package
 Title: Experimental Continuous Time Meta-Analysis 2.0 ('CoTiMA2')
-Version: 0.12.5
-Date: 2026-08-21
+Version: 0.14.5
+Date: 2026-08-24
 Authors@R: c(person("Christian", "Dormann", role = c("aut","cph")),
             person("Markus", "Homberg", email = "cotima@uni-mainz.de", role = c("aut", "com", "cre")),
             person("Olga", "Diener", role = c("ctb")),
@@ -23,7 +23,8 @@ Description: The experimental 'CoTiMA2' package is the development line of
    See Dormann, C., Guthier, C., & Cortina, J. M. (2019) <doi:10.1177/1094428119847277>.
    and Guthier, C., Dormann, C., & Voelkle, M. C. (2020) <doi:10.1037/bul0000304>.
 License: GPL-3
-URL: https://github.com/CoTiMA/CoTiMA
+URL: https://github.com/CoTiMA/CoTiMA2
+BugReports: https://github.com/CoTiMA/CoTiMA2/issues
 Encoding: UTF-8
 LazyData: false
 Depends:

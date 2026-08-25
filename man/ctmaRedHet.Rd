@@ -29,21 +29,6 @@ ctmaRedHet(
 
 \item{undoTimeScaling}{if TRUE, the original time scale is used (timeScale argument possibly used in \code{\link{ctmaInit}} is undone )}
 }
-\value{
-An object of class \code{"ctmaRedHet"} and \code{"CoTiMAFit"}.
-The component \code{heterogeneity_reduction} reports the unconditional and
-moderated two-stage residual tau-squared estimates and their proportional
-reduction. Descriptive variances of the reconstructed residual study
-effects, Q, and I-squared are included as secondary diagnostics. A negative
-proportional reduction denotes increased residual heterogeneity. If the
-unconditional heterogeneity estimate is zero, proportional reduction is
-undefined and returned as \code{NA}.
-}
 \description{
-Computes the reduction in residual heterogeneity of DRIFT
-effects after introducing study-level moderators. For continuous-time
-effects, the function compares sampling-error-adjusted two-stage
-heterogeneity estimates from WEC-reconstructed study deviations. In the
-moderated model these deviations are measured around the study-specific
-means predicted by the moderator model, rather than around one grand mean.
+Computes the Reduction in Heterogeneity in drift effects after introducing study-level moderators
 }

@@ -84,15 +84,16 @@ ctmaBackendDefaults <- function(
     seed = NULL,
     performance_warning = TRUE,
     show_trace = TRUE,
-    julia_threads = 1L,
+    julia_threads = "auto",
+    subject_threads = "auto",
     blas_threads = 1L
   )
   if (identical(estimation, "none")) return(common)
 
   if (identical(estimation, "ml")) {
     result <- c(common, list(
-      uncertainty = FALSE,
-      maxiters = 100L,
+      uncertainty = TRUE,
+      maxiters = 5000L,
       gradient_tolerance = 1e-3,
       function_relative_tolerance = 0,
       parameter_relative_tolerance = 0,
@@ -103,7 +104,7 @@ ctmaBackendDefaults <- function(
       multistart_jitter = 0.1,
       carefulFit = TRUE,
       confidence = 0.95,
-      transformed = FALSE,
+      transformed = TRUE,
       transformed_draws = 1000L,
       transformed_cores = 1L
     ))
@@ -133,6 +134,39 @@ ctmaBackendDefaults <- function(
     transformed_draws = 1000L,
     transformed_cores = 1L
   ))
+}
+
+.ctmaAvailableCores <- function(omit = 0L) {
+  detected <- if (requireNamespace("parallelly", quietly = TRUE)) {
+    suppressWarnings(as.integer(parallelly::availableCores(omit = omit)[1L]))
+  } else {
+    suppressWarnings(as.integer(parallel::detectCores(logical = TRUE)[1L])) -
+      as.integer(omit)
+  }
+  if (is.na(detected) || detected < 1L) detected <- 1L
+  detected
+}
+
+.ctmaResolveJuliaThreads <- function(value, available = .ctmaAvailableCores()) {
+  if (is.character(value) && length(value) == 1L &&
+      identical(tolower(value), "auto")) {
+    return(max(1L, as.integer(available) - 1L))
+  }
+  resolved <- suppressWarnings(as.integer(value)[1L])
+  if (is.na(resolved) || resolved < 1L) {
+    stop("'julia_threads' must be 'auto' or a positive integer.", call. = FALSE)
+  }
+  resolved
+}
+
+.ctmaResolveSubjectThreads <- function(value, julia_threads) {
+  if (is.null(value) || (is.character(value) && length(value) == 1L &&
+      identical(tolower(value), "auto"))) return(as.integer(julia_threads))
+  resolved <- suppressWarnings(as.integer(value)[1L])
+  if (is.na(resolved) || resolved < 1L) {
+    stop("'subject_threads' must be 'auto' or a positive integer.", call. = FALSE)
+  }
+  min(resolved, as.integer(julia_threads))
 }
 
 .ctmaResolveCores <- function(

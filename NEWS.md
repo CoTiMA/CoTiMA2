@@ -1,3 +1,173 @@
+# CoTiMA2 0.14.5
+
+- Added an independent repeatability and serial-agreement gate for concurrent
+  numeric likelihood evaluation. Likelihood and gradient parallelism are now
+  enabled separately only when their own complete-model checks pass.
+- Replaced spawned likelihood reductions with bounded, indexed
+  `Threads.@threads` partial sums. If either parallel component is unstable,
+  the optimizer automatically uses its deterministic serial counterpart, so
+  the objective and gradient always describe the same function.
+
+# CoTiMA2 0.14.4
+
+- Reintroduced bounded parallel subject gradients using indexed
+  `Threads.@threads` reductions instead of spawned task closures. Before ML or
+  Bayesian estimation, Julia now compares the complete serial and parallel
+  gradients at the common starting vector. Parallel AD is enabled only when
+  the maximum relative coordinate difference is at most `1e-10`; otherwise it
+  automatically retains the exact serial gradient while keeping numeric
+  likelihood evaluations parallel.
+
+# CoTiMA2 0.14.3
+
+- Julia now uses subject-task parallelism only for ordinary numeric likelihood
+  evaluations. ForwardDiff likelihoods, gradients, and Hessians use the
+  serial-safe path because concurrent dual-number evaluation was shown to
+  disagree with the exact serial derivative on TI-predictor models.
+- Setup-only `ctmaJuliaFit(estimation="none")` calls no longer calculate
+  Hessian uncertainty unless `uncertainty=TRUE` is explicitly requested.
+
+# CoTiMA2 0.14.2
+
+- Fixed concurrent subject reductions so every spawned Julia task captures
+  its own immutable subject range and owns its likelihood, gradient, or
+  Hessian accumulator. This restores agreement between serial and concurrent
+  differentiation for TI-predictor models.
+
+# CoTiMA2 0.14.1
+
+- Julia ML optimization now retains the best finite objective evaluated in
+  every optimization stage. A stalled `ObjectiveIncreased` or `NoXChange`
+  endpoint can no longer replace a better accepted point or be propagated to
+  the next stage.
+- Joint and staged Julia optimization automatically retry stalled stages with
+  initial steps reduced by factors of ten, while reporting the total optimizer
+  work across attempts.
+
+# CoTiMA2 0.14.0
+
+- Added `ctmaFitConfig()`, a time-budgeted configuration pilot accepting the
+  model-building arguments of `ctmaFit()`. Julia pilots rank combinations of
+  subject concurrency and ForwardDiff chunk size, then compare short joint and
+  staged (`carefulFit`) optimizer pilots. Stan controls are validated and
+  retained with setup timing reported.
+- Julia thread-pool capacity now defaults to `julia_threads = "auto"`, resolved
+  as the CPUs available to the R process minus one. The new runtime-adjustable
+  `subject_threads` control limits concurrent subject-processing tasks without
+  requiring an R restart.
+- Replaced thread-ID-indexed static subject reductions with independent
+  task-local reductions for likelihoods, gradients, study-RE gradients, and
+  Hessians.
+
+# CoTiMA2 0.13.8
+
+- Fixed the bundled Julia environment by resolving `ForwardDiff` and `Optim`
+  as direct dependencies and added an actionable setup error if required Julia
+  packages are unavailable.
+
+# CoTiMA2 0.13.7
+
+- Added `Julia_Install.Rnw`, a beginner-oriented installation guide with
+  separate copy-and-paste instructions for Windows, macOS, and Ubuntu/Linux,
+  including R upgrades, JuliaCall rebuilding, verification, and troubleshooting.
+- Julia backend requests now print the R command that opens the Julia
+  installation and troubleshooting guide.
+- Simplified the internal ctsem setup notice, suppressed duplicate version
+  notices from nested CoTiMA calls, and silenced Julia's project-activation
+  output.
+- Declared `ForwardDiff` and `Optim` as direct dependencies of the bundled
+  Julia project so that `ctmaJuliaSetup()` installs everything loaded by
+  `CtsemJulia.jl`.
+
+# CoTiMA2 0.13.6
+
+- Added `CoTiMA_RI_Random_EFfects.Rnw` as the fourth maintained vignette,
+  documenting random-intercept CoTiMA with study-level random effects.
+
+# CoTiMA2 0.13.5
+
+- Prevented extreme binary-logit predictions from rounding to exact zero or
+  one and producing a singular Bernoulli innovation variance.
+- Julia's staged optimizer now treats positive-definiteness, singularity, and
+  threaded task failures in gradient callbacks as rejectable line-search trial
+  points instead of aborting the complete fit.
+- Renamed the Julia and random-effects guide sources to
+  `CoTiMA_Julia_Usage.Rnw` and `CoTiMA_Random_Effects.Rnw`.
+
+# CoTiMA2 0.13.4
+
+- Consolidated the combined hierarchical and moment-based random-effects guide
+  into the canonical package vignette directory.
+- Added the general CoTiMA 1.0.4 guide and its figure assets to the vignette
+  sources, yielding three maintained Rnw guides: general use, Julia, and
+  random effects.
+- Added the small random-effects recovery simulation under
+  `tools/random-effects-validation/` and adapted it to load CoTiMA2 directly.
+- The local build helper now compiles every Rnw source and installs its PDF
+  under `inst/doc` before building the source tarball.
+
+# CoTiMA2 0.13.3
+
+- Consolidated the Julia guide into one canonical package vignette, removed
+  duplicate/generated vignette build files, and added a reproducible local
+  build-and-install verification script.
+- Updated the guide's integration-status section to describe the Julia backend
+  as an existing package feature rather than future work.
+
+# CoTiMA2 0.13.2
+
+- Expanded the Julia usage vignette with binary-variable syntax, CINT versus
+  MANIFESTMEANS parameterizations, their identification rationale, validation
+  rules and exemptions, and details of the Julia binary likelihood.
+
+# CoTiMA2 0.13.1
+
+- Added Julia estimation for mixed continuous and binary manifest-variable
+  models. The Julia likelihood now includes binary-logit probabilities,
+  Bernoulli log-likelihood contributions, Bernoulli observation variance in
+  the extended Kalman update, and ctsem-compatible measurement Jacobians.
+
+# CoTiMA2 0.13.0
+
+- Added model-specification checks for binary manifest variables. Every
+  binary variable must have either a freely estimated connected CINT or a
+  freely estimated MANIFESTMEANS parameter; specifications with neither now
+  stop before fitting. CINT and manifest-mean vectors are also checked against
+  their latent and manifest dimensions.
+
+# CoTiMA2 0.12.9
+
+- Julia maximum-likelihood fits now estimate Hessian-based uncertainty and
+  transformed standard errors and confidence intervals by default, including
+  direct `ctmaJuliaFit()` calls. Stan continues to estimate uncertainty by
+  default through `optimcontrol$estonly = FALSE` and positive
+  `optimcontrol$finishsamples`.
+
+# CoTiMA2 0.12.8
+
+- Restored the Julia setup and executable-discovery source in source-package
+  builds so automatic Julia discovery works on macOS, Linux, and Windows.
+
+# CoTiMA2 0.12.7
+
+- Increased the default Julia ML optimization ceiling from 100 to 5,000
+  iterations for direct `ctmaJuliaFit()` calls and higher-level workflows.
+
+# CoTiMA2 0.12.6
+
+- Julia fits now print the effective Julia and BLAS thread counts.
+- `ctmaFit(backend = "julia")` now automatically translates `coresToUse`
+  into a Julia resource configuration when users have not explicitly supplied
+  Julia worker/thread controls. ML uses the resolved cores for subject
+  parallelism (or divides them across multistarts), Bayesian estimation divides
+  them across concurrent chains, and BLAS remains single-threaded to avoid
+  nested oversubscription.
+- Audited the other Julia fitting entry points. `ctmaInit()`,
+  `ctmaAllInvFit()`, `ctmaEqual()`, and `ctmaPower()` now identify themselves
+  correctly in their automatic-allocation notes; `ctmaOptimizeFit()` now also
+  derives its Julia allocation from `coresToUse`; and `ctmaReFit()` reports its
+  effective main-process Julia and BLAS thread counts.
+
 # CoTiMA2 0.12.5
 
 - Suppressed the misleading "No model is fitted" banner when `ctmaFit()`

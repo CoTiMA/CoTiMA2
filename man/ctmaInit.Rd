@@ -53,7 +53,9 @@ ctmaInit(
 
 \item{activeDirectory}{defines another active directory than the one used in \code{\link{ctmaPrep}}}
 
-\item{binaries}{which manifest is a binary. Still experimental}
+\item{binaries}{Indicator vector identifying binary manifest variables.
+Their response location must be estimated through a freely estimated
+connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{chains}{number of chains to sample, during HMC or post-optimization importance sampling.}
 
@@ -61,10 +63,7 @@ ctmaInit(
 
 \item{cint}{default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')}
 
-\item{coresToUse}{if negative, the value is added to the number of detected
-cores; thus \code{-1} uses all but one core. With the Julia backend this is
-automatically translated into an ML or Bayesian thread allocation unless
-an explicit Julia thread control is supplied in \code{backendArgs}.}
+\item{coresToUse}{if neg., the value is subtracted from available cores, else value = cores to use}
 
 \item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
 
@@ -80,11 +79,7 @@ an explicit Julia thread control is supplied in \code{backendArgs}.}
 
 \item{experimental}{used for debugging puposes (default = FALSE)}
 
-\item{finishsamples}{number of samples to draw (either from Hessian-based
-covariance or the posterior distribution) for final results computation
-(default = 1000). With the Julia backend this sets
-\code{backendArgs$transformed_draws}, unless that control is supplied
-explicitly in \code{backendArgs}.}
+\item{finishsamples}{number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).}
 
 \item{fit}{TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})}
 
@@ -134,12 +129,10 @@ explicitly in \code{backendArgs}.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit - for debugging}
 
-\item{backend}{Estimation backend, either \code{"stan"} (the default) or
-the experimental \code{"julia"} backend.}
+\item{backend}{estimation backend, either \code{"stan"} (default) or
+\code{"julia"}.}
 
-\item{backendArgs}{Named list of controls for the selected backend. Julia
-controls follow \code{\link{ctmaJuliaFit}}. Primary studies are currently
-processed sequentially; parallel starts or chains can run within a study.}
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
 ctmaFit returns a list containing some arguments supplied, the fitted models, different elements summarizing the main results,

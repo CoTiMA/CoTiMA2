@@ -38,13 +38,32 @@
 
 .ctmaInitJuliaResources <- function(
     cores, estimation, backendArgs, resolved_backend_args,
-    announce = TRUE) {
+    announce = TRUE, workflow = "ctmaInit") {
   cores <- suppressWarnings(as.integer(cores)[1L])
   if (is.na(cores) || cores < 1L) cores <- 1L
   explicit_controls <- c(
-    "julia_threads", "parallel_starts", "threads_per_start",
+    "julia_threads", "subject_threads", "parallel_starts", "threads_per_start",
     "parallel_chains", "threads_per_chain"
   )
+  if (is.character(resolved_backend_args$julia_threads) &&
+      identical(tolower(resolved_backend_args$julia_threads), "auto")) {
+    pool <- .ctmaResolveJuliaThreads("auto")
+    resolved_backend_args$julia_threads <- pool
+    resolved_backend_args$subject_threads <- .ctmaResolveSubjectThreads(
+      resolved_backend_args$subject_threads, pool
+    )
+    description <- sprintf(
+      "%d Julia pool thread(s) with %d concurrent subject task(s)",
+      pool, resolved_backend_args$subject_threads
+    )
+    if (isTRUE(announce)) message(
+      "Note: ", workflow, " automatically selected ", description,
+      " and ", resolved_backend_args$blas_threads, " BLAS thread(s)."
+    )
+    return(list(
+      backend_args = resolved_backend_args, automatic = TRUE, cores = pool
+    ))
+  }
   if (any(explicit_controls %in% names(backendArgs))) {
     return(list(
       backend_args = resolved_backend_args,
@@ -83,8 +102,9 @@
   }
   if (isTRUE(announce)) {
     message(
-      "Note: ctmaInit automatically translated coresToUse into ",
+      "Note: ", workflow, " automatically translated coresToUse into ",
       description,
+      " and ", resolved_backend_args$blas_threads, " BLAS thread(s)",
       ". Supply an explicit Julia thread control in backendArgs to override ",
       "this allocation."
     )
@@ -93,6 +113,18 @@
     backend_args = resolved_backend_args,
     automatic = TRUE,
     cores = cores
+  )
+}
+
+.ctmaJuliaThreadNote <- function(
+    julia_threads, blas_threads, subject_threads = julia_threads) {
+  message(
+    "Note: Effective Julia resource configuration: ", julia_threads,
+    " Julia pool thread(s), ", subject_threads,
+    " concurrent subject task(s), and ", blas_threads,
+    " BLAS thread(s). Parallel likelihoods and AD gradients are enabled ",
+    "independently only after exact serial-consistency checks; Hessians use ",
+    "the serial-safe path."
   )
 }
 
@@ -299,6 +331,34 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   fit
 }
 
+.ctmaJuliaInstallationGuideNote <- function() {
+  message(
+    "Note: If Julia is not installed or you encounter problems setting up or ",
+    "using Julia, open the step-by-step installation guide by entering this ",
+    "command in the R console:\n  ",
+    "vignette(\"Julia_Install\", package = \"CoTiMA2\")"
+  )
+  invisible(NULL)
+}
+
+.ctmaJuliaCheckProjectDependencies <- function() {
+  required <- c("AdvancedHMC", "ForwardDiff", "Optim")
+  missing <- as.character(JuliaCall::julia_eval(paste0(
+    "filter(name -> Base.find_package(name) === nothing, ",
+    "[\"AdvancedHMC\", \"ForwardDiff\", \"Optim\"])"
+  )))
+  if (length(missing)) {
+    stop(
+      "The bundled CoTiMA2 Julia project is missing required package(s): ",
+      paste(missing, collapse = ", "), ". Restart R, run ",
+      "CoTiMA2::ctmaJuliaSetup(), and then retry the fit. Do not install ",
+      "these packages in Julia's global environment.",
+      call. = FALSE
+    )
+  }
+  invisible(required)
+}
+
 .ctmaResolveFitBackend <- function(backend = c("stan", "julia"),
     backendArgs = list(), legacy_stan_args = NULL,
     estimation = c("ML", "Bayes"), workflow = "ctmaFit") {
@@ -324,6 +384,7 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   }
 
   if (identical(backend, "julia")) {
+    .ctmaJuliaInstallationGuideNote()
     if (!is.null(legacy_stan_args)) {
       stop(
         "'CoTiMAStanctArgs' cannot be used with backend = 'julia'.",

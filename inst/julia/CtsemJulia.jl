@@ -17,9 +17,29 @@ export ctsem_loglik, ctsem_negloglik, ctsem_gradient, ctsem_optimize,
        ctsem_optimize_whitened, whitened_minimizer,
        ctsem_logprior, ctsem_logposterior_and_gradient, ctsem_nuts,
        ctsem_nuts_parallel, ctsem_optimize_multistart,
-       check_supported, tform
+       check_supported, set_subject_threads!, subject_threads,
+       validate_parallel_gradient!, validate_parallel_likelihood!,
+       validate_parallel_backend!, tform
 
 const LOG2PI = log(2pi)
+const SUBJECT_THREADS = Ref{Int}(1)
+const PARALLEL_GRADIENT_SAFE = Ref{Bool}(false)
+const PARALLEL_LIKELIHOOD_SAFE = Ref{Bool}(false)
+
+"Set the maximum number of concurrent subject-processing tasks."
+function set_subject_threads!(n::Integer)
+    n > 0 || error("subject_threads must be positive")
+    SUBJECT_THREADS[] = min(Int(n), Threads.nthreads())
+end
+
+"Return the current subject-processing concurrency limit."
+subject_threads() = SUBJECT_THREADS[]
+
+function subject_ranges(n::Integer)
+    workers = min(max(1, SUBJECT_THREADS[]), Int(n))
+    [((floor(Int, (worker - 1) * n / workers) + 1):floor(
+        Int, worker * n / workers)) for worker in 1:workers]
+end
 
 "Create a compact Optim callback that updates one terminal line."
 function optimizer_progress_callback(enabled::Bool)
@@ -93,6 +113,9 @@ end
 function ctsem_re_loglik_by_subject(rawest_r, sd; threaded::Bool=false)
     check_supported(sd)
     x = fvec(rawest_r)
+    # Concurrent evaluation of ForwardDiff dual-number likelihoods is not
+    # numerically reproducible on all Julia/LinearAlgebra platforms.
+    threaded = threaded && !(eltype(x) <: ForwardDiff.Dual)
     d = prepare_subject_data(sd)
     re = prepare_study_re(x, sd, d)
     function one_subject(si)
@@ -103,12 +126,13 @@ function ctsem_re_loglik_by_subject(rawest_r, sd; threaded::Bool=false)
         end
         subject_loglik(localraw, d, d.firstrow[si], d.lastrow[si])
     end
-    if threaded && Threads.nthreads() > 1
-        thread_ll = zeros(eltype(x), Threads.maxthreadid())
-        Threads.@threads :static for si in 1:d.nsubjects
-            thread_ll[Threads.threadid()] += one_subject(si)
+    if threaded && SUBJECT_THREADS[] > 1
+        tasks = map(subject_ranges(d.nsubjects)) do indices
+            Threads.@spawn let subject_indices = indices
+                sum(one_subject(si) for si in subject_indices)
+            end
         end
-        sum(thread_ll)
+        sum(fetch.(tasks))
     else
         sum(one_subject(si) for si in 1:d.nsubjects)
     end
@@ -120,6 +144,9 @@ function ctsem_re_logposterior_and_gradient(rawest_r, sd;
                                             threaded::Bool=false)
     check_supported(sd)
     x = fvec(rawest_r)
+    # Each subject gradient invokes ForwardDiff and must currently be reduced
+    # serially. Numeric likelihood evaluations remain task-parallel.
+    threaded = false
     d = prepare_subject_data(sd)
     re = prepare_study_re(x, sd, d)
     re.use_hyperpriors || error(
@@ -148,15 +175,20 @@ function ctsem_re_logposterior_and_gradient(rawest_r, sd;
         nothing
     end
 
-    if threaded && Threads.nthreads() > 1
-        gb = [zeros(eltype(x), re.B) for _ in 1:Threads.maxthreadid()]
-        ge = [zeros(eltype(x), re.q, re.K) for _ in 1:Threads.maxthreadid()]
-        Threads.@threads :static for si in 1:d.nsubjects
-            tid = Threads.threadid()
-            add_subject!(gb[tid], ge[tid], si)
+    if threaded && SUBJECT_THREADS[] > 1
+        tasks = map(subject_ranges(d.nsubjects)) do indices
+            Threads.@spawn let subject_indices = indices
+                gb = zeros(eltype(x), re.B)
+                ge = zeros(eltype(x), re.q, re.K)
+                for si in subject_indices
+                    add_subject!(gb, ge, si)
+                end
+                (gb, ge)
+            end
         end
-        nll_base = reduce(+, gb)
-        nll_effect = reduce(+, ge)
+        partial = fetch.(tasks)
+        nll_base = reduce(+, first.(partial))
+        nll_effect = reduce(+, last.(partial))
     else
         nll_base = zeros(eltype(x), re.B)
         nll_effect = zeros(eltype(x), re.q, re.K)
@@ -409,15 +441,20 @@ function check_supported(sd; throw_error=true)
     end
     Int(field(sd, :priors)) in (0, 1) ||
         push!(problems, "priors must equal 0 or 1")
-    all(==(0), ivec(field(sd, :manifesttype))) ||
-        push!(problems, "only continuous manifest variables are supported")
+    manifesttype = ivec(field(sd, :manifesttype))
+    all(x -> x in (0, 1), manifesttype) ||
+        push!(problems, "only continuous and binary manifest variables are supported")
     Int(field(sd, :nmissingtipreds)) == 0 ||
         push!(problems, "missing time-independent predictors are not supported")
     all(==(0), ivec(field(sd, :statedep))) ||
         push!(problems, "state-dependent parameters are not yet supported")
     Int(field(sd, :nJAxfinite)) == 0 ||
         push!(problems, "finite-difference drift Jacobians are not yet supported")
-    Int(field(sd, :nJyfinite)) == 0 ||
+    # Binary-logit observations make ctsem request a finite-difference
+    # measurement Jacobian. The Julia backend evaluates the exact derivative
+    # p(1-p)*LAMBDA instead. Other finite-difference measurement branches stay
+    # unsupported.
+    Int(field(sd, :nJyfinite)) == 0 || any(==(1), manifesttype) ||
         push!(problems, "finite-difference measurement Jacobians are not yet supported")
     if throw_error && !isempty(problems)
         error("Unsupported ctsem branch(es):\n  - " * join(problems, "\n  - "))
@@ -429,6 +466,32 @@ function mvnormal_logpdf_chol(y, mu, cov)
     C = cholesky(Symmetric(cov); check=true)
     z = C.L \ (y - mu)
     -0.5 * (length(y) * LOG2PI + 2sum(log, diag(C.L)) + dot(z, z))
+end
+
+"Apply ctsem's binary-logit mean and finite-difference measurement Jacobian."
+function binary_measurement!(sy, Jyrow, linear_sy, lambda, manifesttype,
+                             Jyfinite, Jstep)
+    for mi in eachindex(manifesttype)
+        if manifesttype[mi] == 1
+            # Float64 logistic values round to exactly zero or one for extreme
+            # predictors. That makes the Bernoulli observation variance zero
+            # and can render the Kalman innovation covariance singular during
+            # an otherwise rejectable optimizer trial. Keep probabilities in
+            # the open interval using a negligible smooth affine contraction.
+            probability_floor = oftype(linear_sy[mi], 1e-10)
+            probability_scale = one(probability_floor) - 2probability_floor
+            sy[mi] = probability_floor +
+                probability_scale * logistic(linear_sy[mi])
+            Jyrow[mi, :] .= zero(eltype(sy))
+            for statei in Jyfinite
+                statei <= size(lambda, 2) || continue
+                perturbed = probability_floor + probability_scale * logistic(
+                    linear_sy[mi] + Jstep * lambda[mi, statei])
+                Jyrow[mi, statei] = (perturbed - sy[mi]) / Jstep
+            end
+        end
+    end
+    nothing
 end
 
 """
@@ -466,6 +529,11 @@ function ctsem_loglik(rawest_r, sd; rows_limit::Integer=0, return_rows::Bool=fal
     whichobs = Int.(field(sd, :whichobs_y))
     ncont = ivec(field(sd, :ncont_y))
     whichcont = Int.(field(sd, :whichcont_y))
+    nbinary = ivec(field(sd, :nbinary_y))
+    whichbinary = Int.(field(sd, :whichbinary_y))
+    manifesttype = ivec(field(sd, :manifesttype))
+    Jyfinite = ivec(field(sd, :Jyfinite))
+    Jstep = field(sd, :Jstep)
     derrind = ivec(field(sd, :derrind))
     maxtimestep = Float64(field(sd, :maxtimestep))
     choleskymats = Int(field(sd, :choleskymats))
@@ -566,14 +634,29 @@ function ctsem_loglik(rawest_r, sd; rows_limit::Integer=0, return_rows::Bool=fal
             manifestmeans = vec(mats[6])
             manifestcov = sdcovsqrt2cov(mats[5], choleskymats)
             Jy = mats[54]
-            sy = lambda * state + manifestmeans
-            ycov = Jy * makesym(etacov) * Jy' + manifestcov
+            linear_sy = lambda * state[1:size(lambda, 2)] + manifestmeans
+            sy = copy(linear_sy)
+            Jyrow = copy(Jy)
+            binary_measurement!(sy, Jyrow, linear_sy, lambda, manifesttype,
+                                Jyfinite, Jstep)
+            ycov = Jyrow * makesym(etacov) * Jyrow' + manifestcov
+            for mi in od
+                manifesttype[mi] == 1 &&
+                    (ycov[mi, mi] += sy[mi] * (one(sy[mi]) - sy[mi]))
+            end
             err = Y[row, od] - sy[od]
-            K = (etacov * Jy[od, :]') / Symmetric(ycov[od, od])
-            etacov .-= K * Jy[od, :] * etacov
+            K = (etacov * Jyrow[od, :]') / Symmetric(ycov[od, od])
+            etacov .-= K * Jyrow[od, :] * etacov
             state .+= K * err
+            if nbinary[row] > 0
+                o1 = vec(whichbinary[row, 1:nbinary[row]])
+                llrows[row] += sum(log.(
+                    1e-10 .+ Y[row, o1] .* sy[o1] .+
+                    (1 .- Y[row, o1]) .* (1 .- sy[o1])))
+            end
             !isempty(o0) && (llrows[row] =
-                mvnormal_logpdf_chol(Y[row, o0], sy[o0], ycov[o0, o0]))
+                llrows[row] + mvnormal_logpdf_chol(
+                    Y[row, o0], sy[o0], ycov[o0, o0]))
         end
         prevrow = row
     end
@@ -624,6 +707,11 @@ function prepare_subject_data(sd)
         whichobs=Int.(field(sd, :whichobs_y)),
         ncont=ivec(field(sd, :ncont_y)),
         whichcont=Int.(field(sd, :whichcont_y)),
+        nbinary=ivec(field(sd, :nbinary_y)),
+        whichbinary=Int.(field(sd, :whichbinary_y)),
+        manifesttype=ivec(field(sd, :manifesttype)),
+        Jyfinite=ivec(field(sd, :Jyfinite)),
+        Jstep=field(sd, :Jstep),
         derrind=ivec(field(sd, :derrind)),
         firstrow=firstrow,
         lastrow=lastrow
@@ -699,12 +787,26 @@ function subject_loglik(rawparams, d, first::Integer, last::Integer)
         o0 = d.ncont[row] == 0 ? Int[] :
              vec(d.whichcont[row, 1:d.ncont[row]])
         if !isempty(od)
-            sy = lambda * state + manifestmeans
-            ycov = Jy * makesym(etacov) * Jy' + manifestcov
+            linear_sy = lambda * state[1:size(lambda, 2)] + manifestmeans
+            sy = copy(linear_sy)
+            Jyrow = copy(Jy)
+            binary_measurement!(sy, Jyrow, linear_sy, lambda,
+                                d.manifesttype, d.Jyfinite, d.Jstep)
+            ycov = Jyrow * makesym(etacov) * Jyrow' + manifestcov
+            for mi in od
+                d.manifesttype[mi] == 1 &&
+                    (ycov[mi, mi] += sy[mi] * (one(sy[mi]) - sy[mi]))
+            end
             err = d.Y[row, od] - sy[od]
-            K = (etacov * Jy[od, :]') / Symmetric(ycov[od, od])
-            etacov .-= K * Jy[od, :] * etacov
+            K = (etacov * Jyrow[od, :]') / Symmetric(ycov[od, od])
+            etacov .-= K * Jyrow[od, :] * etacov
             state .+= K * err
+            if d.nbinary[row] > 0
+                o1 = vec(d.whichbinary[row, 1:d.nbinary[row]])
+                ll += sum(log.(
+                    1e-10 .+ d.Y[row, o1] .* sy[o1] .+
+                    (1 .- d.Y[row, o1]) .* (1 .- sy[o1])))
+            end
             !isempty(o0) && (ll += mvnormal_logpdf_chol(
                 d.Y[row, o0], sy[o0], ycov[o0, o0]))
         end
@@ -713,9 +815,14 @@ function subject_loglik(rawparams, d, first::Integer, last::Integer)
 end
 
 "Sum the independently evaluated subject likelihoods (validation function)."
-function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false)
+function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false,
+                                 force_parallel::Bool=false)
     check_supported(sd)
     x = fvec(rawest_r)
+    # Keep task parallelism for Float likelihood evaluations, but evaluate a
+    # dual-number likelihood serially so direct AD agrees with serial AD.
+    threaded = threaded && !(eltype(x) <: ForwardDiff.Dual) &&
+        (PARALLEL_LIKELIHOOD_SAFE[] || force_parallel)
     d = prepare_subject_data(sd)
     rawpop = x[1:d.nparams]
     tipar = x[d.nparams+1:end]
@@ -724,18 +831,19 @@ function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false)
         ix = d.tie_setup[p, j]
         ix > 0 && (TIP[p, j] = tipar[ix])
     end
-    if threaded && Threads.nthreads() > 1
-        # JuliaCall may execute on an interactive-pool thread whose global
-        # thread ID is larger than `Threads.nthreads()` (the default-pool
-        # count). Size buffers by the maximum possible global thread ID.
-        thread_ll = zeros(eltype(x), Threads.maxthreadid())
-        Threads.@threads :static for si in 1:d.nsubjects
-            tid = Threads.threadid()
-            localraw = rawpop + TIP * vec(@view d.tipreds[si, :])
-            thread_ll[tid] += subject_loglik(
-                localraw, d, d.firstrow[si], d.lastrow[si])
+    if threaded && SUBJECT_THREADS[] > 1
+        ranges = subject_ranges(d.nsubjects)
+        partials = [zero(eltype(x)) for _ in eachindex(ranges)]
+        Threads.@threads :dynamic for task_index in eachindex(ranges)
+            ll = zero(eltype(x))
+            for si in ranges[task_index]
+                localraw = rawpop + TIP * vec(@view d.tipreds[si, :])
+                ll += subject_loglik(
+                    localraw, d, d.firstrow[si], d.lastrow[si])
+            end
+            partials[task_index] = ll
         end
-        return sum(thread_ll)
+        return sum(partials)
     else
         ll = zero(eltype(x))
         for si in 1:d.nsubjects
@@ -747,6 +855,31 @@ function ctsem_loglik_by_subject(rawest_r, sd; threaded::Bool=false)
     end
 end
 
+"Check repeatability and serial agreement before enabling parallel likelihoods."
+function validate_parallel_likelihood!(rawest, sd;
+                                       relative_tolerance::Real=1e-12)
+    PARALLEL_LIKELIHOOD_SAFE[] = false
+    serial1 = ctsem_loglik_by_subject(rawest, sd; threaded=false)
+    serial2 = ctsem_loglik_by_subject(rawest, sd; threaded=false)
+    parallel1 = ctsem_loglik_by_subject(
+        rawest, sd; threaded=true, force_parallel=true)
+    parallel2 = ctsem_loglik_by_subject(
+        rawest, sd; threaded=true, force_parallel=true)
+    scale = max(1.0, abs(serial1), abs(serial2), abs(parallel1), abs(parallel2))
+    serial_repeat_error = abs(serial1 - serial2) / scale
+    parallel_repeat_error = abs(parallel1 - parallel2) / scale
+    serial_parallel_error = abs(serial1 - parallel1) / scale
+    maximum_error = max(serial_repeat_error, parallel_repeat_error,
+                        serial_parallel_error)
+    safe = all(isfinite, (serial1, serial2, parallel1, parallel2)) &&
+        maximum_error <= relative_tolerance
+    PARALLEL_LIKELIHOOD_SAFE[] = safe
+    (safe=safe, maximum_relative_error=maximum_error,
+     serial_parallel_relative_error=serial_parallel_error,
+     serial_repeat_relative_error=serial_repeat_error,
+     parallel_repeat_relative_error=parallel_repeat_error)
+end
+
 """
     ctsem_gradient_by_subject(rawest, sd; chunksize=7, progress_every=5000)
 
@@ -756,7 +889,8 @@ Returns the gradient of the negative log-likelihood.
 """
 function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
                                    progress_every::Integer=5000,
-                                   threaded::Bool=false)
+                                   threaded::Bool=false,
+                                   force_parallel::Bool=false)
     check_supported(sd)
     x = fvec(rawest_r)
     d = prepare_subject_data(sd)
@@ -783,21 +917,21 @@ function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
         nothing
     end
 
-    if threaded && Threads.nthreads() > 1
-        thread_g = [zeros(eltype(x), length(x))
-                    for _ in 1:Threads.maxthreadid()]
+    if threaded && SUBJECT_THREADS[] > 1 &&
+       (PARALLEL_GRADIENT_SAFE[] || force_parallel)
         completed = Threads.Atomic{Int}(0)
-        Threads.@threads :static for si in 1:d.nsubjects
-            add_subject_score!(thread_g[Threads.threadid()], si)
-            done = Threads.atomic_add!(completed, 1) + 1
-            progress_every > 0 && done % progress_every == 0 &&
-                println("subject-score progress: ", done, "/", d.nsubjects)
+        ranges = subject_ranges(d.nsubjects)
+        partials = [zeros(eltype(x), length(x)) for _ in eachindex(ranges)]
+        Threads.@threads :dynamic for task_index in eachindex(ranges)
+            g = partials[task_index]
+            for si in ranges[task_index]
+                add_subject_score!(g, si)
+                done = Threads.atomic_add!(completed, 1) + 1
+                progress_every > 0 && done % progress_every == 0 &&
+                    println("subject-score progress: ", done, "/", d.nsubjects)
+            end
         end
-        g = zeros(eltype(x), length(x))
-        for gt in thread_g
-            g .+= gt
-        end
-        return g
+        return reduce(+, partials)
     else
         g = zeros(eltype(x), length(x))
         for si in 1:d.nsubjects
@@ -807,6 +941,37 @@ function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
         end
         return g
     end
+end
+
+"Compare serial and bounded-thread subject gradients and enable only exact parallel AD."
+function validate_parallel_gradient!(rawest, sd; chunksize::Integer=7,
+                                     relative_tolerance::Real=1e-10)
+    PARALLEL_GRADIENT_SAFE[] = false
+    serial = ctsem_gradient_by_subject(
+        rawest, sd; chunksize=chunksize, progress_every=0, threaded=false)
+    parallel = ctsem_gradient_by_subject(
+        rawest, sd; chunksize=chunksize, progress_every=0, threaded=true,
+        force_parallel=true)
+    denominator = max(1.0, maximum(abs.(serial)), maximum(abs.(parallel)))
+    relative_error = maximum(abs.(serial .- parallel)) / denominator
+    safe = isfinite(relative_error) && relative_error <= relative_tolerance
+    PARALLEL_GRADIENT_SAFE[] = safe
+    (safe=safe, relative_error=relative_error,
+     serial_maximum=maximum(abs.(serial)),
+     parallel_maximum=maximum(abs.(parallel)))
+end
+
+"Validate numeric likelihood and AD gradient parallelism independently."
+function validate_parallel_backend!(rawest, sd; chunksize::Integer=7,
+                                    likelihood_tolerance::Real=1e-12,
+                                    gradient_tolerance::Real=1e-10)
+    likelihood = validate_parallel_likelihood!(
+        rawest, sd; relative_tolerance=likelihood_tolerance)
+    gradient = validate_parallel_gradient!(
+        rawest, sd; chunksize=chunksize,
+        relative_tolerance=gradient_tolerance)
+    (likelihood=likelihood, gradient=gradient,
+     fully_parallel=likelihood.safe && gradient.safe)
 end
 
 """
@@ -876,8 +1041,7 @@ function ctsem_nuts(rawest_r, sd; samples::Integer=1000,
                     chunksize::Integer=7, threaded::Bool=false,
                     seed::Integer=1, init_jitter::Real=0.01,
                     progress::Bool=true, metric::Symbol=:diagonal,
-                    study_re::Bool=false, verbose::Bool=true,
-                    progress_callback=nothing)
+                    study_re::Bool=false, verbose::Bool=true)
     samples > 0 || error("samples must be positive")
     warmup > 0 || error("warmup must be positive")
     chains > 0 || error("chains must be positive")
@@ -928,20 +1092,11 @@ function ctsem_nuts(rawest_r, sd; samples::Integer=1000,
         adaptor = AdvancedHMC.StanHMCAdaptor(
             AdvancedHMC.MassMatrixAdaptor(metric_object),
             AdvancedHMC.StepSizeAdaptor(target_accept, integrator))
-        progress_enabled = progress || progress_callback !== nothing
-        progress_update! = if progress_callback === nothing
-            AdvancedHMC.simple_pm_next!
-        else
-            function (pm, stat)
-                progress_callback(stat)
-                progress && AdvancedHMC.simple_pm_next!(pm, stat)
-                nothing
-            end
-        end
         chain_draws, stats = AdvancedHMC.sample(
             rng, hamiltonian, kernel, initial, warmup + samples,
             adaptor, warmup; drop_warmup=false, verbose=verbose,
-            progress=progress_enabled, pm_next! = progress_update!)
+            progress=progress,
+            pm_next! = AdvancedHMC.simple_pm_next!)
         for iteration in 1:warmup
             warmup_divergent[iteration, chain] = stats[iteration].numerical_error
         end
@@ -997,13 +1152,11 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
                              study_re::Bool=false,
                              source_file::AbstractString=@__FILE__,
                              project_dir::AbstractString=@__DIR__,
-                             progress::Bool=true,
-                             progress_every::Integer=25)
+                             progress::Bool=true)
     chains > 0 || error("chains must be positive")
     parallel_chains > 0 || error("parallel_chains must be positive")
     threads_per_chain > 0 || error("threads_per_chain must be positive")
     blas_threads > 0 || error("blas_threads must be positive")
-    progress_every > 0 || error("progress_every must be positive")
     workers_requested = min(Int(parallel_chains), Int(chains))
     if workers_requested == 1
         return ctsem_nuts(
@@ -1042,6 +1195,10 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
                 :(Base.include(Main, $source_path))
             )
             Distributed.remotecall_fetch(
+                Core.eval, worker, Main,
+                :(CtsemJulia.set_subject_threads!($threads_per_chain))
+            )
+            Distributed.remotecall_fetch(
                 Core.eval, worker, Main, :(ctma_parallel_x0 = $x0)
             )
             Distributed.remotecall_fetch(
@@ -1054,65 +1211,11 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
         end
         available_workers = Channel{Int}(workers_requested)
         foreach(worker -> put!(available_workers, worker), worker_ids)
-        total_iterations = Int(warmup + samples)
-        progress_channel = progress ? Distributed.RemoteChannel(
-            () -> Channel{Any}(max(64, Int(chains) * 8))
-        ) : nothing
-        monitor = nothing
-        if progress
-            monitor = @async begin
-                latest = zeros(Int, Int(chains))
-                completed = falses(Int(chains))
-                completed_chains = 0
-                while completed_chains < chains
-                    message = take!(progress_channel)
-                    chain = Int(message.chain)
-                    if message.kind === :iteration
-                        latest[chain] = max(
-                            latest[chain], Int(message.iteration))
-                    elseif message.kind === :done
-                        latest[chain] = total_iterations
-                        if !completed[chain]
-                            completed[chain] = true
-                            completed_chains += 1
-                        end
-                    end
-                    achieved = sum(latest)
-                    target = Int(chains) * total_iterations
-                    elapsed = max(time() - started, eps(Float64))
-                    rate = achieved / elapsed
-                    eta = rate > 0 ? max(
-                        (target - achieved) / rate, 0.0) : Inf
-                    eta_text = isfinite(eta) ?
-                        string(round(eta; digits=0), " s") : "calculating"
-                    print(
-                        "\rNUTS progress: ", achieved, "/", target,
-                        " iterations (",
-                        round(100 * achieved / target; digits=1), "%); ",
-                        completed_chains, "/", chains,
-                        " chains complete; elapsed ",
-                        round(elapsed; digits=0), " s; ETA ", eta_text, "   "
-                    )
-                    flush(stdout)
-                end
-                println()
-            end
-        end
         tasks = map(collect(1:Int(chains))) do chain
             @async begin
                 worker = take!(available_workers)
                 try
-                    callback = progress ? (stat -> begin
-                        iteration = Int(stat.iterations)
-                        if iteration == 1 || iteration == total_iterations ||
-                           iteration % Int(progress_every) == 0
-                            put!(progress_channel, (
-                                kind=:iteration, chain=chain,
-                                iteration=iteration
-                            ))
-                        end
-                        nothing
-                    end) : nothing
+                    chain_started = time()
                     result = Distributed.remotecall_fetch(
                         Core.eval, worker, Main,
                         :(CtsemJulia.ctsem_nuts(
@@ -1123,20 +1226,19 @@ function ctsem_nuts_parallel(rawest_r, sd; samples::Integer=1000,
                             threaded=$(threads_per_chain > 1),
                             seed=$(seed + chain - 1), init_jitter=$init_jitter,
                             progress=false, metric=$(QuoteNode(metric)),
-                            study_re=$study_re, verbose=false,
-                            progress_callback=$callback))
+                            study_re=$study_re, verbose=false))
+                    )
+                    progress && println(
+                        "NUTS chain ", chain, "/", chains, " finished in ",
+                        round(time() - chain_started; digits=1), " s."
                     )
                     result
                 finally
-                    progress && put!(progress_channel, (
-                        kind=:done, chain=chain, iteration=total_iterations
-                    ))
                     put!(available_workers, worker)
                 end
             end
         end
         results = fetch.(tasks)
-        progress && wait(monitor)
         progress && println(
             "Finished ", chains, " parallel NUTS chains in ",
             round(time() - started; digits=1), " s."
@@ -1231,6 +1333,9 @@ function ctsem_optimize_multistart(rawest_r, sd; starts::Integer=4,
             Distributed.remotecall_fetch(
                 Core.eval, worker, Main, :(Base.include(Main, $source_path)))
             Distributed.remotecall_fetch(
+                Core.eval, worker, Main,
+                :(CtsemJulia.set_subject_threads!($threads_per_start)))
+            Distributed.remotecall_fetch(
                 Core.eval, worker, Main, :(ctma_parallel_sd = $portable_sd))
             Distributed.remotecall_fetch(
                 Core.eval, worker, Main,
@@ -1284,7 +1389,7 @@ function ctsem_optimize_multistart(rawest_r, sd; starts::Integer=4,
                                 local maxg = maximum(abs.(g))
                                 (
                                     success=true, error="", estimates=x,
-                                    loglik=-CtsemJulia.Optim.minimum(opt.result),
+                                    loglik=-opt.best_objective,
                                     iterations=opt.total_iterations,
                                     stage_iterations=opt.stage_iterations,
                                     stage_objectives=opt.stage_objectives,
@@ -1398,6 +1503,9 @@ function ctsem_hessian_by_subject(rawest_r, sd; chunksize::Integer=7,
                                   threaded::Bool=false)
     check_supported(sd)
     x = fvec(rawest_r)
+    # The nested ForwardDiff Hessian path follows the same serial-safety rule
+    # as the subject gradient.
+    threaded = false
     d = prepare_subject_data(sd)
     rawpop = x[1:d.nparams]
     tipar = x[d.nparams+1:end]
@@ -1451,20 +1559,21 @@ function ctsem_hessian_by_subject(rawest_r, sd; chunksize::Integer=7,
         nothing
     end
 
-    if threaded && Threads.nthreads() > 1
-        thread_H = [zeros(eltype(x), length(x), length(x))
-                    for _ in 1:Threads.maxthreadid()]
+    if threaded && SUBJECT_THREADS[] > 1
         completed = Threads.Atomic{Int}(0)
-        Threads.@threads :static for si in 1:d.nsubjects
-            add_subject_hessian!(thread_H[Threads.threadid()], si)
-            done = Threads.atomic_add!(completed, 1) + 1
-            progress_every > 0 && done % progress_every == 0 &&
-                println("subject-Hessian progress: ", done, "/", d.nsubjects)
+        tasks = map(subject_ranges(d.nsubjects)) do indices
+            Threads.@spawn let subject_indices = indices
+                H = zeros(eltype(x), length(x), length(x))
+                for si in subject_indices
+                    add_subject_hessian!(H, si)
+                    done = Threads.atomic_add!(completed, 1) + 1
+                    progress_every > 0 && done % progress_every == 0 &&
+                        println("subject-Hessian progress: ", done, "/", d.nsubjects)
+                end
+                H
+            end
         end
-        H = zeros(eltype(x), length(x), length(x))
-        for Ht in thread_H
-            H .+= Ht
-        end
+        H = reduce(+, fetch.(tasks))
     else
         H = zeros(eltype(x), length(x), length(x))
         for si in 1:d.nsubjects
@@ -1546,8 +1655,18 @@ function ctsem_optimize_by_subject(rawest, sd; maxiters::Integer=5,
         end
     end
     function g!(g, z)
-        g .= ctsem_gradient_by_subject(z, sd; chunksize=chunksize,
-                                      progress_every=0, threaded=threaded)
+        try
+            g .= ctsem_gradient_by_subject(z, sd; chunksize=chunksize,
+                                          progress_every=0,
+                                          threaded=threaded)
+        catch err
+            if err isa PosDefException || err isa SingularException ||
+               err isa DomainError || err isa TaskFailedException
+                fill!(g, zero(eltype(g)))
+                return nothing
+            end
+            rethrow()
+        end
         nothing
     end
     options = Optim.Options(iterations=maxiters, show_trace=show_trace,
@@ -1571,14 +1690,14 @@ bounded raw displacement per parameter before backtracking. This is especially
 important for neutral zero initialization, where variance scores can be many
 orders of magnitude larger than other scores.
 """
-function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
-                             chunksize::Integer=7,
-                             show_trace::Bool=true,
-                             threaded::Bool=false,
-                             initial_raw_step::Real=0.01,
-                             gradient_tolerance::Real=1e-3,
-                             function_relative_tolerance::Real=0.0,
-                             parameter_relative_tolerance::Real=0.0)
+function ctsem_optimize_auto_once(rawest, sd; maxiters::Integer=100,
+                                  chunksize::Integer=7,
+                                  show_trace::Bool=true,
+                                  threaded::Bool=false,
+                                  initial_raw_step::Real=0.01,
+                                  gradient_tolerance::Real=1e-3,
+                                  function_relative_tolerance::Real=0.0,
+                                  parameter_relative_tolerance::Real=0.0)
     x0 = fvec(rawest)
     initial_raw_step > 0 || error("initial_raw_step must be positive")
     gradient_tolerance > 0 || error("gradient_tolerance must be positive")
@@ -1597,6 +1716,8 @@ function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
     scale = clamp.(scale, 1e-6, 1.0)
     u0 = zeros(eltype(x0), length(x0))
     to_raw = u -> x0 + scale .* u
+    best_value = Ref(Inf)
+    best_u = Ref(copy(u0))
 
     function f(u)
         try
@@ -1604,6 +1725,10 @@ function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
                 -ctsem_loglik_by_subject(to_raw(u), sd; threaded=true)
             else
                 ctsem_negloglik(to_raw(u), sd)
+            end
+            if isfinite(value) && value < best_value[]
+                best_value[] = value
+                best_u[] = copy(u)
             end
             isfinite(value) ? value : Inf
         catch err
@@ -1615,10 +1740,19 @@ function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
         end
     end
     function g!(g, u)
-        gx = ctsem_gradient_by_subject(
-            to_raw(u), sd; chunksize=chunksize,
-            progress_every=0, threaded=threaded)
-        g .= scale .* gx
+        try
+            gx = ctsem_gradient_by_subject(
+                to_raw(u), sd; chunksize=chunksize,
+                progress_every=0, threaded=threaded)
+            g .= scale .* gx
+        catch err
+            if err isa PosDefException || err isa SingularException ||
+               err isa DomainError || err isa TaskFailedException
+                fill!(g, zero(eltype(g)))
+                return nothing
+            end
+            rethrow()
+        end
         nothing
     end
 
@@ -1638,18 +1772,62 @@ function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
         x_reltol=parameter_relative_tolerance)
     method = Optim.LBFGS(
         linesearch=Optim.LineSearches.BackTracking(iterations=40))
+    starting_objective = f(u0)
     result = Optim.optimize(f, g!, u0, method, options)
     show_trace && println()
-    estimates = to_raw(Optim.minimizer(result))
+    # Optim can expose a failed trial point as its minimizer after
+    # ObjectiveIncreased or NoXChange. Always return the best finite point
+    # actually evaluated, which is never worse than the supplied start.
+    estimates = to_raw(best_u[])
     final_gradient = ctsem_gradient_by_subject(
         estimates, sd; chunksize=chunksize,
         progress_every=0, threaded=threaded)
     (result=result, estimates=estimates, scale=scale,
      initial_gradient=g0, initial_maximum_absolute_gradient=maximum(abs.(g0)),
+     starting_objective=starting_objective, best_objective=best_value[],
      total_iterations=Optim.iterations(result),
      stage_iterations=[Optim.iterations(result)],
-     stage_objectives=[Optim.minimum(result)],
+     stage_objectives=[best_value[]],
      stage_maximum_absolute_gradients=[maximum(abs.(final_gradient))])
+end
+
+function ctsem_optimize_auto(rawest, sd; maxiters::Integer=100,
+                             chunksize::Integer=7,
+                             show_trace::Bool=true,
+                             threaded::Bool=false,
+                             initial_raw_step::Real=0.01,
+                             gradient_tolerance::Real=1e-3,
+                             function_relative_tolerance::Real=0.0,
+                             parameter_relative_tolerance::Real=0.0,
+                             step_retries::Integer=2)
+    attempts = Any[]
+    for retry in 0:max(0, Int(step_retries))
+        step = initial_raw_step / 10.0^retry
+        attempt = ctsem_optimize_auto_once(
+            rawest, sd; maxiters=maxiters, chunksize=chunksize,
+            show_trace=show_trace, threaded=threaded,
+            initial_raw_step=step, gradient_tolerance=gradient_tolerance,
+            function_relative_tolerance=function_relative_tolerance,
+            parameter_relative_tolerance=parameter_relative_tolerance)
+        push!(attempts, attempt)
+        code = string(attempt.result.termination_code)
+        stalled = code in ("ObjectiveIncreased", "NoXChange")
+        (!stalled || Optim.converged(attempt.result)) && break
+        if retry < step_retries && show_trace
+            println("Optimizer stalled with ", code,
+                    "; retrying with initial_raw_step = ", step / 10)
+        end
+    end
+    selected = attempts[argmin(a.best_objective for a in attempts)]
+    iterations = sum(a.total_iterations for a in attempts)
+    merge(selected, (
+        total_iterations=iterations,
+        stage_iterations=[iterations],
+        stage_objectives=[selected.best_objective],
+        retry_count=length(attempts) - 1,
+        attempted_initial_steps=[initial_raw_step / 10.0^i
+                                 for i in 0:(length(attempts) - 1)]
+    ))
 end
 
 "Optimize selected raw coordinates while holding all others fixed."
@@ -1670,6 +1848,8 @@ function ctsem_optimize_active(rawest, active, sd; maxiters::Integer=100,
         max.(abs.(g0[active]), initial_raw_step))
     scale = clamp.(scale, 1e-6, 1.0)
     u0 = zeros(length(active))
+    best_value = Ref(Inf)
+    best_u = Ref(copy(u0))
     function to_raw(u)
         x = copy(x0)
         x[active] .= x0[active] .+ scale .* u
@@ -1679,6 +1859,10 @@ function ctsem_optimize_active(rawest, active, sd; maxiters::Integer=100,
         try
             value = -ctsem_loglik_by_subject(
                 to_raw(u), sd; threaded=threaded)
+            if isfinite(value) && value < best_value[]
+                best_value[] = value
+                best_u[] = copy(u)
+            end
             isfinite(value) ? value : Inf
         catch err
             if err isa PosDefException || err isa SingularException ||
@@ -1689,10 +1873,19 @@ function ctsem_optimize_active(rawest, active, sd; maxiters::Integer=100,
         end
     end
     function g!(g, u)
-        gx = ctsem_gradient_by_subject(
-            to_raw(u), sd; chunksize=chunksize,
-            progress_every=0, threaded=threaded)
-        g .= scale .* gx[active]
+        try
+            gx = ctsem_gradient_by_subject(
+                to_raw(u), sd; chunksize=chunksize,
+                progress_every=0, threaded=threaded)
+            g .= scale .* gx[active]
+        catch err
+            if err isa PosDefException || err isa SingularException ||
+               err isa DomainError || err isa TaskFailedException
+                fill!(g, zero(eltype(g)))
+                return nothing
+            end
+            rethrow()
+        end
         nothing
     end
     options = Optim.Options(
@@ -1706,14 +1899,45 @@ function ctsem_optimize_active(rawest, active, sd; maxiters::Integer=100,
         x_reltol=parameter_relative_tolerance)
     method = Optim.LBFGS(
         linesearch=Optim.LineSearches.BackTracking(iterations=40))
+    starting_objective = f(u0)
     result = Optim.optimize(f, g!, u0, method, options)
     show_trace && println()
-    estimates = to_raw(Optim.minimizer(result))
+    estimates = to_raw(best_u[])
     final_gradient = ctsem_gradient_by_subject(
         estimates, sd; chunksize=chunksize,
         progress_every=0, threaded=threaded)
     (result=result, estimates=estimates, scale=scale, active=active,
+     starting_objective=starting_objective, best_objective=best_value[],
      initial_gradient=g0, final_gradient=final_gradient)
+end
+
+"Retry a stalled active-coordinate optimization with progressively smaller steps."
+function ctsem_optimize_active_retry(rawest, active, sd;
+                                     step_retries::Integer=2, kwargs...)
+    supplied = (; kwargs...)
+    initial_step = Float64(supplied.initial_raw_step)
+    attempts = Any[]
+    for retry in 0:max(0, Int(step_retries))
+        step = initial_step / 10.0^retry
+        attempt_kwargs = merge(supplied, (; initial_raw_step=step))
+        attempt = ctsem_optimize_active(rawest, active, sd; attempt_kwargs...)
+        push!(attempts, attempt)
+        code = string(attempt.result.termination_code)
+        stalled = code in ("ObjectiveIncreased", "NoXChange")
+        (!stalled || Optim.converged(attempt.result)) && break
+        if retry < step_retries && get(supplied, :show_trace, true)
+            println("Optimizer stalled with ", code,
+                    "; retrying this stage with initial_raw_step = ",
+                    step / 10)
+        end
+    end
+    selected = attempts[argmin(a.best_objective for a in attempts)]
+    merge(selected, (
+        attempt_iterations=sum(Optim.iterations(a.result) for a in attempts),
+        retry_count=length(attempts) - 1,
+        attempted_initial_steps=[initial_step / 10.0^i
+                                 for i in 0:(length(attempts) - 1)]
+    ))
 end
 
 """
@@ -1746,7 +1970,7 @@ function ctsem_optimize_staged(rawest, sd; maxiters::Integer=100,
     show_trace && println(
         "Optimization stage 1/3: population parameters; TI effects fixed")
     stages = Any[]
-    stage1 = ctsem_optimize_active(
+    stage1 = ctsem_optimize_active_retry(
         x0, 1:nparams, sd; maxiters=maxiters, chunksize=chunksize,
         show_trace=show_trace, threaded=threaded,
         initial_raw_step=initial_raw_step,
@@ -1757,7 +1981,7 @@ function ctsem_optimize_staged(rawest, sd; maxiters::Integer=100,
 
     show_trace && println(
         "Optimization stage 2/3: population and TI-effect parameters")
-    stage2 = ctsem_optimize_active(
+    stage2 = ctsem_optimize_active_retry(
         stage1.estimates, eachindex(x0), sd; maxiters=maxiters,
         chunksize=chunksize, show_trace=show_trace, threaded=threaded,
         initial_raw_step=initial_raw_step,
@@ -1769,7 +1993,7 @@ function ctsem_optimize_staged(rawest, sd; maxiters::Integer=100,
     if maximum(abs.(stage2.final_gradient)) > gradient_tolerance
         show_trace && println(
             "Optimization stage 3/3: jointly rescaled refinement")
-        final = ctsem_optimize_active(
+        final = ctsem_optimize_active_retry(
             stage2.estimates, eachindex(x0), sd; maxiters=maxiters,
             chunksize=chunksize, show_trace=show_trace, threaded=threaded,
             initial_raw_step=initial_raw_step,
@@ -1782,12 +2006,14 @@ function ctsem_optimize_staged(rawest, sd; maxiters::Integer=100,
         result=final.result,
         estimates=final.estimates,
         scale=final.scale,
+        starting_objective=stage1.starting_objective,
+        best_objective=final.best_objective,
         initial_gradient=stage1.initial_gradient,
         initial_maximum_absolute_gradient=
             maximum(abs.(stage1.initial_gradient)),
-        total_iterations=sum(Optim.iterations(s.result) for s in stages),
-        stage_iterations=[Optim.iterations(s.result) for s in stages],
-        stage_objectives=[Optim.minimum(s.result) for s in stages],
+        total_iterations=sum(s.attempt_iterations for s in stages),
+        stage_iterations=[s.attempt_iterations for s in stages],
+        stage_objectives=[s.best_objective for s in stages],
         stage_maximum_absolute_gradients=[
             maximum(abs.(s.final_gradient)) for s in stages]
     )

@@ -1,0 +1,551 @@
+% !Rnw weave = knitr
+%\VignetteIndexEntry{Random-Intercept CoTiMA with Study-Level Random Effects}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.7cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage[round,authoryear]{natbib}
+\setlength{\emergencystretch}{3em}
+\hbadness=3000
+
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,
+  citecolor=blue!55!black,urlcolor=blue!55!black}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\Normal}{\mathcal{N}}
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
+
+\title{Random-Intercept CoTiMA with Study-Level Random Effects:\\
+  Phantom Continuous-Time Processes and Their Heterogeneity}
+\author{C. Dormann, T. Hagen, \& $\widehat{\textnormal{C}}$. G. Petee}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE, purl=FALSE>>=
+knitr::opts_chunk$set(
+  echo = TRUE, eval = FALSE, warning = FALSE, message = FALSE,
+  purl = FALSE, comment = "#>", tidy = FALSE, size = "small"
+)
+options(width = 88)
+@
+
+\begin{abstract}
+Random-intercept continuous-time meta-analysis (RI CoTiMA) separates stable
+between-person differences in construct levels from within-person continuous-
+time dynamics. CoTiMA implements one form of RI model by augmenting the state
+vector with one time-invariant phantom process per substantive latent process.
+The phantom process has zero continuous-time autoregression and zero diffusion.
+It contributes either through the measurement model
+(\code{randomIntercepts = "MANIFEST"}) or as a time-invariant continuous-time
+input (\code{randomIntercepts = "CINT"}). Its freely estimated time-zero
+covariance block is the covariance matrix of the person-level random
+intercepts. RI CoTiMA-RE additionally treats selected dynamic parameters and
+selected elements of this random-intercept covariance structure as varying
+between primary studies. This document describes the model, its parameter
+mapping, recommended specifications, estimation, diagnostics, and reporting
+with \code{ctmaRePrep()} and \code{ctmaReFit()}.
+\end{abstract}
+
+\noindent\textbf{Keywords:} continuous-time model; individual participant
+data meta-analysis; phantom variable; random intercept; study heterogeneity;
+ctsem; Stan
+
+\section{Terminology and purpose}
+
+The two occurrences of ``random'' in RI CoTiMA-RE refer to different levels:
+\begin{itemize}
+  \item \textbf{RI} (random intercept) refers to stable differences
+    \emph{between persons} in their levels of the substantive variables.
+  \item \textbf{RE} (random effects) refers to differences \emph{between
+    primary studies} in selected model parameters.
+\end{itemize}
+Thus, an RI CoTiMA-RE is a three-level model: repeated observations are nested
+within persons, persons are nested within studies, and selected parameters
+vary across a population of studies. CoTiMA data are commonly synthesized from
+correlation matrices or standardized within measurement occasions. The
+manifest means are consequently zero and mean-level heterogeneity between
+studies is not the target. The RI component instead concerns the covariance of
+stable person-level deviations.
+
+\section{The ordinary continuous-time process}
+
+Let $s=1,\ldots,K$ index studies and $i=1,\ldots,n_s$ persons. For $m$
+substantive latent processes, write
+\begin{equation}
+  d\bm\eta_{is}(t)
+  = \left(\bm A_s\bm\eta_{is}(t)+\bm b_s\right)dt
+    + \bm G_s\,d\bm W_{is}(t),
+  \label{eq:substantive-sde}
+\end{equation}
+where $\bm A_s$ is the drift matrix and
+$\bm Q_s=\bm G_s\bm G_s^\top$ is the diffusion covariance matrix. A basic
+measurement model is
+\begin{equation}
+  \bm y_{is}(t)=\bm\Lambda\bm\eta_{is}(t)
+    +\bm\varepsilon_{is}(t).
+  \label{eq:measurement-basic}
+\end{equation}
+A conventional model may confound persistent between-person level differences
+with the temporal relations that are intended to describe within-person
+dynamics. The RI construction introduces a vector $\bm r_{is}$ of stable
+person-specific components.
+
+\section{Random intercepts as phantom processes}
+
+CoTiMA augments the $m$ substantive processes by $m$ phantom processes:
+\begin{equation}
+  \bm x_{is}(t)=
+  \begin{bmatrix}
+    \bm\eta_{is}(t)\\
+    \bm r_{is}(t)
+  \end{bmatrix},
+  \qquad \frac{d\bm r_{is}(t)}{dt}=\bm0.
+  \label{eq:augmented-state}
+\end{equation}
+The phantom processes have zero continuous-time autoregressive effects and no
+diffusion innovations. Hence
+\begin{equation}
+  \bm r_{is}(t)=\bm r_{is}(0)
+  \label{eq:constant-ri}
+\end{equation}
+at every observation occasion. Equivalently, their discrete-time
+autoregressive effects are one for every time interval. ``Phantom'' here does
+not mean that the component is irrelevant. It means that the additional state
+has been introduced to represent a particular source of stable covariance.
+
+The initial covariance of the augmented state can be partitioned as
+\begin{equation}
+  \bm P_{0,s}=
+  \operatorname{Var}
+  \begin{pmatrix}\bm\eta_{is}(0)\\\bm r_{is}(0)\end{pmatrix}
+  =
+  \begin{bmatrix}
+    \bm P_{\eta0,s} & \bm C_{\eta r,s}\\
+    \bm C_{\eta r,s}^{\top} & \bm\Psi_{r,s}
+  \end{bmatrix}.
+  \label{eq:t0-blocks}
+\end{equation}
+The diagonal of $\bm\Psi_{r,s}$ contains the person-level random-intercept
+variances. Its off-diagonal elements contain covariances among random
+intercepts. The matrix $\bm C_{\eta r,s}$ describes associations between
+persons' initial substantive states and their stable random-intercept
+components.
+
+\subsection{Manifest-loading construction}
+
+With \code{randomIntercepts = "MANIFEST"}, the augmented drift and measurement
+matrices have the conceptual form
+\begin{equation}
+  \bm A_{\mathrm{MANIFEST},s}=
+  \begin{bmatrix}
+    \bm A_s & \bm0\\
+    \bm0 & \bm0
+  \end{bmatrix},
+  \qquad
+  \bm\Lambda_{\mathrm{MANIFEST}}=
+  \begin{bmatrix}\bm\Lambda & \bm\Lambda\end{bmatrix}.
+  \label{eq:manifest-construction}
+\end{equation}
+For a single indicator with unit loading, the observation equation reduces to
+\begin{equation}
+  y_{is}(t)=\eta_{is}(t)+r_{is}+\varepsilon_{is}(t).
+  \label{eq:manifest-observation}
+\end{equation}
+The stable component therefore enters the observed variable directly at every
+occasion.
+
+\subsection{Continuous-intercept construction}
+
+With \code{randomIntercepts = "CINT"}, each phantom process is a constant
+input to its corresponding substantive process. In the simplest scaling,
+\begin{equation}
+  \bm A_{\mathrm{CINT},s}=
+  \begin{bmatrix}
+    \bm A_s & \bm I_m\\
+    \bm0 & \bm0
+  \end{bmatrix},
+  \qquad
+  \bm\Lambda_{\mathrm{CINT}}=
+  \begin{bmatrix}\bm\Lambda & \bm0\end{bmatrix}.
+  \label{eq:cint-construction}
+\end{equation}
+The augmented stochastic differential equation contains
+\begin{equation}
+  d\bm\eta_{is}(t)
+  =\left(\bm A_s\bm\eta_{is}(t)+\bm r_{is}\right)dt
+   +\bm G_s\,d\bm W_{is}(t).
+  \label{eq:cint-sde}
+\end{equation}
+The phantom process is time invariant, but its effect is expressed through the
+continuous-time dynamics rather than through an additional manifest loading.
+The two constructions therefore use different parameterizations of stable
+person-level differences and should not be assumed to have numerically
+identical covariance parameters without the appropriate transformation.
+
+\section{Adding study-level random effects}
+
+Let $p$ identify a selected raw ctsem parameter. RI CoTiMA-RE specifies
+\begin{align}
+  \xi_{sp} &= \alpha_p + \bm z_s^\top\bm\beta_p + u_{sp},
+    \label{eq:study-raw}\\
+  \bm u_s &\sim \Normal(\bm0,\bm\Sigma_{\mathrm{study}}),
+    \label{eq:study-dist}\\
+  \theta_{sp} &= g_p(\xi_{sp}),
+    \label{eq:study-transform}
+\end{align}
+where $g_p$ is the parameter-specific transformation recorded by ctsem.
+Study effects are added before transformation so that positivity, stability,
+and covariance constraints encoded by ctsem are retained.
+
+For a diagonal phantom-process T0 component, the study-specific random-
+intercept variance is schematically
+\begin{equation}
+  \psi_{r_j,s}=g_{V,j}(\alpha_{V,j}+u_{V,j,s}).
+  \label{eq:ri-variance-re}
+\end{equation}
+For an off-diagonal component, ctsem generally varies an unconstrained
+correlation or Cholesky basis and constructs the complete positive-definite
+covariance matrix afterwards. It is therefore safer to interpret the final
+study-specific covariance matrices than the raw deviations themselves.
+
+\subsection{What \code{person\_varying} means for a phantom process}
+
+The T0 variance of a phantom process is not a person-specific coefficient.
+Rather, it is a parameter of the distribution from which person-specific
+random intercepts arise:
+\begin{equation}
+  \bm r_{is}\mid s\sim\Normal(\bm0,\bm\Psi_{r,s}).
+  \label{eq:person-ri-distribution}
+\end{equation}
+Consequently, a study random effect on $\bm\Psi_{r,s}$ represents study
+heterogeneity in the amount or covariance pattern of person-level random
+intercept variation. \code{ctmaRePrep()} recognizes phantom processes from
+T0-mean names ending in \code{\_cint}, such as \code{MeanV1\_cint}. It labels
+their selected T0 components as \code{person\_varying = TRUE}, even when the
+T0VAR row itself is not marked \code{indvarying} by ctsem.
+
+\section{Selecting random parameters}
+
+If the original CoTiMA model has $m$ substantive processes, its phantom RI
+representation contains $2m$ latent processes. The \code{reDRIFT},
+\code{reDIFFUSION}, and \code{reT0VAR} masks must therefore be $2m\times2m$.
+Only free model parameters can be selected, and covariance elements are
+selected in the lower triangle.
+
+\subsection{Univariate example}
+
+Suppose latent 1 is the substantive process and latent 2 is its phantom random
+intercept. To let the substantive autoregressive drift and the random-
+intercept variance vary between studies, use
+
+<<univariate-masks, purl=FALSE>>=
+reDRIFT <- matrix(
+  c(TRUE,  FALSE,
+    FALSE, FALSE),
+  nrow = 2, byrow = TRUE
+)
+
+reDIFFUSION <- matrix(FALSE, nrow = 2, ncol = 2)
+
+reT0VAR <- matrix(
+  c(FALSE, FALSE,
+    FALSE, TRUE),
+  nrow = 2, byrow = TRUE
+)
+@
+
+Here \code{reT0VAR[2,2] = TRUE} allows the person-level RI variance to differ
+between studies. The substantive T0 variance \code{reT0VAR[1,1]} remains
+without a study random effect. If that variance should also vary, set
+\code{reT0VAR[1,1] = TRUE}.
+
+To allow the association between the initial substantive state and the random
+intercept to vary, select the lower-triangular covariance:
+
+<<univariate-covariance-mask, purl=FALSE>>=
+reT0VAR <- matrix(
+  c(FALSE, FALSE,
+    TRUE,  TRUE),
+  nrow = 2, byrow = TRUE
+)
+@
+
+This selects \code{T0VAR[2,1]} and \code{T0VAR[2,2]}. The symmetric
+upper-triangular cell must remain \code{FALSE}.
+
+\subsection{Multivariate example}
+
+For two substantive processes, assume the ordering
+$(\eta_1,\eta_2,r_1,r_2)$. The following mask permits heterogeneity in both
+random-intercept variances and their covariance:
+
+<<multivariate-ri-mask, purl=FALSE>>=
+reT0VAR <- matrix(FALSE, nrow = 4, ncol = 4)
+reT0VAR[3, 3] <- TRUE  # variance of random intercept for V1
+reT0VAR[4, 4] <- TRUE  # variance of random intercept for V2
+reT0VAR[4, 3] <- TRUE  # covariance between both random intercepts
+@
+
+The cross-block cells \code{reT0VAR[3:4,1:2]} concern covariances between the
+phantom random intercepts and substantive initial states. They should be
+selected only when study heterogeneity in those associations is substantively
+intended and identifiable.
+
+\section{Preparation and fitting workflow}
+
+A CoTiMA full fit is required. It may have represented studies using dummy
+coding, scaled dummy coding, or weighted effect coding. Extract its pooled
+ctsem fit and inspect the augmented latent dimension:
+
+<<extract-fit, purl=FALSE>>=
+ctsemFit <- cotimaFit$studyFitList
+ctsemFit$argumentList$randomIntercepts
+ctsemFit$ctstanmodelbase$n.latent
+@
+
+For a univariate substantive model with one phantom process, preparation may
+be written as follows:
+
+<<prepare-ri-re, purl=FALSE>>=
+prepared <- ctmaRePrep(
+  model = ctsemFit,
+  study_dummy_ti = paste0("TI", 1:(length(cotimaFit$studyList) - 1)),
+  reDRIFT = reDRIFT,
+  reDIFFUSION = reDIFFUSION,
+  reT0VAR = reT0VAR,
+  covariance = "independent",
+  parameterization = "noncentered",
+  init = "auto"
+)
+
+prepared$specification[, c(
+  "matrix", "row", "col", "parameter",
+  "person_varying", "interpretation", "transform"
+)]
+@
+
+For \code{Cov\_cint1} at \code{T0VAR[2,2]}, the expected interpretation is
+``study-varying variance of a person-level random-intercept pseudo process.''
+Recreate \code{prepared} after changing masks or updating the package; an old
+prepared object retains its earlier Stan text and mapping.
+
+Bayesian estimation is the primary hierarchical procedure:
+
+<<fit-bayes, purl=FALSE>>=
+riReFit <- ctmaReFit(
+  prepared,
+  estimation = "bayes",
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  fit_args = list(
+    warmup = 1000,
+    control = list(
+      adapt_delta = 0.95,
+      max_treedepth = 12
+    )
+  )
+)
+@
+
+The iteration counts above are starting values, not universal guarantees.
+Short runs with 100 iterations are compilation and propagation checks only;
+they are not suitable for substantive inference.
+
+\subsection{Centred and non-centred parameterizations}
+
+The non-centred representation writes $u_{sp}=\tau_p z_{sp}$ with
+$z_{sp}\sim\Normal(0,1)$. It is often advantageous when heterogeneity is near
+zero or study effects are weakly identified. The centred representation
+estimates $u_{sp}\sim\Normal(0,\tau_p^2)$ directly and may be more efficient
+when each study strongly identifies its effect. These are computationally
+different representations of the same statistical model. RI covariance
+components can be weakly identified, so comparing diagnostic runs under both
+representations is prudent rather than treating either as universally best.
+
+\subsection{Study-effect covariance structure}
+
+With several selected random parameters, \code{covariance = "independent"}
+assumes their study deviations are uncorrelated. \code{"equicorrelated"}
+estimates one common correlation, and \code{"full"} estimates every allowed
+pairwise correlation. A block structure can separate, for example, dynamic
+effects from RI covariance components. Because $K$ is commonly only 10--50,
+a full covariance matrix can be poorly identified when many parameters are
+random. Independent, equicorrelated, or substantively defined blocks are often
+safer starting points.
+
+\section{Summary and interpretation}
+
+<<summary-ri-re, purl=FALSE>>=
+riReSummary <- summary(riReFit)
+
+riReSummary$study_sd_raw
+riReSummary$study_effects_raw
+riReSummary$study_T0VAR
+riReSummary$study_T0cov
+riReSummary$study_correlations
+@
+
+\code{study\_sd\_raw} contains the between-study SDs on ctsem's
+unconstrained scale. \code{study\_effects\_raw} contains the study deviations
+on that scale. For scalar DRIFT and DIFFUSION transformations,
+\code{study\_sd\_transformed} reports the model-implied heterogeneity SD on the
+final scale. T0 covariance parameters are deliberately omitted from that
+scalar table because their final values depend jointly on the complete
+Cholesky/correlation construction.
+
+For random-intercept results, inspect \code{study\_T0VAR} and
+\code{study\_T0cov}. In particular, compare the final \code{[2,2]} element in
+the univariate augmented model, or the lower-right $m\times m$ block in a
+multivariate augmented model. These are the study-specific person-level RI
+(co)variances. Raw study effects should not be described as variance
+differences on the final scale.
+
+\section{Diagnostics and model checks}
+
+At minimum, report and inspect:
+\begin{enumerate}
+  \item divergences, maximum-treedepth saturation, and energy diagnostics;
+  \item $\widehat R$ and effective sample sizes for population parameters,
+    study heterogeneity SDs, and study effects;
+  \item whether final study-specific T0 covariance matrices are admissible;
+  \item sensitivity to centred versus non-centred parameterization;
+  \item sensitivity to the study-effect SD prior and covariance structure;
+  \item whether each selected RI covariance component is supported by enough
+    studies, persons, and repeated observations; and
+  \item posterior predictive checks relevant to stable between-person and
+    within-person covariance patterns.
+\end{enumerate}
+
+<<hmc-diagnostics, purl=FALSE>>=
+rstan::check_hmc_diagnostics(riReFit$engine_fit)
+
+print(
+  riReFit$engine_fit,
+  pars = c("studyre_sd", "studyre_effect"),
+  probs = c(.025, .5, .975)
+)
+@
+
+No divergences and no maximum-treedepth saturation are desirable. Values of
+$\widehat R$ close to one and adequate bulk and tail effective sample sizes are
+required. A successful Stan run is not by itself evidence that the random-
+intercept heterogeneity is identified.
+
+\section{Recommended reporting}
+
+An RI CoTiMA-RE report should state:
+\begin{enumerate}
+  \item whether \code{randomIntercepts = "MANIFEST"} or \code{"CINT"} was
+    used and how that construction enters the model;
+  \item the ordering of substantive and phantom latent processes;
+  \item which DRIFT and lower-triangular T0VAR cells received study random
+    effects;
+  \item which T0 cells represent RI variances, RI covariances, and
+    substantive-initial-state--RI covariances;
+  \item the study-effect covariance structure, parameterization, and priors;
+  \item raw heterogeneity SDs and final study-specific RI covariance matrices;
+  \item the number of studies, persons, and measurement occasions; and
+  \item convergence, sensitivity, and posterior predictive diagnostics.
+\end{enumerate}
+
+The central substantive distinction should remain explicit: RI variance
+quantifies stable person-level heterogeneity within a study, whereas its
+CoTiMA-RE random effect quantifies how that person-level heterogeneity differs
+across studies.
+
+\section{Compact reproducible template}
+
+<<compact-template, purl=FALSE>>=
+library(CoTiMA)
+
+# Extract the single pooled ctsem fit from a CoTiMA full fit.
+ctsemFit <- cotimaFit$studyFitList
+
+# One substantive latent plus one phantom RI process.
+reDRIFT <- matrix(
+  c(TRUE,  FALSE,
+    FALSE, FALSE),
+  2, 2, byrow = TRUE
+)
+
+reDIFFUSION <- matrix(FALSE, 2, 2)
+
+# Study-varying person-level random-intercept variance only.
+reT0VAR <- matrix(
+  c(FALSE, FALSE,
+    FALSE, TRUE),
+  2, 2, byrow = TRUE
+)
+
+prepared <- ctmaRePrep(
+  model = ctsemFit,
+  study_dummy_ti = paste0(
+    "TI",
+    seq_len(length(cotimaFit$studyList) - 1L)
+  ),
+  reDRIFT = reDRIFT,
+  reDIFFUSION = reDIFFUSION,
+  reT0VAR = reT0VAR,
+  covariance = "independent",
+  parameterization = "noncentered",
+  init = "auto"
+)
+
+# Confirm that the pseudo-process variance was recognized correctly.
+prepared$specification
+
+riReFit <- ctmaReFit(
+  prepared,
+  estimation = "bayes",
+  chains = 4,
+  iter = 2000,
+  cores = 4,
+  fit_args = list(
+    warmup = 1000,
+    control = list(
+      adapt_delta = 0.95,
+      max_treedepth = 12
+    )
+  )
+)
+
+riReSummary <- summary(riReFit)
+riReSummary$study_sd_raw
+riReSummary$study_T0VAR
+riReSummary$study_T0cov
+rstan::check_hmc_diagnostics(riReFit$engine_fit)
+@
+
+\begin{thebibliography}{9}
+
+\bibitem[Driver and Voelkle(2018)]{Driver2018}
+Driver, C. C., \& Voelkle, M. C. (2018).
+Hierarchical Bayesian continuous time dynamic modeling.
+\emph{Psychological Methods, 23}(4), 774--799.
+\doi{10.1037/met0000168}
+
+\bibitem[Dormann et al.(2020)]{Dormann2020}
+Dormann, C., Guthier, C., \& Cortina, J. M. (2020).
+Introducing continuous time meta-analysis (CoTiMA).
+\emph{Organizational Research Methods, 23}(4), 620--650.
+\doi{10.1177/1094428119847277}
+
+\bibitem[Stan Development Team(2026)]{Stan2026}
+Stan Development Team. (2026).
+\emph{Stan reference manual}.
+\url{https://mc-stan.org/}
+
+\end{thebibliography}
+
+\end{document}

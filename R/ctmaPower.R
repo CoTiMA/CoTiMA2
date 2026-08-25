@@ -202,7 +202,8 @@ ctmaPower <- function(
     coresToUse <- resource_resolution$resolved
     if (identical(backend, "julia")) {
       julia_resources <- .ctmaInitJuliaResources(
-        coresToUse, requested_estimation, backendArgs, resolved_backend_args
+        coresToUse, requested_estimation, backendArgs, resolved_backend_args,
+        workflow = "ctmaPower"
       )
       resolved_backend_args <- julia_resources$backend_args
     }

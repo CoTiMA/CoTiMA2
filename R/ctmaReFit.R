@@ -1377,13 +1377,17 @@ ctmaRePrep <- function(
   )
   JuliaCall::julia_assign("ctma_re_project", dirname(a$julia_file))
   JuliaCall::julia_assign("ctma_re_julia_file", normalizePath(a$julia_file))
-  JuliaCall::julia_eval("import Pkg; Pkg.activate(ctma_re_project)")
+  JuliaCall::julia_eval(
+    "import Pkg; Pkg.activate(ctma_re_project; io=devnull)"
+  )
+  .ctmaJuliaCheckProjectDependencies()
   JuliaCall::julia_source(a$julia_file)
   JuliaCall::julia_assign("ctma_re_sd", prepared$standata)
   JuliaCall::julia_assign("ctma_re_theta", theta)
   JuliaCall::julia_eval(sprintf(
     "LinearAlgebra.BLAS.set_num_threads(%d)", a$blas_threads
   ))
+  .ctmaJuliaThreadNote(active_threads, a$blas_threads)
 
   if (isTRUE(verbose)) .ctma_print_message(sprintf(
     paste0("Julia NUTS: %d chain(s), %d warmup and %d retained draws per ",
@@ -1554,6 +1558,7 @@ ctmaReFit <- function(
     estimation <- if (method == "sample") "bayes" else "map"
   } else estimation <- match.arg(estimation)
   backend <- match.arg(tolower(backend), c("stan", "julia"))
+  if (identical(backend, "julia")) .ctmaJuliaInstallationGuideNote()
   optimizer_uncertainty <- match.arg(optimizer_uncertainty)
   if (is.null(init)) init <- prepared$init
   if (is.null(init_jitter)) init_jitter <- prepared$init_jitter

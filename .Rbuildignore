@@ -4,3 +4,6 @@
 ^README\.Rmd$
 ^doc$
 ^Meta$
+^docs$
+^tools$
+^inst/doc$

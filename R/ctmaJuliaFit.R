@@ -88,6 +88,12 @@
 #' @param julia_threads Number of Julia threads used to evaluate independent
 #'   subject likelihoods and gradients. This must be set when Julia starts;
 #'   consequently, use `initialize=TRUE` when changing it.
+#' @param subject_threads Maximum number of concurrent subject tasks used by
+#'   this fit. Unlike `julia_threads`, this can be changed between fits in the
+#'   same R session. `"auto"` uses the complete Julia thread pool. Numeric
+#'   likelihoods use these tasks directly; gradients use them only after an
+#'   automatic serial-versus-parallel AD consistency check passes. Hessians use
+#'   the serial-safe path.
 #' @param blas_threads Number of BLAS threads. One avoids competing with other
 #'   jobs and is generally appropriate for the small ctsem matrices here.
 #'
@@ -107,9 +113,9 @@ ctmaJuliaFit <- function(
     tolerance = 1e-6,
     optimize = FALSE,
     estimation = NULL,
-    uncertainty = FALSE,
+    uncertainty = TRUE,
     inits = NULL,
-    maxiters = 100L,
+    maxiters = 5000L,
     chunksize = 7L,
     gradient_tolerance = 1e-3,
     function_relative_tolerance = 0,
@@ -138,13 +144,15 @@ ctmaJuliaFit <- function(
     threads_per_chain = NULL,
     performance_warning = TRUE,
     show_trace = TRUE,
-    julia_threads = 1L,
+    julia_threads = "auto",
+    subject_threads = "auto",
     blas_threads = 1L) {
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaJuliaFit")
   on.exit(.ctma_timer(), add = TRUE)
 
   julia_threads_was_supplied <- !missing(julia_threads)
+  uncertainty_was_supplied <- !missing(uncertainty)
   transformed_was_supplied <- !missing(transformed)
 
   if (!is.null(staged_optimization)) {
@@ -168,6 +176,9 @@ ctmaJuliaFit <- function(
     estimation <- if (isTRUE(optimize)) "ML" else "none"
   }
   estimation <- match.arg(tolower(estimation), c("none", "ml", "bayes"))
+  if (identical(estimation, "none") && !uncertainty_was_supplied) {
+    uncertainty <- FALSE
+  }
   if (isTRUE(optimize) && estimation != "ml") {
     stop("'optimize=TRUE' is only compatible with estimation='ML'.", call. = FALSE)
   }
@@ -202,10 +213,8 @@ ctmaJuliaFit <- function(
     )
   }
 
-  julia_threads <- as.integer(julia_threads)[1L]
-  if (is.na(julia_threads) || julia_threads < 1L) {
-    stop("'julia_threads' must be a positive integer.", call. = FALSE)
-  }
+  requested_julia_threads <- julia_threads
+  julia_threads <- .ctmaResolveJuliaThreads(julia_threads)
 
   # This assessment deliberately precedes Julia initialization and the first
   # likelihood evaluation, so the user can still stop an unattractive run.
@@ -273,17 +282,31 @@ ctmaJuliaFit <- function(
       call. = FALSE
     )
   }
-  use_subject_threads <- active_julia_threads > 1L
+  subject_threads <- .ctmaResolveSubjectThreads(
+    subject_threads, active_julia_threads
+  )
+  use_subject_threads <- subject_threads > 1L
 
   JuliaCall::julia_assign("ctma_julia_project", dirname(julia_file))
-  JuliaCall::julia_eval("import Pkg; Pkg.activate(ctma_julia_project)")
+  JuliaCall::julia_eval(
+    "import Pkg; Pkg.activate(ctma_julia_project; io=devnull)"
+  )
+  .ctmaJuliaCheckProjectDependencies()
   JuliaCall::julia_source(julia_file)
+  JuliaCall::julia_eval(sprintf(
+    "CtsemJulia.set_subject_threads!(%d)", subject_threads
+  ))
   JuliaCall::julia_assign("ctma_sd", fit$standata)
   JuliaCall::julia_assign("ctma_rawest", as.numeric(fit$stanfit$rawest))
   JuliaCall::julia_eval(sprintf(
     "LinearAlgebra.BLAS.set_num_threads(%d)",
     as.integer(blas_threads)[1L]
   ))
+  .ctmaJuliaThreadNote(
+    julia_threads = active_julia_threads,
+    subject_threads = subject_threads,
+    blas_threads = as.integer(blas_threads)[1L]
+  )
 
   unsupported <- JuliaCall::julia_eval(
     "CtsemJulia.check_supported(ctma_sd; throw_error=false)"
@@ -308,6 +331,57 @@ ctmaJuliaFit <- function(
     chunksize = chunksize,
     carefulFit = carefulFit
   )
+
+  parallel_backend_check <- NULL
+  parallel_backend_check_timing <- NULL
+  if (use_subject_threads && estimation %in% c("ml", "bayes")) {
+    parallel_backend_check_timing <- system.time({
+      parallel_backend_check <- JuliaCall::julia_eval(sprintf(
+        paste0(
+          "CtsemJulia.validate_parallel_backend!(ctma_rawest,ctma_sd;",
+          "chunksize=%d,likelihood_tolerance=1e-12,",
+          "gradient_tolerance=1e-10)"
+        ),
+        as.integer(chunksize)[1L]
+      ))
+    })
+    if (isTRUE(parallel_backend_check$likelihood$safe)) {
+      message(sprintf(
+        paste0(
+          "Note: Concurrent Julia likelihood validation passed ",
+          "(maximum relative difference %.3g)."
+        ),
+        parallel_backend_check$likelihood$maximum_relative_error
+      ))
+    } else {
+      warning(sprintf(
+        paste0(
+          "Concurrent Julia likelihood validation failed ",
+          "(maximum relative difference %.3g); likelihood evaluations will ",
+          "use the deterministic serial path."
+        ),
+        parallel_backend_check$likelihood$maximum_relative_error
+      ), call. = FALSE, immediate. = TRUE)
+    }
+    if (isTRUE(parallel_backend_check$gradient$safe)) {
+      message(sprintf(
+        paste0(
+          "Note: Concurrent Julia AD gradient validation passed ",
+          "(relative difference %.3g); subject-gradient parallelism is enabled."
+        ),
+        parallel_backend_check$gradient$relative_error
+      ))
+    } else {
+      warning(sprintf(
+        paste0(
+          "Concurrent Julia AD gradients differed from the exact serial path ",
+          "(relative difference %.3g). Gradients and Hessians will use the ",
+          "serial-safe path."
+        ),
+        parallel_backend_check$gradient$relative_error
+      ), call. = FALSE, immediate. = TRUE)
+    }
+  }
 
   likelihood_timing <- system.time({
     julia_loglik <- JuliaCall::julia_eval(
@@ -502,7 +576,7 @@ ctmaJuliaFit <- function(
           "x,ctma_sd;chunksize=", as.integer(chunksize)[1L],
           ",threaded=", if (use_subject_threads) "true" else "false", ")\n",
           "maxg=maximum(abs.(g))\n",
-          "(estimates=x,loglik=-CtsemJulia.Optim.minimum(ctma_opt.result),",
+          "(estimates=x,loglik=-ctma_opt.best_objective,",
           "iterations=ctma_opt.total_iterations,",
           "stage_iterations=ctma_opt.stage_iterations,",
           "stage_objectives=ctma_opt.stage_objectives,",
@@ -874,6 +948,8 @@ ctmaJuliaFit <- function(
     unsupported = unsupported,
     dimensions = dimensions,
     performance_assessment = performance_assessment,
+    parallel_backend_check = parallel_backend_check,
+    parallel_backend_check_timing = parallel_backend_check_timing,
     likelihood = list(
       julia = julia_loglik,
       stan = stan_loglik,
@@ -939,6 +1015,7 @@ ctmaJuliaFit <- function(
     cotima_summary = cotima_summary,
     threads = list(
       julia = active_julia_threads,
+      subject = subject_threads,
       blas = as.integer(blas_threads)[1L],
       subject_parallel = use_subject_threads
     ),
@@ -973,9 +1050,13 @@ print.ctmaJuliaFit <- function(x, ...) {
     unname(x$likelihood_timing[["elapsed"]])
   ))
   cat(sprintf(
-    "  Julia threads:          %d%s\n",
-    x$threads$julia,
-    if (isTRUE(x$threads$subject_parallel)) " (subject parallelism)" else ""
+    "  Julia pool threads:     %d\n",
+    x$threads$julia
+  ))
+  cat(sprintf(
+    "  Subject tasks:          %d%s\n",
+    if (is.null(x$threads$subject)) x$threads$julia else x$threads$subject,
+    if (isTRUE(x$threads$subject_parallel)) " (parallel)" else ""
   ))
   if (!is.null(x$optimization)) {
     if (!is.null(x$optimization$multistart_controls)) cat(sprintf(
@@ -1518,7 +1599,7 @@ print.summary.ctmaJuliaFitStudy <- function(
   }
 
   message(
-    "Recognized ctmaFit(fit=FALSE) input; generating ctsem setup data."
+    "Generating ctsem setup data."
   )
   ctsem::ctFit(
     datalong = object$data,

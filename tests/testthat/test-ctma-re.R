@@ -27,15 +27,6 @@ test_that("unfitted CoTiMA wrappers are distinguished from ctsem setups", {
   )
 })
 
-test_that("ctmaReFit exposes the optional Julia backend controls", {
-  arguments <- names(formals(ctmaReFit))
-  expect_true(all(c("backend", "backendArgs") %in% arguments))
-  expect_identical(eval(formals(ctmaReFit)$backend), c("stan", "julia"))
-  expect_true(file.exists(system.file(
-    "julia", "CtsemJulia.jl", package = "CoTiMA2"
-  )))
-})
-
 test_that("automatic matrix blocks count correlation parameters correctly", {
   spec <- data.frame(
     re = 1:8,

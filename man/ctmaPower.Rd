@@ -89,8 +89,7 @@ ctmaPower(
 
 \item{scaleTime}{scale time (interval) - sometimes desirable to improve fitting}
 
-\item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting
-controls. Partial and nested lists are supported.}
+\item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting controls.}
 
 \item{backend}{estimation backend used for internal invariant models,
 \code{"stan"} (default) or \code{"julia"}.}

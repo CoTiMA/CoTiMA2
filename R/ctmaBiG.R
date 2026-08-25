@@ -34,9 +34,11 @@
 #'
 #' @examples
 #' # display results
+#' \dontrun{
 #' ctmaLoadExamples("CoTiMABiG_D_BO")
 #' summary(CoTiMABiG_D_BO)
 #' ctmaUnloadExamples("CoTiMABiG_D_BO")
+#' }
 #'
 #' @examples
 #' \dontrun{

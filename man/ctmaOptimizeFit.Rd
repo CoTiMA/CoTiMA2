@@ -73,21 +73,15 @@ ctmaOptimizeFit(
 
 \item{randomRI}{logical (default = FALSE). randomly varies between "randomIntercepts='MANIFEST'" and "randomIntercepts='CINT'"}
 
-\item{randomScaleTI}{logical (default = FALSE). If TRUE, randomly sets
-\code{scaleTI} to TRUE or FALSE for every \code{ctmaInit()} or
-\code{ctmaFit()} attempt.}
+\item{randomScaleTI}{logical (default = FALSE). Overrides arguments used for scaleTI and randomly sets scaleTI either TRUE or FALSE}
 
-\item{randomScaleTime}{two finite positive numbers giving the lower and
-upper limits (default = c(1,1)) of the uniform distribution from which
-\code{scaleTime} is drawn for each attempt. Draws are rounded to two
-decimal places.}
+\item{randomScaleTime}{lower and upper limit (default = c(1,1)) of uniform distribution from which timeScale argument for ctmaInit is uniformly shuffled (integer)}
 
 \item{saveModelFits}{save the fit of each Fit attempt (default = FALSE).}
 
 \item{shuffleStudyList}{(default = FALSE) randomly re-arranges studies in primaryStudyList. We encountered a few cases where this mattered, even though it should not. Only works if ctmaFit is optimized.}
 
-\item{reFits}{positive integer giving the number of complete refitting
-attempts.}
+\item{reFits}{how many reFits should be done}
 
 \item{scaleTime}{scale time (interval) - sometimes desirable to improve fitting}
 
@@ -97,20 +91,15 @@ attempts.}
 
 \item{ctStanFitArgs}{list of arguments passed forward to ctStanFit except datalong, ctstanmodel, cores & verbose  (default=NULL)}
 
-\item{backend}{Estimation backend used for complete-model refits. Stan is
-the default. Julia is currently available for the \code{ctmaFitFit}
-branch and ML estimation only.}
+\item{backend}{estimation backend used for complete-model refits,
+\code{"stan"} (default) or \code{"julia"}.}
 
-\item{backendArgs}{Named list of controls for the selected backend. Do not
-supply this together with \code{CoTiMAStanctArgs}.}
+\item{backendArgs}{named list of controls for the selected backend.}
 }
 \value{
-Returns a list with \code{bestFit}, the successful fit with the
-  smallest finite \code{minus2ll}; \code{all_minus2ll}, containing one value
-  per attempt and \code{NA} for failed or non-finite attempts; the settings
-  used across attempts; and captured \code{warnings} and \code{errors}.
-  If no attempt succeeds, the function stops with an error summarizing the
-  captured fitting errors.
+returns a list with bestFit (= the best fit achieved), all_minus2ll (= all -2ll values for all fitted models), and summary, which
+is printed if the summary function is applied to the returned object, and which shows the summary information of the ctsem model with the
+best fit.
 
 %dopar%' <- foreach::'%dopar%' deprecated
 }

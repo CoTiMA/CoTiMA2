@@ -1,4 +1,5 @@
-library(testthat)
-library(CoTiMA2)
-
-test_check("CoTiMA2")
+if (requireNamespace("testthat", quietly = TRUE)) {
+  library(testthat)
+  library(CoTiMA2)
+  test_check("CoTiMA2")
+}

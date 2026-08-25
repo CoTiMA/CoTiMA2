@@ -26,8 +26,7 @@ In most cases probably a model in which (only) two effects were specified with i
 
 \item{coresToUse}{If neg., the value is subtracted from available cores, else value = cores to use}
 
-\item{backend}{estimation backend, \code{"stan"} (default) or
-\code{"julia"}.}
+\item{backend}{estimation backend, \code{"stan"} (default) or \code{"julia"}.}
 
 \item{backendArgs}{named list of controls for the selected backend.}
 }

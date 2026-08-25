@@ -1,0 +1,594 @@
+% !Rnw weave = knitr
+%\VignetteIndexEntry{Installing Julia and CoTiMA2}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{hyperref}
+\usepackage{listings}
+\setlength{\emergencystretch}{3em}
+\hbadness=3000
+
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,
+  citecolor=blue!55!black,urlcolor=blue!55!black}
+\definecolor{codebg}{RGB}{247,247,247}
+\definecolor{terminalcolor}{RGB}{55,75,105}
+\definecolor{rcolor}{RGB}{45,105,70}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\menu}[1]{\textbf{#1}}
+\newcommand{\important}[1]{\par\medskip\noindent
+  \fcolorbox{blue!45!black}{blue!4}{\parbox{0.94\linewidth}{#1}}\par\medskip}
+\newcommand{\terminalnote}{\noindent\textcolor{terminalcolor}{\textbf{Where to paste:}}
+  Paste the following code into a system terminal window and execute it by
+  pressing Enter. Do not paste it into R or into Julia.}
+\newcommand{\rnote}{\noindent\textcolor{rcolor}{\textbf{Where to paste:}}
+  Paste the following code into the R console (the window that normally shows
+  the \code{>} prompt) and execute it by pressing Enter. Do not type the
+  leading \code{>} prompt yourself.}
+
+\lstdefinestyle{installcode}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framerule=0pt,
+  framesep=5pt,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  aboveskip=0.5\baselineskip,
+  belowskip=0.8\baselineskip
+}
+\lstset{style=installcode}
+
+\title{Installing Julia and CoTiMA2:\\
+  A Copy-and-Paste Guide for Windows, macOS, and Ubuntu/Linux}
+\author{CoTiMA2 development documentation}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE, purl=FALSE>>=
+knitr::opts_chunk$set(
+  echo = TRUE, eval = FALSE, purl = FALSE,
+  warning = FALSE, message = FALSE
+)
+@
+
+\begin{abstract}
+This guide is intended for colleagues who want to install a shared CoTiMA2
+source-package file and use its optional Julia estimation backend. No prior
+experience with Julia or command-line tools is assumed. Separate instructions
+are provided for Windows, macOS, and Ubuntu/Linux. Every command is labelled
+according to the program in which it must be entered. The guide also explains
+the common situation in which updating R creates a new, initially empty R
+package library.
+\end{abstract}
+
+\tableofcontents
+
+\section{What will be installed?}
+
+The installation has four distinct parts:
+
+\begin{enumerate}
+  \item \textbf{R} and preferably RStudio, which you may already have.
+  \item \textbf{CoTiMA2}, supplied as a file whose name ends in
+    \code{.tar.gz}, for example \code{CoTiMA2\_0.14.5.tar.gz}.
+  \item \textbf{Julia}, a separate programming language used by the optional
+    Julia estimation backend.
+  \item \textbf{JuliaCall}, an R package that allows R and Julia to
+    communicate.
+\end{enumerate}
+
+CoTiMA2 includes its own Julia project description. The command
+\code{ctmaJuliaSetup()} installs and precompiles the Julia packages required by
+that project. Colleagues do not need to learn Julia or manually select Julia
+packages.
+
+\important{Installing CoTiMA2 and installing Julia are separate operations.
+The CoTiMA2 tarball does not contain Julia itself. An active internet
+connection is required when Julia and the Julia packages are installed for the
+first time.}
+
+\section{Recognizing the different command windows}
+
+Installation problems often arise because a valid command is pasted into the
+wrong program. This guide uses the following three labels.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.19\linewidth}
+                  >{\raggedright\arraybackslash}p{0.34\linewidth}
+                  >{\raggedright\arraybackslash}p{0.37\linewidth}}
+\toprule
+Label & How to open it & What it looks like \\
+\midrule
+\endhead
+System terminal & Windows Terminal, Command Prompt, PowerShell, macOS
+Terminal, or Ubuntu Terminal & A separate text window outside RStudio. Its
+prompt may end in \code{\$}, \code{\%}, or \code{>}. \\
+R console & The Console pane in RStudio, or the R application & It normally
+shows the prompt \code{>}. R commands such as \code{install.packages()} belong
+here. \\
+Julia prompt & A Julia window started with the command \code{julia} & It shows
+the prompt \code{julia>}. None of the installation commands in this guide need
+to be pasted there unless explicitly stated. \\
+\bottomrule
+\end{longtable}
+
+When copying a displayed command, copy only the text inside the grey box. Do
+not copy prompt characters such as \code{>}, \code{\$}, or \code{julia>}.
+
+\section{Step 1: install Julia}
+
+The Julia project recommends the Juliaup installer and version manager. It
+installs a current stable Julia version, makes updates easier, and normally
+configures the command search path automatically.
+
+\subsection{Windows}
+
+\subsubsection*{Recommended graphical method}
+
+\begin{enumerate}
+  \item Open the \menu{Microsoft Store} from the Windows Start menu.
+  \item Search for \menu{Julia}.
+  \item Select the official Julia application and click \menu{Install}.
+  \item When installation has finished, close and reopen RStudio if it was
+    already running.
+\end{enumerate}
+
+Alternatively, use the official command-line installation:
+
+\begin{enumerate}
+  \item Open the Start menu.
+  \item Type \menu{Windows Terminal} and open it. If Windows Terminal is not
+    available, open \menu{PowerShell} or \menu{Command Prompt}.
+  \item Paste the command below and press Enter.
+\end{enumerate}
+
+\terminalnote
+\begin{lstlisting}
+winget install --name Julia --id 9NJNWW8PVKMN -e -s msstore
+\end{lstlisting}
+
+Close the terminal after installation, open a new terminal window, paste the
+following command, and press Enter:
+
+\begin{lstlisting}
+julia --version
+\end{lstlisting}
+
+A successful result begins with \code{julia version}. The exact version number
+may be newer than the one shown in screenshots or examples.
+
+\subsection{macOS}
+
+\begin{enumerate}
+  \item Press Command--Space to open Spotlight.
+  \item Type \menu{Terminal} and press Return.
+  \item Paste the following command into Terminal and press Return.
+\end{enumerate}
+
+\terminalnote
+\begin{lstlisting}
+curl -fsSL https://install.julialang.org | sh
+\end{lstlisting}
+
+The installer may ask for confirmation. Accept the default installation by
+following the instruction printed in the terminal. When it has finished,
+close Terminal completely and open a new Terminal window. Then verify the
+installation:
+
+\begin{lstlisting}
+julia --version
+\end{lstlisting}
+
+If macOS or an institutional security tool asks whether Terminal may access
+downloaded files or the network, allow the operation. A graphical Julia
+installer is also available from \url{https://julialang.org/downloads/}, but
+Juliaup is preferred because it also manages updates and the command path.
+
+\subsection{Ubuntu and other Linux systems}
+
+\begin{enumerate}
+  \item Press Ctrl--Alt--T to open the Ubuntu Terminal. On another Linux
+    desktop, open the application named \menu{Terminal}.
+  \item Paste the following command and press Enter.
+\end{enumerate}
+
+\terminalnote
+\begin{lstlisting}
+curl -fsSL https://install.julialang.org | sh
+\end{lstlisting}
+
+Accept the default installation when prompted. Do not add \code{sudo} to this
+command. Close the terminal completely, open a new terminal, and verify Julia:
+
+\begin{lstlisting}
+julia --version
+\end{lstlisting}
+
+\important{Do not use \code{sudo apt install julia} for this setup. The Julia
+project recommends Juliaup or official Julia binaries because Julia packages
+provided by Linux distributions can be outdated or built with incompatible
+dependencies.}
+
+If the first command reports that \code{curl} is missing, install only
+\code{curl} using these two terminal commands, and then repeat the Juliaup
+command:
+
+\begin{lstlisting}
+sudo apt update
+sudo apt install curl
+\end{lstlisting}
+
+\subsection{Common Julia verification commands}
+
+These commands are optional but useful when asking for help. Enter them in a
+system terminal, one line at a time:
+
+\terminalnote
+\begin{lstlisting}
+julia --version
+juliaup status
+\end{lstlisting}
+
+On Windows, the following command shows the executable location:
+
+\begin{lstlisting}
+where julia
+\end{lstlisting}
+
+On macOS or Linux, use:
+
+\begin{lstlisting}
+command -v julia
+\end{lstlisting}
+
+\section{Step 2: prepare the R package library}
+
+Start RStudio. All commands in this section belong in the R console.
+
+\rnote
+\begin{lstlisting}[language=R]
+R.version.string
+.libPaths()
+\end{lstlisting}
+
+R normally uses a separate package library for each R release. Consequently,
+after an update such as R 4.5 to R 4.6, the new R session may not see packages
+that were installed for the older R version. This is normal and does not mean
+that the CoTiMA2 tarball is damaged.
+
+The following R code creates the personal package library, makes it active,
+and selects the official CRAN cloud mirror:
+
+\rnote
+\begin{lstlisting}[language=R]
+user_library <- Sys.getenv("R_LIBS_USER")
+dir.create(user_library, recursive = TRUE, showWarnings = FALSE)
+.libPaths(c(user_library, .libPaths()))
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+\end{lstlisting}
+
+\section{Step 3: install the required R packages}
+
+Paste the complete block below into the R console and press Enter. R installs
+only packages that are not already available to the current R version.
+
+\rnote
+\begin{lstlisting}[language=R]
+required_packages <- c(
+  "OpenMx", "ctsem", "lavaan", "foreach", "Matrix", "MBESS",
+  "crayon", "psych", "doParallel", "rootSolve", "abind",
+  "RPushbullet", "openxlsx", "zcurve", "scholar", "stringi",
+  "parallelly", "JuliaCall", "posterior", "knitr"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace,
+          quietly = TRUE, FUN.VALUE = logical(1))
+]
+
+if (length(missing_packages)) {
+  install.packages(missing_packages, dependencies = TRUE)
+}
+\end{lstlisting}
+
+This step can take considerable time because packages such as OpenMx, ctsem,
+and their dependencies are large. Messages printed in red are not always
+errors. Wait until the R prompt \code{>} returns. Then check again:
+
+\begin{lstlisting}[language=R]
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace,
+          quietly = TRUE, FUN.VALUE = logical(1))
+]
+missing_packages
+\end{lstlisting}
+
+The desired result is \code{character(0)}. If package names are printed, copy
+the complete installation error when asking for help.
+
+\subsection{Additional Ubuntu preparation if R packages fail to compile}
+
+Use this only when Ubuntu reports missing compilers or missing system headers.
+Close neither R nor RStudio, but open a separate Ubuntu Terminal. Paste the
+following commands into the terminal and press Enter after each block:
+
+\terminalnote
+\begin{lstlisting}
+sudo apt update
+sudo apt install build-essential gfortran \
+  libcurl4-openssl-dev libssl-dev libxml2-dev \
+  libgsl-dev libglpk-dev libopenblas-dev
+\end{lstlisting}
+
+Enter your Ubuntu password if requested. The password is not displayed while
+you type; this is normal. Return to RStudio and repeat the R package
+installation block above.
+
+\section{Step 4: install the shared CoTiMA2 tarball}
+
+Save the supplied \code{CoTiMA2\_x.y.z.tar.gz} file somewhere easy to find,
+for example in Downloads. Do not unzip it.
+
+The easiest platform-independent method opens a file-selection window:
+
+\rnote
+\begin{lstlisting}[language=R]
+cotima_tarball <- file.choose()
+install.packages(cotima_tarball, repos = NULL, type = "source")
+\end{lstlisting}
+
+After running the first line, select the shared \code{.tar.gz} file. The second
+line installs it. If installation reports that dependencies are unavailable,
+repeat Step 3 and then retry this step.
+
+Restart R using \menu{Session $>$ Restart R} in RStudio. Then verify the
+installation in the R console:
+
+\rnote
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+packageVersion("CoTiMA2")
+\end{lstlisting}
+
+The printed version should match the tarball filename.
+
+\section{Step 5: install and precompile the Julia packages for CoTiMA2}
+
+This is normally required only once for a Julia installation. In the R
+console, run:
+
+\rnote
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+julia_setup <- ctmaJuliaSetup()
+\end{lstlisting}
+
+This command performs several tasks in separate Julia processes:
+
+\begin{itemize}
+  \item it locates the Julia executable;
+  \item it prepares the Julia packages needed by JuliaCall;
+  \item it installs the exact Julia dependencies recorded by CoTiMA2; and
+  \item it precompiles those dependencies.
+\end{itemize}
+
+The first setup may take several minutes. On slower computers or institutional
+networks it can take substantially longer. Leave RStudio open and wait until
+the R prompt returns. A successful setup ends with the message
+\code{Julia setup completed successfully}.
+
+You can then display what was found:
+
+\begin{lstlisting}[language=R]
+julia_setup$julia_version
+julia_setup$julia_home
+julia_setup$project
+\end{lstlisting}
+
+\important{After \code{ctmaJuliaSetup()} has completed, restart R before the
+first Julia fit. Also restart R after a failed JuliaCall initialization or
+before changing the requested number of Julia threads.}
+
+\section{Step 6: a final installation check}
+
+After restarting R, paste the following into the R console:
+
+\rnote
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+
+julia_check <- ctmaJuliaSetup(
+  bootstrap_juliacall = FALSE,
+  instantiate = FALSE,
+  precompile = FALSE
+)
+
+julia_check$julia_version
+julia_check$julia_home
+\end{lstlisting}
+
+This check does not reinstall packages or initialize embedded Julia. It only
+verifies that CoTiMA2 can find and execute Julia. If it succeeds, the same R
+session may be used for the first fit. Once a fit initializes JuliaCall,
+however, Julia's thread count is fixed for the remainder of that R session.
+
+For an initial analysis, use a conservative thread count. Four or eight Julia
+threads are often a better first test than using every logical CPU:
+
+\begin{lstlisting}[language=R]
+fit <- ctmaFit(
+  ctmaInitFit = my_initial_fit,
+  backend = "julia",
+  backendArgs = list(
+    julia_threads = 4L,
+    blas_threads = 1L
+  )
+)
+\end{lstlisting}
+
+Replace \code{my\_initial\_fit} with the name of the actual CoTiMA initial-fit
+object. This final code is an illustration and cannot run until such an object
+has been created or loaded.
+
+\section{After updating R}
+
+An R update is the most common reason why an installation that worked
+yesterday appears to be broken. Julia may still be installed correctly, while
+the new R version uses a new library and cannot find JuliaCall, ctsem, OpenMx,
+or other packages.
+
+Use the following recovery sequence in the new R version:
+
+\begin{enumerate}
+  \item Repeat Step 2 to activate the new personal R library.
+  \item Repeat Step 3 to install missing R packages for the new R version.
+  \item Reinstall the CoTiMA2 tarball as described in Step 4.
+  \item Rebuild Julia's connection to the new R installation with the code
+    below.
+\end{enumerate}
+
+\rnote
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+ctmaJuliaSetup(
+  bootstrap_juliacall = TRUE,
+  r_home = R.home()
+)
+\end{lstlisting}
+
+Restart R after this command. The option
+\code{bootstrap\_juliacall = TRUE} forces Julia's RCall package to be rebuilt
+against the currently running R installation.
+
+\section{Troubleshooting}
+
+\subsection{R says that dependencies are not available}
+
+The tarball was usually built successfully; the current R library is missing
+its dependencies. Run Steps 2 and 3. Do not repeatedly rebuild or unzip the
+CoTiMA2 tarball.
+
+\subsection{CoTiMA2 cannot find Julia}
+
+First verify Julia in a system terminal using \code{julia --version}. Close
+and reopen RStudio afterward. Juliaup commonly installs launchers at
+\code{\textasciitilde/.juliaup/bin/julia} on macOS/Linux, while Windows uses
+\code{julia.exe}. CoTiMA2 also searches Juliaup's versioned Linux directories.
+
+If automatic discovery still fails, obtain the path using \code{where julia}
+on Windows or \code{command -v julia} on macOS/Linux. Then pass the complete
+path in R, for example:
+
+\begin{lstlisting}[language=R]
+ctmaJuliaSetup(julia = "/complete/path/to/julia")
+\end{lstlisting}
+
+Windows paths may be written with forward slashes:
+
+\begin{lstlisting}[language=R]
+ctmaJuliaSetup(
+  julia = "C:/Users/your-name/.juliaup/bin/julia.exe"
+)
+\end{lstlisting}
+
+The exact Windows location can differ; use the path reported by
+\code{where julia} rather than copying the example literally.
+
+\subsection{JuliaCall failed once and every retry fails immediately}
+
+Restart R. JuliaCall remains partly initialized after some failures and cannot
+always be repaired inside the same R session. After restarting, run
+\code{ctmaJuliaSetup()} before attempting another fit.
+
+\subsection{The requested thread count is ignored}
+
+Julia's thread count is fixed when JuliaCall initializes Julia. Restart R and
+make the fit the first Julia operation in that R session. Supply the desired
+count through \code{backendArgs}, for example
+\code{backendArgs = list(julia\_threads = 4L, blas\_threads = 1L)}.
+
+\subsection{Ubuntu reports status 139 or native-library errors}
+
+RStudio Server, Java, or an R installation can place incompatible libraries
+in \code{LD\_LIBRARY\_PATH} or \code{LD\_PRELOAD}. CoTiMA2's
+\code{ctmaJuliaSetup()} automatically removes those variables from its Linux
+setup subprocesses. Run setup through CoTiMA2 rather than manually invoking
+Julia package commands from inside RStudio:
+
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+ctmaJuliaSetup(bootstrap_juliacall = TRUE)
+\end{lstlisting}
+
+Restart R afterward.
+
+\subsection{Downloads fail behind a university or company firewall}
+
+Julia and its package manager require HTTPS access to official Julia
+infrastructure, including \code{julialang.org} and its subdomains. Ask local IT
+support to allow HTTPS traffic to the official Julia domains. A proxy or
+security product that replaces certificates can also prevent package
+downloads.
+
+\subsection{What information should be sent when asking for help?}
+
+Run the following in the R console and copy the complete output:
+
+\begin{lstlisting}[language=R]
+R.version.string
+Sys.info()[c("sysname", "release", "machine")]
+.libPaths()
+packageVersion("CoTiMA2")
+packageVersion("JuliaCall")
+
+check <- ctmaJuliaSetup(
+  bootstrap_juliacall = FALSE,
+  instantiate = FALSE,
+  precompile = FALSE
+)
+check$julia
+check$julia_version
+check$julia_home
+\end{lstlisting}
+
+Also include the complete error message, beginning several lines before the
+word \code{Error}. Screenshots can omit important text; copied console output
+is preferable.
+
+\section{Updating Julia later}
+
+Juliaup can update the stable Julia release. Open a system terminal, paste the
+following command, and press Enter:
+
+\terminalnote
+\begin{lstlisting}
+juliaup update
+\end{lstlisting}
+
+After a Julia update, restart R and rerun \code{ctmaJuliaSetup()} in the R
+console. Do not update Julia in the middle of a running analysis.
+
+\section{Official resources}
+
+\begin{itemize}
+  \item Julia installation: \url{https://julialang.org/downloads/}
+  \item Platform-specific Julia instructions:
+    \url{https://julialang.org/downloads/platform/}
+  \item Juliaup documentation:
+    \url{https://github.com/JuliaLang/juliaup}
+  \item CoTiMA2 Julia methodology and usage: see the installed vignette
+    \emph{Using the Julia Estimation Backend in CoTiMA2}.
+\end{itemize}
+
+\end{document}

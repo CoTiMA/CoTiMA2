@@ -356,7 +356,8 @@ ctmaInit <- function(
         cores = coresToUse,
         estimation = requested_estimation,
         backendArgs = backendArgs,
-        resolved_backend_args = resolved_backend_args
+        resolved_backend_args = resolved_backend_args,
+        workflow = "ctmaInit"
       )
       resolved_backend_args <- julia_resources$backend_args
     }
@@ -831,6 +832,11 @@ ctmaInit <- function(
     Msg <- "################################################################################# \n############# Set ctsem Model Parameters to fit all Primary Studies ############# \n#################################################################################"
     message(Msg)
 
+    location_specs <- .ctma_normalize_location_specs(
+      cint, manifestMeans, n.latent, n.var)
+    cint <- location_specs$cint
+    manifestMeans <- location_specs$manifestMeans
+
     namesAndParams <- ctmaLabels(
       n.latent=n.latent,
       n.manifest=n.manifest,
@@ -1187,6 +1193,12 @@ ctmaInit <- function(
           }
 
         }
+
+        .ctma_check_binary_intercepts(
+          currentModel, binaries,
+          process_intercepts = randomIntercepts %in% c("CINT", "MANIFEST") ||
+            indVarying %in% c("CINT", "MANIFEST")
+        )
 
         if (fit == FALSE) {
           print(paste0("#################################################################################"))
