@@ -1,3 +1,15 @@
+# CoTiMA2 0.14.9
+
+- Added a guarded Julia ML subset warm start. With
+  `backendArgs$warm_start = "auto"`, CoTiMA2 samples complete persons within
+  studies, enlarges the requested fraction for base-parameter count,
+  repeated-measurement, study-coverage, and binary-category requirements, and
+  optimizes base parameters while TI effects remain zero.
+- A subset candidate is accepted only when its full-data objective is finite
+  and no worse than the ordinary start. Explicit `inits` disable the pilot.
+  Detailed selection, optimization, validation, and timing diagnostics are
+  retained in `fit$warm_start` and `fit$warm_start_timing`.
+
 # CoTiMA2 0.14.8
 
 - `ctmaFit(backend="julia", indVarying="CINT")` and its `"MANIFEST"`

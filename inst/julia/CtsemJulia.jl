@@ -13,6 +13,7 @@ export ctsem_loglik, ctsem_negloglik, ctsem_gradient, ctsem_optimize,
        ctsem_re_loglik_by_subject, ctsem_re_logposterior_and_gradient,
        ctsem_hessian_by_subject, ctsem_vcov_by_subject,
        ctsem_optimize_by_subject, ctsem_optimize_auto, ctsem_optimize_staged,
+       ctsem_optimize_warm_start,
        ctsem_optimize_scaled, scaled_minimizer,
        ctsem_optimize_whitened, whitened_minimizer,
        ctsem_logprior, ctsem_logposterior_and_gradient, ctsem_nuts,
@@ -977,6 +978,141 @@ function ctsem_gradient_by_subject(rawest_r, sd; chunksize::Integer=7,
         end
         return g
     end
+end
+
+"""
+    ctsem_optimize_warm_start(rawest, sd, subjects; ...)
+
+Optimize only the population/base coordinates over a supplied subset of whole
+subjects. TI-predictor effects are set to zero and remain inactive. The return
+value retains the complete raw-vector layout required by the full-data fit.
+"""
+function ctsem_optimize_warm_start(rawest_r, sd, subjects_r;
+                                   maxiters::Integer=250,
+                                   show_trace::Bool=true,
+                                   threaded::Bool=false,
+                                   initial_raw_step::Real=0.01,
+                                   gradient_tolerance::Real=1e-3,
+                                   function_relative_tolerance::Real=0.0,
+                                   parameter_relative_tolerance::Real=0.0)
+    check_supported(sd)
+    start = Float64.(fvec(rawest_r))
+    d = prepare_subject_data(sd)
+    selected = unique(Int.(collect(subjects_r)))
+    isempty(selected) && error("Warm-start subject subset is empty")
+    all(si -> 1 <= si <= d.nsubjects, selected) ||
+        error("Warm-start subject index is out of range")
+    nparams = d.nparams
+    length(start) == nparams + d.ntipredeffects ||
+        error("Warm-start raw parameter vector has the wrong length")
+    start[nparams+1:end] .= 0.0
+
+    function subset_value(base)
+        localraw = fvec(base)
+        contribution(si) = subject_loglik(
+            localraw, d, d.firstrow[si], d.lastrow[si])
+        if threaded && SUBJECT_THREADS[] > 1 && length(selected) > 1 &&
+           !(eltype(localraw) <: ForwardDiff.Dual)
+            workers = min(SUBJECT_THREADS[], length(selected))
+            partials = zeros(eltype(localraw), workers)
+            Threads.@threads :static for worker in 1:workers
+                first = floor(Int, (worker - 1) * length(selected) / workers) + 1
+                last = floor(Int, worker * length(selected) / workers)
+                for position in first:last
+                    partials[worker] += contribution(selected[position])
+                end
+            end
+            return -sum(partials)
+        end
+        -sum(contribution(si) for si in selected)
+    end
+
+    function subset_gradient(base)
+        T = eltype(base)
+        if threaded && SUBJECT_THREADS[] > 1 && length(selected) > 1
+            workers = min(SUBJECT_THREADS[], length(selected))
+            partials = [zeros(T, nparams) for _ in 1:workers]
+            Threads.@threads :static for worker in 1:workers
+                first = floor(Int, (worker - 1) * length(selected) / workers) + 1
+                last = floor(Int, worker * length(selected) / workers)
+                for position in first:last
+                    si = selected[position]
+                    f = q -> -subject_loglik(
+                        q, d, d.firstrow[si], d.lastrow[si])
+                    partials[worker] .+= ForwardDiff.gradient(f, base)
+                end
+            end
+            return reduce(+, partials)
+        end
+        g = zeros(T, nparams)
+        for si in selected
+            f = q -> -subject_loglik(q, d, d.firstrow[si], d.lastrow[si])
+            g .+= ForwardDiff.gradient(f, base)
+        end
+        g
+    end
+
+    base0 = copy(start[1:nparams])
+    g0 = subset_gradient(base0)
+    scale = sqrt.(initial_raw_step ./
+        max.(abs.(g0), initial_raw_step))
+    scale = clamp.(scale, 1e-6, 1.0)
+    best_value = Ref(Inf)
+    best_u = Ref(zeros(nparams))
+    to_base(u) = base0 .+ scale .* u
+    function f(u)
+        try
+            value = subset_value(to_base(u))
+            if isfinite(value) && value < best_value[]
+                best_value[] = value
+                best_u[] = copy(u)
+            end
+            isfinite(value) ? value : Inf
+        catch err
+            if err isa PosDefException || err isa SingularException ||
+               err isa DomainError || err isa TaskFailedException
+                return Inf
+            end
+            rethrow()
+        end
+    end
+    function g!(g, u)
+        try
+            g .= scale .* subset_gradient(to_base(u))
+        catch err
+            if err isa PosDefException || err isa SingularException ||
+               err isa DomainError || err isa TaskFailedException
+                fill!(g, zero(eltype(g)))
+                return nothing
+            end
+            rethrow()
+        end
+        nothing
+    end
+    options = Optim.Options(
+        iterations=maxiters, show_trace=false, store_trace=false,
+        callback=optimizer_progress_callback(show_trace),
+        allow_f_increases=false,
+        g_abstol=max(eps(Float64), minimum(scale) * gradient_tolerance),
+        f_reltol=function_relative_tolerance,
+        x_reltol=parameter_relative_tolerance)
+    method = Optim.LBFGS(
+        linesearch=Optim.LineSearches.BackTracking(iterations=40))
+    starting_objective = f(zeros(nparams))
+    result = Optim.optimize(f, g!, zeros(nparams), method, options)
+    show_trace && println()
+    estimates = copy(start)
+    estimates[1:nparams] .= to_base(best_u[])
+    final_gradient = subset_gradient(estimates[1:nparams])
+    (
+        result=result, estimates=estimates, scale=scale,
+        subjects=selected, subject_count=length(selected),
+        starting_objective=starting_objective,
+        best_objective=best_value[],
+        iterations=Optim.iterations(result),
+        initial_maximum_absolute_gradient=maximum(abs.(g0)),
+        maximum_absolute_gradient=maximum(abs.(final_gradient))
+    )
 end
 
 "Compare serial and bounded-thread subject gradients and enable only exact parallel AD."

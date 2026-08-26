@@ -393,6 +393,9 @@ mlFit <- ctmaJuliaFit(
   parallel_starts = 4,                # run the starts concurrently
   threads_per_start = 2,              # subject threads in each ML process
   multistart_jitter = 0.10,           # relative jitter after the first start
+  warm_start = "auto",               # guarded subset pilot for starting values
+  warm_start_fraction = 0.10,        # initial requested fraction of persons
+  warm_start_maxiters = 250,         # iterations of the subset pilot
   maxiters = 5000,                    # maximum iterations per stage
   gradient_tolerance = 0.005,         # raw-gradient convergence requirement
   uncertainty = TRUE,                 # observed Hessian and covariance
@@ -487,6 +490,25 @@ warmup than a diagonal metric, especially when there are many parameters.
   \item[\code{multistart_jitter}] Relative raw-scale perturbation for starts
     after the first.  The default 0.1 is a ten-percent perturbation, with a
     small scale floor for parameters initialized at zero.
+  \item[\code{warm_start}] \code{"auto"} (the default), \code{TRUE}, or
+    \code{FALSE}. Before the ordinary full-data ML fit, the automatic option
+    may estimate population/base parameters on a stratified subset of complete
+    persons while keeping TI-predictor effects fixed at zero. Explicitly
+    supplied \code{inits} disable this pilot.
+  \item[\code{warm_start_fraction}] Initially requested fraction of persons
+    (default 0.10). This is not a hard limit: identification, study, repeated-
+    measurement, and binary-category checks can enlarge the pilot.
+  \item[\code{warm_start_subjects_per_parameter}] Minimum number of informative
+    persons per population/base parameter (default 20).
+  \item[\code{warm_start_minimum_per_study}] Minimum number of persons sampled
+    from every study (default 25), or every available person in a smaller
+    study.
+  \item[\code{warm_start_maximum_subjects}] Soft computational ceiling
+    (default 5000). Structural minima take priority over this ceiling.
+  \item[\code{warm_start_binary_minimum}] Minimum persons representing every
+    available zero and one category of each binary manifest (default 20).
+  \item[\code{warm_start_maxiters}] Maximum L-BFGS iterations in the subset
+    pilot (default 250).
   \item[\code{carefulFit}] If \code{TRUE} (recommended), first optimize
     population parameters with TI effects fixed, then include TI effects, and
     finally perform a jointly rescaled refinement when needed.
@@ -939,6 +961,19 @@ An optimizer may stop below \code{maxiters} because an enabled convergence
 criterion has been met.  Conversely, reaching \code{maxiters} with a large
 gradient is not convergence.  When \code{carefulFit=TRUE}, iteration totals are
 distributed across stages and \code{maxiters} applies to each stage.
+
+With \code{warm_start="auto"}, CoTiMA2 first determines whether a smaller pilot
+is both useful and defensible. Complete person records are sampled within
+studies; the requested fraction is enlarged when necessary for the number of
+base parameters, repeated measurements, small studies, or binary categories.
+For a pooled RI model, at least three observations identify an informative
+person for this check. If a defensible pilot would require at least 80 percent
+of all persons, the automatic pilot is skipped. After subset optimization, its
+full-length candidate vector is evaluated on all data and accepted only when
+its full-data objective is finite and no worse than the ordinary starting
+point. Thus the pilot cannot silently replace a better default start. Details
+are retained in \code{fit$warm_start} and timing in
+\code{fit$warm_start_timing}.
 
 An almost-zero negative Hessian eigenvalue can be numerical round-off; a
 clearly non-positive or ill-conditioned Hessian can indicate weak

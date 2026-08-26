@@ -17,7 +17,10 @@ test_that("Julia user-facing functions and controls are available", {
   expect_true(all(c(
     "estimation", "inits", "carefulFit", "multistart",
     "parallel_starts", "threads_per_start", "parallel_chains",
-    "threads_per_chain"
+    "threads_per_chain", "warm_start", "warm_start_fraction",
+    "warm_start_subjects_per_parameter", "warm_start_minimum_per_study",
+    "warm_start_maximum_subjects", "warm_start_binary_minimum",
+    "warm_start_maxiters"
   ) %in% fit_arguments))
 })
 
@@ -33,6 +36,7 @@ test_that("the packaged Julia project declares the backend dependencies", {
   expect_true(any(grepl("using ForwardDiff", backend, fixed = TRUE)))
   expect_true(any(grepl("using Optim", backend, fixed = TRUE)))
   expect_true(any(grepl("validate_parallel_subjects", backend, fixed = TRUE)))
+  expect_true(any(grepl("ctsem_optimize_warm_start", backend, fixed = TRUE)))
   expect_true(any(grepl("Threads.@threads :static", backend, fixed = TRUE)))
 })
 

@@ -1591,6 +1591,17 @@ The restricted version, in which only a single covariance matrix of RI/RMM is es
 
 The unrestricted full CoTiMA with RI or RMM using traits/intercepts covariance matrices for each primary study separately is implemented by using the argument \code{randomIntercepts}\code{=}\code{"}\code{CINT}\code{"} (for RI) and \code{randomIntercepts}\code{=}\code{"}\code{MANIFEST}\code{"} (for RMM). These models have a complex internal model structure which could challenge the fitting algorithm. In case the model with \code{randomIntercepts} has the smallest \emph{-2ll value} and no estimation problems are reported, these results should be preferred over the model using \code{indVarying}. When this is not the case, see Section 10.3 on optimizing model fit.
 
+When the Julia backend is used for a large model, the default
+\code{warm\_start="auto"} in \code{backendArgs} may first estimate the population/base
+parameters from a checked, study-stratified subset of complete persons. The
+initial subset fraction is 10 percent but is automatically enlarged when the
+number of parameters, study coverage, repeated measurements, or binary
+response categories require more information. TI-predictor effects are not
+estimated in this preliminary pass. The resulting values are accepted only
+when they produce a finite full-data objective that is no worse than the
+ordinary starting point. Explicit user-supplied \code{inits} disable this
+automatic pass.
+
 Note, again, that using the argument \code{randomIntercepts} requires that all primary studies have at least three time points each. This is because the covariance matrix of random intercepts, which is estimated for each study, cannot be estimated when only two time points are available. With the argument \code{indVarying}, only ``some'' primary studies have to have three or more time points because a single covariance matrix of random intercepts is estimated across all studies. There have been no Monte Carlo simulation studies yet to suggest how many ``some'' primary studies should be; however, a rough estimate probably is 15\%. Typically, the fit achieved with the argument \code{randomIntercepts} is better, but fitting an additional model with the argument \code{indVarying}, could be useful to check for consistency of results.
 
 So overall there are four different alternatives to control for individual differences when conduction and full or moderated CoTiMA. Sometimes one alternative is numerically easier to fit and leads to better model convergence than the other alternatives. This is demonstrated in Figure 62, where we use the list of primary studies (\code{study3plusList}) created in Section 10.1.

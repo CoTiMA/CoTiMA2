@@ -26,6 +26,13 @@ ctmaJuliaFit(
   parallel_starts = 1L,
   threads_per_start = NULL,
   multistart_jitter = 0.1,
+  warm_start = "auto",
+  warm_start_fraction = 0.1,
+  warm_start_subjects_per_parameter = 20L,
+  warm_start_minimum_per_study = 25L,
+  warm_start_maximum_subjects = 5000L,
+  warm_start_binary_minimum = 20L,
+  warm_start_maxiters = 250L,
   carefulFit = TRUE,
   staged_optimization = NULL,
   confidence = 0.95,
@@ -115,6 +122,28 @@ worker. By default this equals `julia_threads`.}
 \item{multistart_jitter}{Relative raw-scale jitter for starts after the
 first. A value of 0.1 means a 10 percent perturbation, with a small floor
 for coordinates initialized at zero.}
+
+\item{warm_start}{\code{"auto"} (the default), \code{TRUE}, or
+\code{FALSE}. Before full-data ML, an automatic warm start may optimize
+only population/base parameters on a stratified subset of complete
+subjects. Explicit \code{inits} disable this pass.}
+
+\item{warm_start_fraction}{Initial fraction of subjects requested for the
+warm-start pilot. Structural minimum rules may enlarge it.}
+
+\item{warm_start_subjects_per_parameter}{Minimum informative subjects per
+population/base parameter.}
+
+\item{warm_start_minimum_per_study}{Minimum subjects retained from each
+study, or all subjects when a study is smaller.}
+
+\item{warm_start_maximum_subjects}{Soft maximum pilot size. Identification,
+study, and binary-category minima take precedence.}
+
+\item{warm_start_binary_minimum}{Minimum subjects representing each
+available zero/one category of every binary manifest.}
+
+\item{warm_start_maxiters}{Maximum L-BFGS iterations for the subset pilot.}
 
 \item{carefulFit}{Whether to use staged optimization for models with TI/WEC
 effects: optimize base parameters first, then all effects, then perform a

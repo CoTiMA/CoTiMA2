@@ -88,6 +88,18 @@ manifest means are consequently zero and mean-level heterogeneity between
 studies is not the target. The RI component instead concerns the covariance of
 stable person-level deviations.
 
+For large RI models, Julia ML uses \code{warm_start="auto"} by default. The
+pilot samples complete persons within studies and estimates only the common
+population/base parameters, including the pooled person-level RI covariance;
+TI-predictor effects remain zero during this pass. The initial ten-percent
+request is enlarged when necessary for parameter count, study coverage,
+repeated measurements, or binary response categories. A pilot candidate is
+used only if its objective on the complete dataset is finite and no worse than
+the ordinary start. User-supplied \code{inits} always take precedence and
+disable the pilot. This person-subset warm start is computational
+initialization, not the later study-level random-effects distribution or its
+Laplace integration.
+
 \section{The ordinary continuous-time process}
 
 Let $s=1,\ldots,K$ index studies and $i=1,\ldots,n_s$ persons. For $m$
