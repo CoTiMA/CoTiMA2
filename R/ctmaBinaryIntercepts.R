@@ -20,6 +20,55 @@
   list(cint = cint, manifestMeans = manifestMeans)
 }
 
+# Translate ctsem's individually varying intercept branch to CoTiMA's
+# Julia-compatible augmented-state representation. The pooled flag distinguishes
+# the restricted model from randomIntercepts, whose covariance structure may
+# vary between studies.
+.ctma_julia_pooled_intercepts <- function(indVarying, randomIntercepts,
+    backend, announce = TRUE, workflow = "ctmaFit") {
+  pooled <- identical(backend, "julia") &&
+    identical(randomIntercepts, FALSE) &&
+    indVarying %in% c("CINT", "MANIFEST")
+  if (!pooled) return(list(
+    indVarying = indVarying,
+    randomIntercepts = randomIntercepts,
+    pooled = FALSE
+  ))
+
+  representation <- indVarying
+  if (isTRUE(announce)) message(
+    "Note: For ", workflow, "(backend='julia'), indVarying='",
+    representation, "' is represented by Julia-compatible latent phantom ",
+    "processes with one pooled random-intercept covariance matrix."
+  )
+  list(
+    indVarying = FALSE,
+    randomIntercepts = representation,
+    pooled = TRUE
+  )
+}
+
+# In the augmented model, retain the freely estimated baseline covariance of
+# the phantom intercepts but remove every TI effect on covariance parameters
+# involving a phantom state. Phantom means and their TI effects are deliberately
+# left untouched: this separation also provides a clean extension point for a
+# future study-random-effects/Laplace layer.
+.ctma_pool_phantom_covariance <- function(model, original_nlatent) {
+  if (is.null(model$pars) || !is.data.frame(model$pars)) stop(
+    "The ctsem model has no parameter table to pool phantom covariances.",
+    call. = FALSE)
+  original_nlatent <- as.integer(original_nlatent)[1L]
+  pars <- model$pars
+  phantom_covariance <- !is.na(pars$matrix) & pars$matrix == "T0VAR" &
+    ((!is.na(pars$row) & pars$row > original_nlatent) |
+       (!is.na(pars$col) & pars$col > original_nlatent))
+  effect_columns <- grep("_effect$", names(pars), value = TRUE)
+  if (any(phantom_covariance) && length(effect_columns)) {
+    model$pars[phantom_covariance, effect_columns] <- FALSE
+  }
+  model
+}
+
 # Validate location parameters for binary manifest variables using the final
 # ctsem parameter table. A CINT counts only when it is connected to the
 # manifest variable through an active loading.

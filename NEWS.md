@@ -1,3 +1,15 @@
+# CoTiMA2 0.14.8
+
+- `ctmaFit(backend="julia", indVarying="CINT")` and its `"MANIFEST"`
+  counterpart now use a Julia-compatible augmented phantom-process model
+  instead of ctsem's unsupported state-dependent `nindvarying` branch.
+- The restricted model freely estimates one pooled person-level
+  random-intercept covariance matrix while fixing all TI effects on phantom
+  variances and T0--phantom covariances. Phantom means and their TI effects
+  remain available. The returned argument list records
+  `randomInterceptStructure = "pooled"`, providing an explicit extension point
+  for later study-random-effects or Laplace estimation.
+
 # CoTiMA2 0.14.7
 
 - Removed captured scalar and array aliases from threaded likelihood and

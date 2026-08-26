@@ -351,6 +351,23 @@ the latent and manifest dimensions, respectively.  Models using
 \code{randomIntercepts="MANIFEST"} are exempt from this check because the
 requested location component is already estimated by that specification.
 
+For \code{backend="julia"}, the restricted specifications
+\code{indVarying="CINT"} and \code{indVarying="MANIFEST"} are translated
+automatically into Julia-compatible time-invariant phantom processes.  Their
+baseline random-intercept (co-)variance matrix remains freely estimated, but
+TI effects on phantom variances and on covariances between substantive T0
+states and phantom states are fixed to zero.  Consequently, one common
+person-level random-intercept covariance matrix is estimated across studies.
+The phantom means can still be estimated and influenced by TI predictors.
+This is different from setting the phantom variance itself to zero, which
+would remove the person-level random effect.
+
+The pooled construction deliberately separates person-level random intercepts
+from later study-level random effects.  A future study-random-effects or
+Laplace layer can therefore place a distribution across studies on selected
+parameters without reintroducing ctsem's unsupported state-dependent
+\code{nindvarying} branch.
+
 The Julia backend evaluates binary observations with a logit response model,
 adds their Bernoulli log-likelihood contributions, and uses the corresponding
 ctsem measurement Jacobian and Bernoulli variance in the extended Kalman

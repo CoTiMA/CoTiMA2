@@ -30,7 +30,7 @@
 #' @param ind.mod.names vector of names for individual level (!) moderators used in output
 #' @param ind.mod.number which in the vector of individual level (!) moderator values shall be used (e.g., 2 for a single moderator or 1:3 for 3 moderators simultaneously)
 #' @param ind.mod.type 'cont' or 'cat' of the individual level (!) moderators (mixing them in a single model not yet possible)
-#' @param indVarying allows continuous time intercepts to vary at the individual level (random intercepts model, accounts for unobserved heterogeneity)
+#' @param indVarying allows continuous time intercepts to vary at the individual level (random intercepts model, accounts for unobserved heterogeneity). With the Julia backend, CINT and MANIFEST specifications are automatically represented by augmented phantom processes with one pooled random-intercept covariance matrix.
 #' @param indVaryingT0 deprecated. Automatically set to NULL.
 #' @param inits vector of start values
 #' @param invariantDrift  drift labels for drift effects that are set invariant across primary studies (default = all drift effects).
@@ -292,12 +292,12 @@ ctmaFit <- function(
       if (  (indVarying == "Cint") | (indVarying == "cint")) indVarying <- "CINT"
       if ( (indVarying == "Manifest") | (indVarying == "manifest")) indVarying <- "MANIFEST"
       if (indVarying == TRUE) indVarying <- "MANIFEST"
-      #
-      randomInterceptsSettings <- randomIntercepts
+      indVaryingSettings <- indVarying
       #
       if ( (randomIntercepts == 'cint')  | (randomIntercepts == 'Cint')) randomIntercepts <- "CINT"
       if ( (randomIntercepts == "Manifest") | (randomIntercepts == "manifest") ) randomIntercepts <- "MANIFEST"
       if (randomIntercepts == TRUE)  randomIntercepts <- "MANIFEST"
+      randomInterceptsSettings <- randomIntercepts
       if (randomIntercepts == "MANIFEST") {
         indVarying <- FALSE
         indVaryingT0 <- NULL
@@ -313,6 +313,15 @@ ctmaFit <- function(
         ErrorMsg <- "\n The arguments \"indVarying\" and \"randomIntercepts\" have to be TRUE or FALSE or \"MANIFEST\" or \"CINT\". "
         stop(ErrorMsg)
       }
+
+      pooled_intercepts <- .ctma_julia_pooled_intercepts(
+        indVarying = indVarying,
+        randomIntercepts = randomIntercepts,
+        backend = backend
+      )
+      indVarying <- pooled_intercepts$indVarying
+      randomIntercepts <- pooled_intercepts$randomIntercepts
+      pooledRandomIntercepts <- pooled_intercepts$pooled
     }
 
     # adapt display of information during model fit
@@ -1180,7 +1189,11 @@ ctmaFit <- function(
   #if ((randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") ) {
   if ((randomIntercepts == "CINT") | (randomIntercepts == "MANIFEST") ) {
     print(paste0("#################################################################################"))
-    print(paste0("# Note: Full RI model fitted (RI cov per study) instead of single RI cov matrix #"))
+    if (isTRUE(pooledRandomIntercepts)) {
+      print(paste0("######## Note: Restricted RI model fitted (one pooled RI covariance). ########"))
+    } else {
+      print(paste0("# Note: Full RI model fitted (RI cov per study) instead of single RI cov matrix #"))
+    }
     print(paste0("#################################################################################"))
 
     nullMat <- matrix(0, n.latent, n.latent); nullMat
@@ -1284,6 +1297,9 @@ ctmaFit <- function(
     tmp1 <- which(is.na(stanctModel$pars$param)); tmp1
     tmp2 <- grep("_effect", colnames(stanctModel$pars)); tmp2
     stanctModel$pars[tmp1, tmp2] <- FALSE
+    if (isTRUE(pooledRandomIntercepts)) {
+      stanctModel <- .ctma_pool_phantom_covariance(stanctModel, n.latent)
+    }
     stanctModel$manifesttype <- binaries
     if ( (indVarying == 'CINT') & (!(is.null(binaries.orig))) ) {
       tmp1 <- grep("_effect", colnames(stanctModel$pars)); tmp1
@@ -2084,7 +2100,7 @@ ctmaFit <- function(
                         mod.number=mod.number,
                         mod.type=mod.type,
                         mod.names=mod.names,
-                        indVarying=indVarying,
+                        indVarying=indVaryingSettings,
                         coresToUse=coresToUse,
                         scaleTI=scaleTI,
                         scaleMod=scaleMod,
@@ -2110,6 +2126,9 @@ ctmaFit <- function(
                         manifestVars=manifestVarsParams,
                         WEC=WEC,
                         randomIntercepts=randomInterceptsSettings,
+                        randomInterceptStructure=if (isTRUE(pooledRandomIntercepts)) "pooled" else if (
+                          randomIntercepts %in% c("CINT", "MANIFEST")
+                        ) "study-specific" else "none",
                         CoTiMAStanctArgs=CoTiMAStanctArgs,
                         backend=backend,
                         backendArgs=resolved_backend_args,
@@ -2185,7 +2204,7 @@ ctmaFit <- function(
                         mod.number = mod.number,
                         mod.type = mod.type,
                         mod.names = mod.names,
-                        indVarying = indVarying,
+                        indVarying = indVaryingSettings,
                         coresToUse = coresToUse,
                         scaleTI = scaleTI,
                         scaleMod = scaleMod,
@@ -2211,6 +2230,9 @@ ctmaFit <- function(
                         manifestVars = manifestVarsParams,
                         WEC = WEC,
                         randomIntercepts = randomInterceptsSettings,
+                        randomInterceptStructure = if (isTRUE(pooledRandomIntercepts)) "pooled" else if (
+                          randomIntercepts %in% c("CINT", "MANIFEST")
+                        ) "study-specific" else "none",
                         T0var = T0var,
                         priors = priors,
                         binaries = binaries,

@@ -69,6 +69,17 @@ The two occurrences of ``random'' in RI CoTiMA-RE refer to different levels:
   \item \textbf{RE} (random effects) refers to differences \emph{between
     primary studies} in selected model parameters.
 \end{itemize}
+
+These levels must not be collapsed into one set of fixed study indicators.
+With \code{backend="julia"}, \code{indVarying="CINT"} (or
+\code{"MANIFEST"}) uses augmented time-invariant phantom processes and
+estimates one pooled person-level RI covariance matrix.  The baseline phantom
+(co-)variances are free; only their TI-predictor effects are fixed to zero.
+The phantom variance must not itself be fixed to zero, because that would
+remove the person-level random intercept.  Study-level random effects remain a
+separate extension: selected study parameters can later be assigned a
+between-study distribution and integrated, preferably by a Laplace
+approximation, while retaining the same Julia-compatible phantom-state model.
 Thus, an RI CoTiMA-RE is a three-level model: repeated observations are nested
 within persons, persons are nested within studies, and selected parameters
 vary across a population of studies. CoTiMA data are commonly synthesized from

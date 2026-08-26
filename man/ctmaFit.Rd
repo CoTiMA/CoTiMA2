@@ -107,7 +107,7 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{ind.mod.type}{'cont' or 'cat' of the individual level (!) moderators (mixing them in a single model not yet possible)}
 
-\item{indVarying}{allows continuous time intercepts to vary at the individual level (random intercepts model, accounts for unobserved heterogeneity)}
+\item{indVarying}{allows continuous time intercepts to vary at the individual level (random intercepts model, accounts for unobserved heterogeneity). With the Julia backend, CINT and MANIFEST specifications are automatically represented by augmented phantom processes with one pooled random-intercept covariance matrix.}
 
 \item{indVaryingT0}{deprecated. Automatically set to NULL.}
 
