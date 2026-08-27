@@ -511,7 +511,11 @@ warmup than a diagonal metric, especially when there are many parameters.
     pilot (default 250).
   \item[\code{carefulFit}] If \code{TRUE} (recommended), first optimize
     population parameters with TI effects fixed, then include TI effects, and
-    finally perform a jointly rescaled refinement when needed.
+    finally perform a jointly rescaled refinement when needed. When complete
+    raw estimates from a previous fit of the identical model are supplied via
+    \code{inits}, setting \code{carefulFit=FALSE} usually provides the more
+    efficient refinement because all parameters are optimized jointly from
+    that retained point.
   \item[\code{staged_optimization}] Deprecated alias for \code{carefulFit}; do
     not use it in new analyses.
   \item[\code{confidence}] Confidence level used for ML raw-parameter intervals.
@@ -974,6 +978,43 @@ its full-data objective is finite and no worse than the ordinary starting
 point. Thus the pilot cannot silently replace a better default start. Details
 are retained in \code{fit$warm_start} and timing in
 \code{fit$warm_start_timing}.
+
+\subsubsection{Continuing an existing Julia fit}
+
+When \code{inits} contains the complete raw estimates from an earlier fit of
+the identical model, the first stage of careful fitting is often unnecessary.
+Stage 1 does not reset existing TI-predictor effects to zero: it holds the
+supplied TI effects fixed while re-optimizing only the population/base
+parameters. Stage 2 then releases all parameters, and Stage 3 recomputes the
+joint scaling and refines the solution when necessary. Starting a refinement
+from an already suitable joint solution can therefore avoid Stage 1 by using
+\code{carefulFit=FALSE}:
+
+<<continue-julia-fit, eval=FALSE>>=
+refineArgs <- fit_config$recommended
+refineArgs$inits <- previous_fit$coefficients$raw
+refineArgs$carefulFit <- FALSE
+refineArgs$warm_start <- FALSE
+refineArgs$optimizer_initial_step <- 0.001
+refineArgs$maxiters <- 500L
+
+refined_fit <- ctmaFit(
+  ctmaInitFit = initFit_O,
+  backend = "julia",
+  scaleTime = 1/12,
+  binaries = c(1, 0),
+  randomIntercepts = "CINT",
+  backendArgs = refineArgs
+)
+@
+
+Explicit \code{inits} already disable the subset warm start, so
+\code{warm_start=FALSE} is redundant but documents the intended refinement
+workflow. Reusing raw estimates is safe only when the data and their ordering,
+\code{scaleTime}, binary specification, random-intercept or individual-varying
+specification, TI predictors, and parameter ordering are unchanged. Otherwise
+the raw vector can have a different length or meaning; staged fitting may then
+remain useful, or those estimates must not be reused directly.
 
 An almost-zero negative Hessian eigenvalue can be numerical round-off; a
 clearly non-positive or ill-conditioned Hessian can indicate weak
