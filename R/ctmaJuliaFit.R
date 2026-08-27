@@ -1448,6 +1448,11 @@ ctAddJuliaSamples <- function(
   setup_source <- .ctmaJuliaReadObject(setup)
   bridge_fit <- if (.ctmaJuliaIsUnfittedCoTiMA(setup_source)) {
     .ctmaJuliaGenerateSetup(setup_source)
+  } else if (is.list(setup_source) &&
+             is.list(setup_source$fit) &&
+             !is.null(setup_source$fit$standata) &&
+             !is.null(setup_source$fit$setup)) {
+    setup_source$fit
   } else if (is.list(setup_source) && !is.null(setup_source$standata) &&
              !is.null(setup_source$setup) &&
              is.null(setup_source$stanfit)) {
@@ -1554,6 +1559,127 @@ ctAddJuliaSamples <- function(
 #' @rdname ctAddJuliaSamples
 #' @export
 ctsmAddJuliaSamples <- ctAddJuliaSamples
+
+#' Transform Julia point estimates without calculating uncertainty
+#'
+#' Applies ctsem's parameter constraints and generated-quantity transformations
+#' to the raw maximum-likelihood estimates stored in a completed
+#' `ctmaJuliaFit`.  Unlike [ctAddJuliaSamples()], this function does not require
+#' a Hessian or covariance matrix, does not draw samples, and does not repeat
+#' optimization.  It is intended for inspecting population, TI-predictor,
+#' matrix, and study-specific point estimates after a fast fit performed with
+#' `uncertainty = FALSE` and `transformed = FALSE`.
+#'
+#' The resulting transformed components are point estimates only.  They must
+#' not be interpreted as standard errors, confidence intervals, or evidence
+#' that the optimizer converged.
+#'
+#' @param fit A completed `ctmaJuliaFit` object.
+#' @param setup A matching fitted, `fit=FALSE`, or prepared ctsem/CoTiMA setup
+#'   object supplying ctsem's transformation model.
+#' @param cores Number of cores passed to ctsem's transformation code.
+#' @param digits Number of decimal places used internally by the ctsem summary.
+#' @return The updated `ctmaJuliaFit` object. Its `coefficients$transformed`,
+#'   `coefficients$population`, `coefficients$tipred`,
+#'   `coefficients$matrices`, and, where available, `coefficients$study`
+#'   components contain point transformations. No covariance matrix,
+#'   transformed draws, or uncertainty summary is added.
+#' @export
+ctmaTransformJuliaFit <- function(fit, setup, cores = 1L, digits = 4L) {
+  .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaTransformJuliaFit")
+  on.exit(.ctma_timer(), add = TRUE)
+  if (!inherits(fit, "ctmaJuliaFit")) {
+    stop("'fit' must inherit from 'ctmaJuliaFit'.", call. = FALSE)
+  }
+  cores <- suppressWarnings(as.integer(cores)[1L])
+  digits <- suppressWarnings(as.integer(digits)[1L])
+  if (is.na(cores) || cores < 1L) {
+    stop("'cores' must be a positive integer.", call. = FALSE)
+  }
+  if (is.na(digits) || digits < 1L) {
+    stop("'digits' must be a positive integer.", call. = FALSE)
+  }
+
+  setup_source <- .ctmaJuliaReadObject(setup)
+  bridge_fit <- if (.ctmaJuliaIsUnfittedCoTiMA(setup_source)) {
+    .ctmaJuliaGenerateSetup(setup_source)
+  } else if (is.list(setup_source) &&
+             is.list(setup_source$fit) &&
+             !is.null(setup_source$fit$standata) &&
+             !is.null(setup_source$fit$setup)) {
+    setup_source$fit
+  } else if (is.list(setup_source) && !is.null(setup_source$standata) &&
+             !is.null(setup_source$setup) &&
+             is.null(setup_source$stanfit)) {
+    setup_source
+  } else {
+    .ctmaJuliaExtractFit(setup_source)
+  }
+  bridge_fit <- .ctmaJuliaAttachConstraintModel(bridge_fit)
+  estimates <- as.numeric(coef(fit, type = "raw"))
+  expected <- length(bridge_fit$stanfit$rawest)
+  if (expected != length(estimates)) {
+    stop(
+      sprintf(
+        paste0(
+          "The ctsem setup has %d raw parameters, but the Julia fit has %d; ",
+          "they do not describe the same parameterization."
+        ),
+        expected, length(estimates)
+      ),
+      call. = FALSE
+    )
+  }
+  if (any(!is.finite(estimates))) {
+    stop("The Julia fit contains non-finite raw estimates.", call. = FALSE)
+  }
+
+  # ctsem's transformation routine accepts posterior/sample rows. Repeating
+  # the same ML point twice evaluates generated quantities deterministically
+  # while deliberately introducing no sampling or Hessian approximation.
+  point_rows <- matrix(
+    rep(estimates, each = 2L), nrow = 2L, byrow = FALSE
+  )
+  loglik <- if (!is.null(fit$optimization)) {
+    fit$optimization$loglik
+  } else {
+    fit$likelihood$julia
+  }
+  transformed <- .ctmaJuliaTransformSummary(
+    fit = bridge_fit,
+    estimates = estimates,
+    covariance = matrix(0, nrow = length(estimates), ncol = length(estimates)),
+    loglik = loglik,
+    draws = 2L,
+    cores = cores,
+    raw_draws = point_rows,
+    digits = digits
+  )
+  cotima <- .ctmaJuliaCoTiMAWEC(
+    object = setup_source,
+    fit = bridge_fit,
+    raw_draws = point_rows
+  )
+
+  fit$coefficients$transformed <- transformed$parameters
+  fit$coefficients$population <- transformed$summary$popmeans
+  fit$coefficients$tipred <- transformed$summary$tipreds
+  fit$coefficients$matrices <- transformed$summary$parmatrices
+  fit$coefficients$study <- if (is.null(cotima)) {
+    NULL
+  } else {
+    cotima$study_specific_parameters
+  }
+  fit$ctsem_fit <- transformed$ctsem_fit
+  fit$point_transformation <- list(
+    completed = TRUE,
+    uncertainty = FALSE,
+    draws = FALSE,
+    setup_call = match.call()
+  )
+  fit
+}
 
 #' Construct or return a ctsem summary for a Julia fit
 #'

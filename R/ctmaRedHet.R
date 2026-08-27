@@ -9,8 +9,11 @@
 #'
 #' @param activateRPB if TRUE, messages (warning, finished) could be send to smart phone (default = FALSE)
 #' @param activeDirectory the directory where to save results (if not specified, it is taken from ctmaInitFit)
-#' @param ctmaFitObject ctmaFit Object WITHOUT Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)
-#' @param ctmaFitObjectMod ctmaFit Object WITH Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)
+#' @param ctmaFitObject A ctmaFit object without moderators, fitted with
+#'   \code{studyCoding="weighted"} and \code{"DRIFT"} included in
+#'   \code{studyVarying}.
+#' @param ctmaFitObjectMod The corresponding weighted-coding ctmaFit object
+#'   with \code{"DRIFT"} in \code{studyVarying} and at least one moderator.
 #' @param digits rounding (default = 4)
 #' @param dt A vector of scalars indicating a time interval across which discrete time effects should be estimated and then used for ctmaBiG.
 #' @param undoTimeScaling if TRUE, the original time scale is used (timeScale argument possibly used in \code{\link{ctmaInit}} is undone )
@@ -58,16 +61,24 @@ ctmaRedHet <- function(activateRPB=FALSE,
       stop(ErrorMsg)
     }
 
-    if (ctmaFitObject$argumentList$WEC == FALSE){
+    uses_weighted_drift <- function(x) {
+      if (is.null(x$argumentList$studyCoding)) {
+        return(isTRUE(x$argumentList$WEC))
+      }
+      identical(x$argumentList$studyCoding, "weighted") &&
+        "DRIFT" %in% x$argumentList$studyVarying
+    }
+
+    if (!uses_weighted_drift(ctmaFitObject)){
       if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using the argument \'WEC=TRUE\' has to be supplied.
+      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using studyCoding='weighted' with 'DRIFT' in studyVarying has to be supplied.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
-    if (ctmaFitObjectMod$argumentList$WEC == FALSE){
+    if (!uses_weighted_drift(ctmaFitObjectMod)){
       if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using the argument \'WEC=TRUE\' has to be supplied.
+      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using studyCoding='weighted' with 'DRIFT' in studyVarying has to be supplied.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }

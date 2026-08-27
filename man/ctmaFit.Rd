@@ -56,6 +56,8 @@ ctmaFit(
   verbose = 0,
   WEC = FALSE,
   WECnt = TRUE,
+  studyCoding = c("dummy", "weighted"),
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR"),
   backend = c("stan", "julia"),
   backendArgs = list()
 )
@@ -161,9 +163,20 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit – for debugging}
 
-\item{WEC}{(default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
+\item{WEC}{Deprecated compatibility argument. \code{WEC=TRUE} is translated
+to \code{studyCoding="weighted"} and
+\code{studyVarying=c("CINT", "DIFFUSION", "T0VAR")} and produces a warning.}
 
 \item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
+
+\item{studyCoding}{Coding of the primary-study indicators. The default,
+\code{"dummy"}, uses one reference study. \code{"weighted"} uses
+sample-size weighted effect coding and defines the population coefficient as
+a weighted study average. This applies to both Stan and Julia.}
+
+\item{studyVarying}{Parameter-matrix families allowed to vary between primary
+studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}. Add
+\code{"DRIFT"} only when study-specific drift parameters are intended.}
 
 \item{backend}{estimation backend. \code{"stan"} is the default; use
 \code{"julia"} for the Julia backend.}

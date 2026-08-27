@@ -59,6 +59,13 @@
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit – for debugging
 #' @param WEC (default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
 #' @param WECnt (default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
+#' @param studyCoding Coding of the primary-study indicators. The default,
+#'   \code{"dummy"}, uses one reference study. \code{"weighted"} uses
+#'   sample-size weighted effect coding and defines the population coefficient
+#'   as a weighted study average. This affects both Stan- and Julia-based fits.
+#' @param studyVarying Parameter-matrix families allowed to vary between
+#'   primary studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}.
+#'   Add \code{"DRIFT"} only when study-specific drift parameters are intended.
 #' @param backend estimation backend. \code{"stan"} remains the default;
 #'   \code{"julia"} prepares the same ctsem model and data and then calls the
 #'   validated Julia ML or Bayesian engine.
@@ -179,6 +186,8 @@ ctmaFit <- function(
     verbose=0,
     WEC=FALSE,
     WECnt=TRUE,
+    studyCoding=c("dummy", "weighted"),
+    studyVarying=c("CINT", "DIFFUSION", "T0VAR"),
     backend=c("stan", "julia"),
     backendArgs=list()
 )
@@ -188,6 +197,14 @@ ctmaFit <- function(
   on.exit(.ctma_timer(), add = TRUE)
 
   cotima_call <- match.call()
+  if (is.null(WEC)) WEC <- FALSE
+  study_coding_resolution <- .ctma_resolve_study_coding(
+    studyCoding = studyCoding,
+    studyVarying = studyVarying,
+    WEC = WEC
+  )
+  studyCoding <- study_coding_resolution$coding
+  studyVarying <- study_coding_resolution$varying
   requested_fit <- if (is.null(fit)) TRUE else isTRUE(as.logical(fit)[1L])
   requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) {
     "ML"
@@ -335,14 +352,7 @@ ctmaFit <- function(
       stop(ErrorMsg)
     }
 
-    # CHD 18.12.2023
-    if (WEC == TRUE) {
-      Msg <- "The argument WEC=TRUE was used. I assume you want to mimic ctmaInit with all drift effects varying across primary studies (using weighted effect coding).
-    Therefore, I set the argument invariantDrift=\'none\', so that all drift effects vary across primary studies."
-      message(Msg)
-      invariantDrift[1] <- 'none'
-      scaleTI <- FALSE
-    }
+    if (identical(studyCoding, "weighted")) scaleTI <- FALSE
 
     if (!(is.null(invariantDrift))) { # added 12.7.2023
       if ( ((invariantDrift[1] == "none") | (invariantDrift[1] == "None") | (invariantDrift[1] == "NONE"))  & (scaleTI == TRUE) ) {
@@ -731,7 +741,7 @@ ctmaFit <- function(
     dataTmp <- dataTmp[ ,-targetCols]
 
     # use weighted effect coding
-    if (WEC == TRUE) {
+    if (identical(studyCoding, "weighted")) {
       targetCols <- grep("TI", colnames(dataTmp)); targetCols
       targetRows <- which(apply(dataTmp[, targetCols], 1, sum) == 0); targetRows # reference group
       targetN <- length(targetRows); targetN
@@ -906,7 +916,7 @@ ctmaFit <- function(
       #groupTIs <- paste0("TI", 1:(length(unique(groups))-1)); groupTIs
       n.TIpred <- (length(unique(groups))-1); n.TIpred
       groupTIs <- paste0("TI", 1:n.TIpred); groupTIs
-      if ((WEC == TRUE) & (WECnt == TRUE)) {
+      if (identical(studyCoding, "weighted") && isTRUE(WECnt)) {
         for (g in groupTIs) {
           posTI <- which(datalong_all[, g] > 0)
           negTI <- which(datalong_all[, g] < 0)
@@ -1117,6 +1127,16 @@ ctmaFit <- function(
   stanctModel$pars[stanctModel$pars$matrix %in% 'MANIFESTMEANS',paste0(stanctModel$TIpredNames,'_effect')] <- FALSE
   stanctModel$pars[stanctModel$pars$matrix %in% 'MANIFESTVAR',paste0(stanctModel$TIpredNames,'_effect')] <- FALSE
 
+  studyEffectColumns <- paste0(
+    stanctModel$TIpredNames[seq_len(n.studies - 1L)], '_effect'
+  )
+  stanctModel <- .ctma_apply_study_varying(
+    model = stanctModel,
+    study_effect_columns = studyEffectColumns,
+    studyVarying = studyVarying,
+    phantom_intercepts = FALSE
+  )
+
   if (!(is.null(cluster))) {
     stanctModel$pars[stanctModel$pars$matrix %in% 'DRIFT',paste0(stanctModel$TIpredNames[(n.studies++n.all.moderators):(n.studies+n.all.moderators+clusCounter-1)],'_effect')] <- TRUE
   }
@@ -1171,7 +1191,13 @@ ctmaFit <- function(
   tmp4 <- sort(unique(c(tmp2, tmp3))); tmp4
   varyingDrifts <- tmp1[!(tmp1 %in% tmp1[tmp4])]; varyingDrifts
 
-  if (length(varyingDrifts) > 0) stanctModel$pars[varyingDrifts, paste0(stanctModel$TIpredNames[1:(n.studies-1)],'_effect')] <- TRUE
+  driftStudyColumns <- paste0(
+    stanctModel$TIpredNames[seq_len(n.studies - 1L)], '_effect'
+  )
+  stanctModel$pars[stanctModel$pars$matrix %in% "DRIFT", driftStudyColumns] <- FALSE
+  if ("DRIFT" %in% studyVarying && length(varyingDrifts) > 0) {
+    stanctModel$pars[varyingDrifts, driftStudyColumns] <- TRUE
+  }
 
   # CHD 31. AUG 2023 (not really necessary)
   tmp1 <- which(is.na(stanctModel$pars$param)); tmp1
@@ -1254,6 +1280,16 @@ ctmaFit <- function(
     stanctModel$pars[stanctModel$pars$matrix %in% 'MANIFESTMEANS',paste0(stanctModel$TIpredNames,'_effect')] <- FALSE
     stanctModel$pars[stanctModel$pars$matrix %in% 'MANIFESTVAR',paste0(stanctModel$TIpredNames,'_effect')] <- FALSE
 
+    studyEffectColumns <- paste0(
+      stanctModel$TIpredNames[seq_len(n.studies - 1L)], '_effect'
+    )
+    stanctModel <- .ctma_apply_study_varying(
+      model = stanctModel,
+      study_effect_columns = studyEffectColumns,
+      studyVarying = studyVarying,
+      phantom_intercepts = TRUE
+    )
+
     if (!(is.null(cluster))) {
       stanctModel$pars[stanctModel$pars$matrix %in% 'DRIFT',paste0(stanctModel$TIpredNames[(n.studies++n.all.moderators):(n.studies+n.all.moderators+clusCounter-1)],'_effect')] <- TRUE
     }
@@ -1291,7 +1327,13 @@ ctmaFit <- function(
     tmp3 <- which(is.na(stanctModel$pars[tmp1, "param"])); tmp3
     tmp4 <- sort(unique(c(tmp2, tmp3))); tmp4
     varyingDrifts <- tmp1[!(tmp1 %in% tmp1[tmp4])]; varyingDrifts
-    if (length(varyingDrifts) > 0) stanctModel$pars[varyingDrifts, paste0(stanctModel$TIpredNames[1:(n.studies-1)],'_effect')] <- TRUE
+    driftStudyColumns <- paste0(
+      stanctModel$TIpredNames[seq_len(n.studies - 1L)], '_effect'
+    )
+    stanctModel$pars[stanctModel$pars$matrix %in% "DRIFT", driftStudyColumns] <- FALSE
+    if ("DRIFT" %in% studyVarying && length(varyingDrifts) > 0) {
+      stanctModel$pars[varyingDrifts, driftStudyColumns] <- TRUE
+    }
 
     # not really necessary
     tmp1 <- which(is.na(stanctModel$pars$param)); tmp1
@@ -1899,7 +1941,7 @@ ctmaFit <- function(
     DRIFTCoeff <- list()
     DRIFTCoeffMean <- DRIFTCoeffSD <- DRIFTCoeff025 <- DRIFTCoeff500 <- DRIFTCoeff975 <- list()
     WEC_estimates_original_time_scale <- list()
-    if (WEC == TRUE) {
+    if (identical(studyCoding, "weighted") && "DRIFT" %in% studyVarying) {
       n.mod.values.to.plot <- length(colnames(fitStanctModel$data$tipredsdata)[1:(n.studies-1)])+1; n.mod.values.to.plot
       modPos <- 1:(n.studies-1); modPos
       TIpred.values <- matrix(fitStanctModel$data$tipredsdata[, modPos], ncol=length(modPos))
@@ -2036,7 +2078,7 @@ ctmaFit <- function(
         WEC_estimates_original_time_scale[[p]][, 8] <- round(c(t(DRIFTCoeffMean[[p]])) / c(t(DRIFTCoeffSD[[p]])), digits)
 
       }
-    } # end if (WEC == TRUE)
+    } # end weighted DRIFT reconstruction
 
     if ( (randomIntercepts == "CINT") | (randomIntercepts == "MANIFEST") ) {
       randomIntercepts <- list(popsd=model_popsd,
@@ -2125,6 +2167,8 @@ ctmaFit <- function(
                         manifestMeans=manifestMeans,
                         manifestVars=manifestVarsParams,
                         WEC=WEC,
+                        studyCoding=studyCoding,
+                        studyVarying=studyVarying,
                         randomIntercepts=randomInterceptsSettings,
                         randomInterceptStructure=if (isTRUE(pooledRandomIntercepts)) "pooled" else if (
                           randomIntercepts %in% c("CINT", "MANIFEST")
@@ -2229,6 +2273,8 @@ ctmaFit <- function(
                         manifestMeans = manifestMeans,
                         manifestVars = manifestVarsParams,
                         WEC = WEC,
+                        studyCoding = studyCoding,
+                        studyVarying = studyVarying,
                         randomIntercepts = randomInterceptsSettings,
                         randomInterceptStructure = if (isTRUE(pooledRandomIntercepts)) "pooled" else if (
                           randomIntercepts %in% c("CINT", "MANIFEST")

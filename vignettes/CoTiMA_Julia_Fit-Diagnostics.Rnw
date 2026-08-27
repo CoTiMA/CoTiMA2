@@ -1,0 +1,474 @@
+% !Rnw weave = knitr
+%\VignetteIndexEntry{Diagnosing Julia Fits in CoTiMA2}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\setlength{\emergencystretch}{3em}
+\hbadness=3000
+
+\newcommand{\code}[1]{\url{#1}}
+\newcommand{\important}[1]{\par\medskip\noindent
+  \fcolorbox{blue!45!black}{blue!4}{\parbox{0.94\linewidth}{#1}}\par\medskip}
+\newcommand{\warningbox}[1]{\par\medskip\noindent
+  \fcolorbox{orange!70!black}{orange!6}{\parbox{0.94\linewidth}{#1}}\par\medskip}
+
+\title{Diagnosing Julia-Based Fits in CoTiMA2:\\
+  A Systematic Workflow for Speed, Convergence, and Identification}
+\author{C. Dormann, \& $\widehat{\textnormal{C}}$. G. Petee}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE, purl=FALSE>>=
+knitr::opts_chunk$set(
+  echo = TRUE, eval = FALSE, purl = FALSE, warning = FALSE, message = FALSE,
+  comment = "#>", tidy = FALSE, size = "small"
+)
+options(width = 92)
+library(CoTiMA2)
+@
+
+\begin{abstract}
+This guide provides a reproducible diagnostic workflow for maximum-likelihood
+models fitted with the Julia backend of CoTiMA2. It separates computational
+problems from optimization and statistical-identification problems. It also
+explains why a small improvement in the objective, a non-zero raw gradient,
+or a large change in an unconstrained parameter need not have the same
+interpretation. The examples are templates: replace object names and model
+arguments with those used in the analysis being diagnosed.
+\end{abstract}
+
+\tableofcontents
+
+\section{The three questions that should not be mixed}
+
+A slow or non-converged fit can arise for very different reasons:
+\begin{enumerate}
+  \item \textbf{Computational:} Julia parallelism is unavailable, unsafe, or
+    configured inefficiently.
+  \item \textbf{Numerical:} the optimizer uses poor starting values, an
+    unsuitable step size, or a difficult raw parameter scale.
+  \item \textbf{Statistical:} some parameters are weakly identified, close to
+    a boundary, or lie on a nearly flat likelihood ridge.
+\end{enumerate}
+Changing thread counts cannot repair weak identification, and increasing the
+iteration limit cannot repair an incorrect parallel likelihood. Diagnose in
+the order used below.
+
+\section{Decision tree}
+
+\begin{center}
+\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=7mm and 12mm,
+  every node/.style={font=\small,align=center},
+  action/.style={rectangle,rounded corners,draw=blue!55!black,fill=blue!4,
+    text width=4.1cm,minimum height=9mm},
+  decision/.style={diamond,aspect=2.2,draw=black!70,fill=gray!7,
+    text width=3.1cm,inner sep=1.5pt},
+  arrow/.style={-{Latex[length=2mm]},thick}
+]
+\node[action] (start) {Record version, model arguments, starts, and timings};
+\node[decision,below=of start] (valid) {Parallel checks safe?};
+\node[action,left=of valid,xshift=-22mm] (serial) {Use the safe serial path; investigate backend consistency before tuning};
+\node[decision,below=of valid] (conv) {Raw-gradient criterion met?};
+\node[action,right=of conv,xshift=22mm] (done) {Proceed to uncertainty and transformed summaries};
+\node[decision,below=of conv] (progress) {Objective and gradient still improve materially?};
+\node[action,left=of progress,xshift=-22mm] (refine) {Continue once from saved estimates with a smaller step};
+\node[decision,below=of progress] (stable) {Substantive transformed estimates stable?};
+\node[action,right=of stable,xshift=22mm] (report) {Document practical stability and remaining raw-scale warning};
+\node[action,left=of stable,xshift=-22mm] (identify) {Inspect study information, local parameters, Hessian, and model restrictions};
+\draw[arrow] (start)--(valid);
+\draw[arrow] (valid)--node[above]{no}(serial);
+\draw[arrow] (valid)--node[right]{yes}(conv);
+\draw[arrow] (conv)--node[above]{yes}(done);
+\draw[arrow] (conv)--node[right]{no}(progress);
+\draw[arrow] (progress)--node[above]{yes}(refine);
+\draw[arrow] (progress)--node[right]{no}(stable);
+\draw[arrow] (stable)--node[above]{yes}(report);
+\draw[arrow] (stable)--node[above]{no}(identify);
+\end{tikzpicture}
+}
+\end{center}
+
+\section{Step 1: preserve a reproducible diagnostic record}
+
+Record the installed version and preserve every expensive fit before further
+experimentation.
+
+<<record-fit, purl=FALSE>>=
+packageVersion("CoTiMA2")
+saveRDS(fit_julia, "fit_julia.rds")
+
+fit_julia$optimization
+fit_julia$optimization_timing
+fit_julia$likelihood_timing
+fit_julia$threads
+fit_julia$optimizer_controls
+fit_julia$warm_start
+@
+
+The most useful convergence fields are the termination code, the maximum
+absolute raw gradient, the objective, the number of iterations, and the change
+from the starting point. A termination such as \code{Iterations} means that
+the iteration limit was reached; it does not by itself establish that the
+solution is poor. Conversely, a stable objective does not establish that all
+parameters are identified.
+
+\section{Step 2: verify the parallel backend before benchmarking}
+
+Use \code{ctmaFitConfig()} with exactly the same model-defining arguments that
+will be supplied to \code{ctmaFit()}. Binary-variable and random-intercept
+arguments belong at the top level, whereas computational controls belong in
+\code{backendArgs}.
+
+<<fit-config, purl=FALSE>>=
+fit_config <- ctmaFitConfig(
+  ctmaInitFit = initFit,
+  backend = "julia",
+  binaries = c(1, 0),
+  randomIntercepts = "CINT",
+  scaleTime = 1/12
+)
+
+fit_config$parallel_backend_check
+fit_config$benchmarks
+fit_config$optimizer_pilots
+fit_config$recommended
+@
+
+Interpret the consistency check before interpreting speed:
+\begin{itemize}
+  \item If likelihood and gradient are both safe, parallel subject processing
+    may be used for optimization.
+  \item If either check fails, CoTiMA2 retains the deterministic safe path.
+    Increasing \code{subject_threads} then cannot accelerate the affected
+    calculation.
+  \item The choice is made for the fit and retained. It is not repeatedly
+    switched during optimization.
+\end{itemize}
+
+\important{A recommended thread configuration is a performance recommendation,
+not a guarantee of convergence. The benchmark measures a small number of
+likelihood and gradient evaluations; the full optimizer may visit much more
+difficult parameter regions.}
+
+\section{Step 3: inspect optimizer progress}
+
+Use the complete optimization record rather than only the last console line.
+
+<<optimizer-record, purl=FALSE>>=
+list(
+  objective = -fit_julia$optimization$loglik,
+  iterations = fit_julia$optimization$iterations,
+  stage_iterations = fit_julia$optimization$stage_iterations,
+  stage_objectives = fit_julia$optimization$stage_objectives,
+  stage_gradients =
+    fit_julia$optimization$stage_maximum_absolute_gradients,
+  maximum_raw_gradient =
+    fit_julia$optimization$maximum_absolute_gradient,
+  termination = fit_julia$optimization$termination_code,
+  converged = fit_julia$optimization$converged
+)
+@
+
+With \code{carefulFit=TRUE}, the three stages are:
+\begin{enumerate}
+  \item population parameters while TI effects are held fixed;
+  \item population and TI-effect parameters together;
+  \item a jointly rescaled refinement.
+\end{enumerate}
+When valid estimates are explicitly supplied through \code{inits}, CoTiMA2 can
+avoid unnecessarily rebuilding early starting values. Always ensure that the
+new model has exactly the same raw parameterization and parameter ordering.
+
+\section{Step 4: compare a refinement with its starting fit}
+
+A refinement should be judged by objective improvement, gradient reduction,
+and parameter stability together.
+
+<<compare-fits, purl=FALSE>>=
+old_raw <- fit_previous$coefficients$raw
+new_raw <- fit_refined$coefficients$raw
+raw_names <- names(coef(fit_refined, type = "raw"))
+if (is.null(raw_names)) raw_names <- paste0("raw", seq_along(new_raw))
+
+final_gradient <- as.numeric(fit_refined$optimization$gradient)
+parameter_change <- new_raw - old_raw
+
+gradient_diagnostics <- data.frame(
+  index = seq_along(new_raw),
+  parameter = raw_names,
+  estimate = new_raw,
+  change = parameter_change,
+  gradient = final_gradient,
+  absolute_gradient = abs(final_gradient),
+  absolute_change = abs(parameter_change)
+)
+
+head(
+  gradient_diagnostics[
+    order(gradient_diagnostics$absolute_gradient, decreasing = TRUE),
+  ],
+  25
+)
+
+head(
+  gradient_diagnostics[
+    order(gradient_diagnostics$absolute_change, decreasing = TRUE),
+  ],
+  25
+)
+@
+
+Large gradients with small parameter changes indicate a stiff direction.
+Large parameter changes with tiny gradients indicate a flat direction. Large
+raw changes may also cancel between a population parameter and its TI effect,
+or may correspond to small changes after nonlinear constraints are applied.
+
+\section{Step 5: diagnose the study design}
+
+\subsection{Rank and conditioning of study indicators}
+
+<<study-design, purl=FALSE>>=
+standata <- prepared_diagnostic$fit$standata
+tipreds <- as.matrix(standata$tipredsdata)
+colnames(tipreds) <- paste0("TI", seq_len(ncol(tipreds)))
+
+weighted_design <- cbind(Intercept = 1, tipreds)
+unique_design <- unique(weighted_design)
+
+list(
+  subject_level_rank = qr(weighted_design)$rank,
+  subject_level_columns = ncol(weighted_design),
+  subject_level_condition_number = kappa(weighted_design, exact = TRUE),
+  study_level_rank = qr(unique_design)$rank,
+  study_level_columns = ncol(unique_design),
+  study_level_condition_number = kappa(unique_design, exact = TRUE),
+  study_level_singular_values = svd(unique_design, nu = 0, nv = 0)$d
+)
+@
+
+Full rank establishes algebraic estimability of the indicator design. It does
+not guarantee that every study provides enough longitudinal information for
+every dynamic, diffusion, initial-condition, or random-intercept parameter.
+
+\subsection{Persons, rows, and measurement occasions}
+
+<<study-information, purl=FALSE>>=
+subject_rows <- tabulate(
+  as.integer(standata$subject),
+  nbins = nrow(tipreds)
+)
+
+study_label <- ifelse(
+  rowSums(tipreds) == 0,
+  "reference",
+  paste0("TI", max.col(tipreds, ties.method = "first"))
+)
+
+study_information <- do.call(
+  rbind,
+  lapply(split(subject_rows, study_label), function(x) {
+    data.frame(
+      n_subjects = length(x),
+      n_rows = sum(x),
+      minimum_waves = min(x),
+      median_waves = median(x),
+      mean_waves = mean(x),
+      maximum_waves = max(x)
+    )
+  })
+)
+
+study_information
+@
+
+The number of persons is not the only relevant quantity. A study with many
+persons but only two or three occasions may weakly identify diffusion or
+dynamic covariance parameters. Binary outcomes additionally require adequate
+numbers in both categories.
+
+\section{Step 6: reconstruct the parameters actually used by each study}
+
+Under dummy coding, a raw study parameter is generally the population or
+reference parameter plus the corresponding TI effect. Inspecting TI effects
+alone can therefore exaggerate movement when the two components cancel.
+
+<<study-specific-raw, purl=FALSE>>=
+nbase <- as.integer(standata$nparams)
+neffects <- length(raw_names) - nbase
+effect_setup <- as.matrix(standata$TIPREDEFFECTsetup)
+
+study_specific_raw <- function(raw) {
+  base <- raw[seq_len(nbase)]
+  effects <- raw[nbase + seq_len(neffects)]
+  designs <- unique(tipreds)
+  result <- matrix(
+    rep(base, times = nrow(designs)),
+    nrow = nrow(designs), byrow = TRUE
+  )
+  for (s in seq_len(nrow(designs))) {
+    for (p in seq_len(nbase)) {
+      for (j in seq_len(ncol(designs))) {
+        effect_index <- effect_setup[p, j]
+        if (effect_index > 0 && designs[s, j] != 0) {
+          result[s, p] <- result[s, p] +
+            effects[effect_index] * designs[s, j]
+        }
+      }
+    }
+  }
+  rownames(result) <- ifelse(
+    rowSums(designs) == 0,
+    "reference",
+    paste0("TI", max.col(designs, ties.method = "first"))
+  )
+  colnames(result) <- raw_names[seq_len(nbase)]
+  result
+}
+
+local_previous <- study_specific_raw(old_raw)
+local_current <- study_specific_raw(new_raw)
+local_change <- local_current - local_previous
+
+local_change_diagnostics <- data.frame(
+  study = rep(rownames(local_change), ncol(local_change)),
+  parameter = rep(colnames(local_change), each = nrow(local_change)),
+  previous = as.vector(local_previous),
+  current = as.vector(local_current),
+  change = as.vector(local_change)
+)
+local_change_diagnostics$absolute_change <-
+  abs(local_change_diagnostics$change)
+
+head(
+  local_change_diagnostics[
+    order(local_change_diagnostics$absolute_change, decreasing = TRUE),
+  ],
+  30
+)
+@
+
+\section{Step 7: compare constrained point estimates without a Hessian}
+
+Raw ctsem parameters may be unconstrained optimization coordinates. Apply
+ctsem's transformations without re-optimizing or calculating uncertainty by
+using \code{ctmaTransformJuliaFit()}.
+
+<<point-transform, purl=FALSE>>=
+previous_transformed <- ctmaTransformJuliaFit(
+  fit_previous,
+  setup = prepared_diagnostic
+)
+
+refined_transformed <- ctmaTransformJuliaFit(
+  fit_refined,
+  setup = prepared_diagnostic
+)
+
+previous_transformed$coefficients$matrices
+refined_transformed$coefficients$matrices
+
+previous_transformed$coefficients$study
+refined_transformed$coefficients$study
+@
+
+\warningbox{This function returns point transformations only. It does not
+create standard errors, confidence intervals, a covariance matrix, or evidence
+of convergence. Use \code{ctAddJuliaSamples()} only after reliable uncertainty
+information is available.}
+
+If the constrained matrices and scientifically relevant effects are stable
+while a few raw coordinates continue to move, the remaining problem is likely
+to be raw-scale curvature or weak identification. If the constrained effects
+also change materially, the fit should not yet be interpreted.
+
+\section{Step 8: use the Hessian only after point diagnostics}
+
+The observed Hessian is useful for locating flat and boundary directions, but
+it can be expensive and should not be calculated merely because optimization
+stopped. Inspect its symmetric eigenvalues and condition number when the point
+diagnostics remain ambiguous.
+
+<<hessian-diagnostics, purl=FALSE>>=
+hessian_symmetric <- (raw_hessian + t(raw_hessian)) / 2
+eigenvalues <- eigen(hessian_symmetric, symmetric = TRUE)$values
+positive <- eigenvalues[eigenvalues > 0]
+
+list(
+  minimum = min(eigenvalues),
+  maximum = max(eigenvalues),
+  nonpositive = sum(eigenvalues <= 0),
+  near_zero = sum(abs(eigenvalues) < 1e-6),
+  positive_condition_number = max(positive) / min(positive),
+  smallest = head(sort(eigenvalues), 10)
+)
+@
+
+A few very small negative eigenvalues can reflect numerical error near a flat
+optimum. Substantial negative curvature, many near-zero eigenvalues, or an
+extreme condition number require closer model inspection. Regularizing a
+Hessian can make inversion possible, but does not create information that the
+data do not contain.
+
+\section{Reference studies, dummy coding, and WEC}
+
+Changing the reference study does not change the likelihood surface in exact
+arithmetic when the models are algebraically equivalent. It does change the
+raw coordinates, starting values, scaling, and optimizer path. Consequently,
+a different reference study can genuinely make numerical optimization easier
+even though it cannot solve structural non-identification.
+
+A useful reference study is usually reasonably large, has many informative
+measurement occasions, contains both categories of every binary outcome, and
+is not close to a variance or correlation boundary. A very small or atypical
+reference study places the common raw intercept at a poorly determined point
+and forces many large study deviations.
+
+Weighted effect coding can reduce dependence on one arbitrary reference and
+place the population parameter closer to a weighted average study. This may
+improve scaling. It does not add information and cannot remove a likelihood
+ridge. CoTiMA now separates the contrast basis from the parameter families:
+
+\begin{verbatim}
+studyCoding = "weighted"
+studyVarying = c("CINT", "DIFFUSION", "T0VAR")
+\end{verbatim}
+
+Add \code{"DRIFT"} only when study-specific drift parameters are intended.
+The older \code{WEC=TRUE} interface is deprecated and maps to the weighted,
+parameter-selective specification above. This coding is constructed by
+\code{ctmaFit()} and is therefore identical for Stan and Julia backends.
+
+\section{A concise stopping rule}
+
+Do not continue merely because the raw gradient exceeds a conventional target.
+Continue a refinement when the objective, gradient, and constrained estimates
+are still improving materially. Stop and investigate identification when:
+\begin{itemize}
+  \item additional hours produce negligible objective improvement;
+  \item large raw movements occur in directions with very small gradients;
+  \item population and TI effects cancel in the study-specific parameters;
+  \item constrained estimates are stable but raw coordinates drift; or
+  \item the Hessian has near-zero directions or extreme conditioning.
+\end{itemize}
+
+When reporting a practically stable but formally non-converged solution,
+retain the warning, document the tolerance and termination code, report the
+refinement comparison, and avoid presenting Hessian-based uncertainty as
+routine inferential output.
+
+\end{document}

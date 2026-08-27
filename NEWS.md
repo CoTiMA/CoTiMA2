@@ -1,3 +1,26 @@
+# CoTiMA2 0.14.11
+
+- Added backend-independent, parameter-selective primary-study contrasts via
+  `studyCoding` and `studyVarying`. The defaults use dummy coding and allow
+  `CINT`, `DIFFUSION`, and `T0VAR` to differ between studies while keeping
+  DRIFT invariant unless explicitly requested.
+- Deprecated `WEC=TRUE`; it now maps to weighted study coding for `CINT`,
+  `DIFFUSION`, and `T0VAR`. Weighted DRIFT heterogeneity analyses must include
+  `"DRIFT"` explicitly in `studyVarying`.
+- Updated `ctmaRedHet()` validation and the user and Julia-diagnostics guides
+  for the new study-coding interface.
+
+# CoTiMA2 0.14.10
+
+- Added `ctmaTransformJuliaFit()` to calculate constrained ctsem and
+  study-specific point transformations from a completed Julia fit without
+  optimization, a Hessian, covariance estimation, or uncertainty draws.
+- Added the standalone `CoTiMA_Julia_Fit-Diagnostics.Rnw` guide, including a
+  decision tree for parallel-backend, optimizer, study-design, local-parameter,
+  transformed-point, and Hessian diagnostics.
+- `ctAddJuliaSamples()` and `ctmaTransformJuliaFit()` now also accept diagnostic
+  preparation objects that store the matching ctsem setup under `$fit`.
+
 # CoTiMA2 0.14.9
 
 - Added a guarded Julia ML subset warm start. With

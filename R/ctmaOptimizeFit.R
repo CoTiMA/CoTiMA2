@@ -701,7 +701,15 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        #randomIntercepts=ctmaFitFit$argumentList$randomIntercepts,
                        randomIntercepts=randomIntercepts,
                        manifestVars=ctmaFitFit$argumentList$manifestVars,
-                       WEC=ctmaFitFit$argumentList$WEC,
+                       WEC=FALSE,
+                       studyCoding=if (is.null(ctmaFitFit$argumentList$studyCoding)) {
+                         if (isTRUE(ctmaFitFit$argumentList$WEC)) "weighted" else "dummy"
+                       } else ctmaFitFit$argumentList$studyCoding,
+                       studyVarying=if (is.null(ctmaFitFit$argumentList$studyVarying)) {
+                         if (isTRUE(ctmaFitFit$argumentList$WEC)) {
+                           c("CINT", "DIFFUSION", "T0VAR", "DRIFT")
+                         } else c("CINT", "DIFFUSION", "T0VAR")
+                       } else ctmaFitFit$argumentList$studyVarying,
                        priors=ctmaFitFit$argumentList$priors,
                        binaries=ctmaFitFit$argumentList$binaries,
                        T0var=ctmaFitFit$argumentList$T0var,

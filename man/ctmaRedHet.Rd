@@ -19,9 +19,12 @@ ctmaRedHet(
 
 \item{activeDirectory}{the directory where to save results (if not specified, it is taken from ctmaInitFit)}
 
-\item{ctmaFitObject}{ctmaFit Object WITHOUT Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)}
+\item{ctmaFitObject}{ctmaFit object without moderators, fitted with
+\code{studyCoding="weighted"} and \code{"DRIFT"} included in
+\code{studyVarying}.}
 
-\item{ctmaFitObjectMod}{ctmaFit Object WITH Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)}
+\item{ctmaFitObjectMod}{Corresponding weighted-coding ctmaFit object with
+\code{"DRIFT"} in \code{studyVarying} and at least one moderator.}
 
 \item{digits}{rounding (default = 4)}
 

@@ -977,7 +977,7 @@ summary(CoTiMAFullFit_6_new)
 
 \noindent \emph{Figure }\emph{33}\emph{. }Workflow for Replacing Study 128 by Study 201 and Conducting a Full CoTiMA
 
-The results of the full CoTiMA are shown in Figure 34 and Figure 35. The interpretation of results is analogous to the interpretation of the all-invariant CoTiMA discussed in 7.1.1\footnote{There is one notable difference. Whereas in the all-invariant CoTiMA estimated T0 correlations and diffusions apply to the full sample of primary studies, in Figure 33 they apply to the last of the primary studies (i.e., Study 32). This is due to technical reasons inherent in the \code{ctsem} R-package used by CoTiMA. In \code{ctsem}, k - 1 dummy variables for the overall k primary studies are used as so-called time independent predictors (TI), which modify (add or subtract values) the T0-correlations and the diffusion parameters estimated for the kth primary study. However, T0 correlations and diffusion parameters are usually of very little interest to researcher applying CoTiMA, so these technical details are only important in the probably rare case estimated T0 correlations and diffusions should be reported in publications.}.
+The results of the full CoTiMA are shown in Figure 34 and Figure 35. The interpretation of results is analogous to the interpretation of the all-invariant CoTiMA discussed in 7.1.1. By default, CoTiMA uses dummy coding for primary studies. The population coefficient is then expressed for one reference study, and the remaining study coefficients are deviations from it. The alternative weighted coding and the parameter families allowed to differ between studies are explained below.
 
 \begin{lstlisting}[language=R]
 
@@ -1042,6 +1042,67 @@ $max.effects
 \end{lstlisting}
 
 \noindent \emph{Figure }\emph{35}\emph{.} Results (Part 2) of a Regular Full CoTiMA with Six Studies (\code{ctmaFit})
+
+\subsection{Study coding and parameter-selective study differences}
+
+Persons are nested in primary studies, and primary studies may differ in
+initial conditions, diffusion, intercepts, or dynamic effects. CoTiMA therefore
+represents study membership by $k-1$ time-independent predictors for $k$
+studies. The argument \code{studyCoding} determines the contrast basis, while
+\code{studyVarying} determines which parameter-matrix families receive those
+study effects. These arguments apply identically to Stan- and Julia-based
+fitting.
+
+The default specification is
+
+\begin{lstlisting}[language=R]
+ctmaFit(
+  ctmaInitFit = initFit,
+  studyCoding = "dummy",
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR")
+)
+\end{lstlisting}
+
+Dummy coding uses a reference study. Changing the reference does not change an
+algebraically identical model's likelihood optimum, but it changes the raw
+coordinates, starting values, and numerical scaling. A large and informative
+reference study may therefore facilitate convergence. Weighted effect coding
+instead defines the population coefficient as a sample-size weighted study
+average:
+
+\begin{lstlisting}[language=R]
+ctmaFit(
+  ctmaInitFit = initFit,
+  studyCoding = "weighted",
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR")
+)
+\end{lstlisting}
+
+The coding changes the parameterization, not the information contained in the
+data. It can improve numerical conditioning but cannot repair weak
+identification. Study indicators model systematic between-study differences;
+they do not by themselves create cluster-robust or hierarchical standard
+errors. Hierarchical random-effects models require an additional study-level
+distribution.
+
+DRIFT remains invariant unless it is requested explicitly:
+
+\begin{lstlisting}[language=R]
+ctmaFit(
+  ctmaInitFit = initFit,
+  studyCoding = "weighted",
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR", "DRIFT"),
+  invariantDrift = "none"
+)
+\end{lstlisting}
+
+The older argument \code{WEC=TRUE} is deprecated. During the transition it is
+interpreted as \code{studyCoding="weighted"} and
+\code{studyVarying=c("CINT", "DIFFUSION", "T0VAR")}. New analyses should use
+the explicit arguments. Because the historical WEC implementation also varied
+DRIFT parameters, old and new specifications are not necessarily the same
+model. Analyses of residual DRIFT heterogeneity with \code{ctmaRedHet} must add
+\code{"DRIFT"} to \code{studyVarying} explicitly.
 
 \subsection{Partial CoTiMA (\code{ctmaFit})}
 
@@ -2348,6 +2409,8 @@ Argument & Default & Possible \newline{}Values & Explanation \\
  & & & If the argument \code{scaleMod = TRUE} is used in combination with categorical moderators, the internally created dummy variables are centered (but not standardized; see the argument \code{transfMod} to circumvent this default behavior and standardize them anyway). The resulting drift effects are no longer those for the reference category. Rather, they represent the average effect across all studies and all moderator categories. The effect of the centered Dummy 1 now represents the mean difference between studies including people aged 19-60 and all other studies. If the effect of Dummy 1 is significant, its interpretation is that this category has a significantly different effect compared to all other categories. It does, however, no longer inform about the sizes of the drift effects resulting for this category.\par  \\
  & & & Since one is usually interested in both the size of a drift effect for a particular category and if it is significantly different, we recommend not centering the dummy variables representing categorical moderators (i.e., the argument \code{scaleMod = FALSE} should be used). See the argument \code{catsToCompare} to analyzed difference between categories anyway. \\
 \code{scaleTI} & \code{TRUE} & \code{FALSE/TRUE} & With the move from the omx (OpenMX) version of ctsem to the stanct (stan) version, CoTiMA moved from fitting a multi group model to a model in which the groups are represented by dummy variables. These are internally handled as time independent (TI) predictors, and \code{scaleTI} specifies whether or not these dummy variables should be standardized. Recommended since version 0.5.3.1 and set to TRUE. Note that standardizing dummies for primary studies does not affect estimation of aggregated effects. However, without standardization the study-specific effects (in which meta-analysist are usually not interested in) cannot be interpreted as within-study effects. \\
+\code{studyCoding} & \code{"dummy"} & \code{"dummy"/"weighted"} & Specifies the contrast basis for primary-study indicators for both Stan and Julia. Dummy coding estimates the population coefficient for a reference study. Weighted coding estimates a sample-size weighted study average and can reduce dependence on an arbitrary reference, but does not add information or by itself provide hierarchical standard errors. \\
+\code{studyVarying} & \code{c("CINT",} \newline{}\code{"DIFFUSION",} \newline{}\code{"T0VAR")} & vector of parameter-matrix families & Selects which parameter families may differ between primary studies. DRIFT remains invariant unless \code{"DRIFT"} is added explicitly. Other supported families include \code{"T0MEANS"}, \code{"MANIFESTMEANS"}, \code{"MANIFESTVAR"}, and \code{"LAMBDA"}. This argument changes the model and is independent of the Stan or Julia backend. \\
 \newpage
 \code{scaleTime} & \code{NULL} \newline{}(= FALSE) & value > 0 & This argument can facilitate model convergence. It internally changes the time scale assigned to \code{delta\_t}\code{i}. For example, \code{scaleTime = 1/12} could change the time scale from months to years. It is usually recommended to avoid \code{delta\_t}\code{i} larger than 6. \\
 \code{transfMod} & \code{NULL } & character vector applying R functions to x & Can be used as a replacement of \code{scaleMod} if more than one moderator is analyzed and standardization is not desired for all moderators. Then, it could take the form \newline{}\code{transfMod = c(}\code{"}\code{scale(x)}\code{"}\code{, }\code{"}\code{x}\code{"}\code{, }\code{"}\code{scale(x)}\code{"}\code{)}. \newline{}Alternatively, users can define their own functions, e.g., \newline{}\code{transfMod=(}\code{"}\code{(x - mean(x))}\code{"}\code{)};\newline{}this function centralizes a single moderator without standardization. Another example is \newline{}\code{transfMod=(}\code{"}\code{scale(x) - min(x)}\code{"}\code{),} \newline{}which standardizes x and then shift values to a scale beginning with 0.0. This yields the (unmoderated) drift effects for the reference group with them smallest moderator value. \\
@@ -2355,7 +2418,7 @@ Argument & Default & Possible \newline{}Values & Explanation \\
 \code{T0var} & \code{"}\code{a}\code{u}\code{to}\code{"} & \code{NU}\code{L}\code{L/}\code{"}\code{a}\code{u}\code{to}\code{"}\code{/}\newline{}lower triangular matrix & Could be used to specify the Time 0 covariance matrix by setting certain elements free or fixing them to particular values. Usually not recommended. \\
 \code{useSampleFraction} & \code{NULL} & value < 1 & To speed up debugging. Provided as fraction (e.g., 1/10). \\
 \code{verbose} & 0 & 0, 1, or 2 & The \code{verbose} argument is passed to \code{ctStanFit}. Higher values print more information during model fit. \\
-\code{WEC} & \code{FALSE} & \code{FALSE/TRUE} & Required if it is intended to estimate the reduction in heterogeneity of effects achieved by introducing study-level moderators. When set to \code{TRUE}, \emph{weighted effect coding} of the TIpreds representing the dummies of the primary studies is applied. Returns drift matrices for all primary studies. Should be used once in conjunction with the argument \code{scaleTI}\code{ }\code{=}\code{ }\code{FALSE}, and in a second fit with \code{scaleTI}\code{ }\code{=}\code{ }\code{FALSE} \emph{plus} additional moderators. The two returned fit-objects then serve as input for the \code{ctmaRedHet} function. The first of these two models mimics the \code{ctmaInit} function and, like \code{ctmaInit}, provides estimates for all primary studies. Fitting this model requires a rather complex internal model setup, and it is therefore highly recommended to compare the estimates with those provided by \code{ctmaInit}. When there are large differences in estimates and the \emph{-2ll value} returned by \code{ctmaInit} is smaller than the \emph{-2ll value} returned by \code{ctmaFit} with \code{WEC}\code{ }\code{=}\code{ }\code{TRUE}, the latter results cannot really be trusted. \\
+\code{WEC} & \code{FALSE} & \code{FALSE/TRUE} & Deprecated compatibility argument. \code{WEC=TRUE} is currently translated to \code{studyCoding="weighted"} and \code{studyVarying=c("CINT", "DIFFUSION", "T0VAR")} and produces a warning. Use the new arguments directly. Historical WEC models varied DRIFT as well; to request that model explicitly, add \code{"DRIFT"} to \code{studyVarying} and set the intended \code{invariantDrift} specification. \\
 \bottomrule
 \end{longtable}
 \normalsize
@@ -2650,7 +2713,7 @@ Argument & Default & Possible \newline{}Values & Explanation \\
 \toprule
 Argument & Default & Possible \newline{}Values & Explanation \\
 \midrule
-\multicolumn{3}{p{0.54\linewidth}}{\normalsize \code{ctmaRedHet (EPIC-}\textbf{\code{BiG}}\code{-Power)}} & Computes the reduction in heterogeneity of drift effects after moderators are added. The function takes two CoTiMA fit-objects as arguments. Both models should mimic the \code{ctmaInit} fit function by using \code{ctmaFit} with the argument \code{WEC}\code{ }\code{=}\code{ }\code{TRUE}. The first model should yield exactly the same fit (\emph{-2ll}) as the \code{ctmaInit} fit because it is algebraically identical (all drift effects are moderated by dummy variables representing the primary studies). Estimation problems may occur, however (see explanation of the \code{WEC} argument of \code{ctmaFit}). The second model includes additional moderator variables. Mimicking \code{ctmaInit} by using \code{ctmaFit} is necessary because moderators are study-level variables that cannot be modelled if each primary study is fitted separately as in \code{ctmaInit}. For example,\par \code{fit1 <- ctmaFit(ctmaInitFit = fitObject, }\newline{}\code{                }\code{WEC}\code{ }\code{=}\code{ }\code{TRUE))}\par and\par \code{fit2 <- ctmaFit(ctmaInitFit = fitObject, }\newline{}\code{                }\code{WEC}\code{ }\code{=}\code{ }\code{TRUE, }\newline{}\code{                }\code{mod.numer = 1, }\par \code{                }\code{mod.type = }\code{"}\code{cont}\code{"}\code{)}\par and then\par \code{results <- ctmaRedHet(ctmaFitObject = fit1, }\par \code{                    }\code{ctmaFitObjectMod = fit2)}\par \code{summary(results)}\par Interpreting (reduction in) heterogeneity of single continuous time drift coefficients could be challenged because they operate \emph{in concert}. This is different for discrete time drift coefficients, and the argument \code{dt} could be used to request (reduction of) heterogeneity across a set of different time intervals. \\[0.45em]
+\multicolumn{3}{p{0.54\linewidth}}{\normalsize \code{ctmaRedHet (EPIC-}\textbf{\code{BiG}}\code{-Power)}} & Computes the reduction in heterogeneity of drift effects after moderators are added. Both input models must use \code{studyCoding="weighted"}, include \code{"DRIFT"} in \code{studyVarying}, and use the same study-varying families. The first model contains no substantive moderator and the second adds the moderator of interest. For example, define \code{families <- c("CINT", "DIFFUSION", "T0VAR", "DRIFT")}, fit both models with \code{studyCoding="weighted"}, \code{studyVarying=families}, and the intended \code{invariantDrift} specification, and then supply them to \code{ctmaRedHet}. Interpreting reduction in heterogeneity of individual continuous-time drift coefficients can be challenging because they operate \emph{in concert}; \code{dt} can request corresponding discrete-time effects. \\[0.45em]
 \endfirsthead
 \toprule
 Argument & Default & Possible \newline{}Values & Explanation \\
@@ -2659,8 +2722,8 @@ Argument & Default & Possible \newline{}Values & Explanation \\
 \endhead
 \code{activateRPB} & \code{FALSE} & \code{FALSE/TRUE} & Messages (warning, finished fitting) could be sent to mobile phone if set to \code{TRUE}. \\
 \code{activeDirectory} & \code{NULL} & character string & Specifies the directory where required files are found and saved. Should end with \code{"}\code{/}\code{"}. For example, \code{"}\code{/Users/GDC/CoTiMA/}\code{"}. \\
-\code{ctmaFitObject} & \code{NULL} & CoTiMA fit-object & A CoTiMA fit-object created with \code{ctmaFit} using the argument \code{WEC}\code{ }\code{=}\code{ }\code{TRUE}. \\
-\code{ctmaFitObjectMod} & \code{NULL} & CoTiMA fit-object & A CoTiMA fit-object created with \code{ctmaFit} using the argument \code{WEC}\code{ }\code{=}\code{ }\code{TRUE} and at least one moderating effect. \\
+\code{ctmaFitObject} & \code{NULL} & CoTiMA fit-object & A CoTiMA fit-object created with \code{studyCoding="weighted"} and \code{"DRIFT"} included in \code{studyVarying}. \\
+\code{ctmaFitObjectMod} & \code{NULL} & CoTiMA fit-object & A corresponding weighted-coding CoTiMA fit-object with \code{"DRIFT"} in \code{studyVarying} and at least one moderating effect. \\
 \code{digits} & \code{4} & value > 0 & Rounding used in output. \\
 \code{dt} & \code{NULL} & vector of \newline{}values > 0 & Could be used to request (reduction of) heterogeneity across a set of different time intervals. \\
 \code{undoTimeScaling} & \code{TRUE} & \code{FALSE/TRUE}\code{ }or any value & Undoes possible time scaling achieved in \code{ctmaFit} by setting the argument \code{scaleTime}. When a number is provided instead of a logical argument, the number is used to multiply the obtained effects (e.g., when time is scaled in days in a study, and \code{scaleTime}\code{ = 30.5} is used, the returned effect corresponds to 1-month intervals). \\

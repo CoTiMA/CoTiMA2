@@ -11,6 +11,7 @@ test_that("Julia backend resources are installed with CoTiMA", {
 test_that("Julia user-facing functions and controls are available", {
   expect_true(is.function(ctmaJuliaFit))
   expect_true(is.function(ctAddJuliaSamples))
+  expect_true(is.function(ctmaTransformJuliaFit))
   expect_identical(ctsmAddJuliaSamples, ctAddJuliaSamples)
 
   fit_arguments <- names(formals(ctmaJuliaFit))
@@ -22,6 +23,74 @@ test_that("Julia user-facing functions and controls are available", {
     "warm_start_maximum_subjects", "warm_start_binary_minimum",
     "warm_start_maxiters"
   ) %in% fit_arguments))
+})
+
+test_that("point transformation validates its public inputs", {
+  expect_error(
+    ctmaTransformJuliaFit(list(), setup = list()),
+    "must inherit from 'ctmaJuliaFit'",
+    fixed = TRUE
+  )
+  empty_fit <- structure(list(), class = "ctmaJuliaFit")
+  expect_error(
+    ctmaTransformJuliaFit(empty_fit, setup = list(), cores = 0L),
+    "'cores' must be a positive integer",
+    fixed = TRUE
+  )
+  expect_error(
+    ctmaTransformJuliaFit(empty_fit, setup = list(), digits = 0L),
+    "'digits' must be a positive integer",
+    fixed = TRUE
+  )
+})
+
+test_that("point transformation does not require uncertainty information", {
+  captured_rows <- NULL
+  testthat::local_mocked_bindings(
+    .ctmaJuliaReadObject = identity,
+    .ctmaJuliaIsUnfittedCoTiMA = function(object) FALSE,
+    .ctmaJuliaExtractFit = function(object) list(stanfit = list(rawest = 1:2)),
+    .ctmaJuliaAttachConstraintModel = identity,
+    .ctmaJuliaTransformSummary = function(
+        fit, estimates, covariance, loglik, draws, cores, seed = NULL,
+        raw_draws = NULL, digits = 4L) {
+      captured_rows <<- raw_draws
+      expect_equal(covariance, matrix(0, 2, 2))
+      expect_identical(draws, 2L)
+      list(
+        parameters = "transformed point",
+        summary = list(
+          popmeans = "population point",
+          tipreds = "TI point",
+          parmatrices = "matrix point"
+        ),
+        ctsem_fit = "constraint bridge"
+      )
+    },
+    .ctmaJuliaCoTiMAWEC = function(object, fit, raw_draws) {
+      list(study_specific_parameters = "study point")
+    },
+    .package = "CoTiMA2"
+  )
+  fit <- structure(
+    list(
+      coefficients = list(raw = c(0.25, -0.5)),
+      optimization = list(loglik = -10),
+      information = NULL
+    ),
+    class = "ctmaJuliaFit"
+  )
+
+  result <- ctmaTransformJuliaFit(fit, setup = list())
+
+  expect_equal(captured_rows, rbind(c(0.25, -0.5), c(0.25, -0.5)))
+  expect_identical(result$coefficients$transformed, "transformed point")
+  expect_identical(result$coefficients$matrices, "matrix point")
+  expect_identical(result$coefficients$study, "study point")
+  expect_null(result$transformed_draws)
+  expect_null(result$ctsem_summary)
+  expect_false(result$point_transformation$uncertainty)
+  expect_false(result$point_transformation$draws)
 })
 
 test_that("the packaged Julia project declares the backend dependencies", {
