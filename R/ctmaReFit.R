@@ -1771,6 +1771,18 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
 
 .ctmaReSummary <- function(fit, probs = c(.025, .5, .975)) {
   if (!inherits(fit, "ctmaStudyREFit")) stop("fit must be a ctmaStudyREFit.")
+  estimand_note <- paste0(
+    "Hierarchical summary estimands: 'population_parameters_raw_centre' ",
+    "transforms the population centre on ctsem's raw estimation scale; it ",
+    "is not generally the natural-scale mean across studies. ",
+    "'population_parameters_study_average' transforms each observed study's ",
+    "parameter within every posterior draw and then averages studies equally; ",
+    "this is usually the meta-analytic population estimand. ",
+    "'study_parameters' reports the corresponding study-specific posterior ",
+    "summaries. Heterogeneity summaries describe distributions, not standard ",
+    "errors of the population mean."
+  )
+  .ctma_print_message(estimand_note)
   if (identical(fit$optimizer_uncertainty, "none")) .ctma_print_message(paste0(
     "This MAP/ML fit contains point estimates only. The lower, median, and ",
     "upper summary columns therefore equal the optimized estimate."
@@ -1822,7 +1834,8 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
   }
 
   rawmean_re <- which(spec$type == 1L)
-  study_parameter_summary <- population_parameter_summary <- data.frame()
+  study_parameter_summary <- population_parameter_summary <-
+    population_study_average_summary <- data.frame()
   if (length(rawmean_re)) {
     study_parameter_summary <- do.call(rbind, lapply(seq_along(studies), function(s)
       do.call(rbind, lapply(rawmean_re, function(q) {
@@ -1844,6 +1857,20 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
                  scale = "transformed population mean",
                  mean = z[1], lower = z[2], median = z[3], upper = z[4])
     }))
+    population_study_average_summary <- do.call(rbind,
+      lapply(rawmean_re, function(q) {
+        study_values <- vapply(seq_along(studies), function(s) {
+          raw <- d$rawpopmeans[, spec$index[q]] + effect[, s, q]
+          .ctma_transform(raw, spec$transform[q])
+        }, numeric(nrow(d$rawpopmeans)))
+        value <- rowMeans(study_values)
+        z <- .ctma_draw_summary(value, probs)
+        data.frame(re = q, matrix = spec$matrix[q], row = spec$row[q],
+                   col = spec$col[q], parameter = spec$parameter[q],
+                   block = spec$block[q],
+                   scale = "equal-study average on transformed scale",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
   }
 
   correlation_summary <- data.frame()
@@ -1872,6 +1899,7 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
   }
 
   t0var_summary <- t0cov_summary <- data.frame()
+  population_t0var_summary <- population_t0cov_summary <- data.frame()
   if (!is.null(d$studyre_T0VAR)) {
     selected_t0 <- which(spec$matrix == "T0VAR" & spec$type %in% c(2L, 3L))
     if (length(selected_t0)) {
@@ -1889,10 +1917,29 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
                      row = spec$row[q], col = spec$col[q],
                      mean = z[1], lower = z[2], median = z[3], upper = z[4])
         }))))
+      population_t0var_summary <- do.call(rbind, lapply(selected_t0, function(q) {
+        values <- d$studyre_T0VAR[, , spec$t0_row[q], spec$t0_col[q], drop = FALSE]
+        dim(values) <- dim(d$studyre_T0VAR)[1:2]
+        z <- .ctma_draw_summary(rowMeans(values), probs)
+        data.frame(parameter = spec$parameter[q], row = spec$row[q],
+                   col = spec$col[q],
+                   scale = "equal-study average T0VAR",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
+      population_t0cov_summary <- do.call(rbind, lapply(selected_t0, function(q) {
+        values <- d$studyre_T0cov[, , spec$t0_row[q], spec$t0_col[q], drop = FALSE]
+        dim(values) <- dim(d$studyre_T0cov)[1:2]
+        z <- .ctma_draw_summary(rowMeans(values), probs)
+        data.frame(parameter = spec$parameter[q], row = spec$row[q],
+                   col = spec$col[q],
+                   scale = "equal-study average T0 covariance",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
     }
   }
 
-  list(specification = spec,
+  list(estimand_interpretation = estimand_note,
+       specification = spec,
        covariance_blocks = fit$prepared$covariance_blocks,
        study_effects_raw = effect_summary,
        study_sd_raw = sd_summary,
@@ -1900,7 +1947,11 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
        study_correlations = correlation_summary,
        study_parameters = study_parameter_summary,
        population_parameters = population_parameter_summary,
+       population_parameters_raw_centre = population_parameter_summary,
+       population_parameters_study_average = population_study_average_summary,
        study_T0VAR = t0var_summary, study_T0cov = t0cov_summary,
+       population_T0VAR_study_average = population_t0var_summary,
+       population_T0cov_study_average = population_t0cov_summary,
        ctsem_draws = d)
 }
 

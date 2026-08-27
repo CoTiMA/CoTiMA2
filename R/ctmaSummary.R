@@ -15,6 +15,10 @@
 #' and returned. For a hierarchical study-level random-effects fit, a list
 #' containing population, study-specific, raw-scale and transformed-scale
 #' heterogeneity, correlation, and Time-0 parameter summaries is returned.
+#' The hierarchical summary distinguishes the transformed raw-scale population
+#' centre from the equal-study average calculated after transforming each
+#' study-specific parameter within every posterior draw. An interpretation
+#' note is printed and retained in \code{estimand_interpretation}.
 #'
 #' @method summary CoTiMAFit
 #' @export

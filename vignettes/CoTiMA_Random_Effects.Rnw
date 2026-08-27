@@ -1323,8 +1323,28 @@ because their final scale depends jointly on the complete Cholesky matrix;
 their study-specific final values remain in \code{study\_T0VAR} and
 \code{study\_T0cov}.
 
+Calling \code{summary()} prints a short interpretation note because two
+population estimands must not be confused. The backward-compatible
+\code{population\_parameters} table and its explicit alias
+\code{population\_parameters\_raw\_centre} report
+$g_p(\alpha_p)$: the population centre is defined on ctsem's raw estimation
+scale and is then transformed. With nonlinear $g_p$, this is generally not the
+mean natural-scale study parameter. The table
+\code{population\_parameters\_study\_average} instead computes
+$K^{-1}\sum_s g_p(\alpha_p+u_{sp})$ within every posterior draw and then
+summarizes those draw-wise equal-study averages. This is normally the relevant
+meta-analytic population estimand. The same equal-study principle is used for
+\code{population\_T0VAR\_study\_average} and
+\code{population\_T0cov\_study\_average}; these use the complete jointly
+transformed study matrices rather than transforming individual raw Cholesky
+elements. None of the heterogeneity SD tables is a standard error of the
+population mean.
+
 <<re-summary-output, eval=FALSE, purl=FALSE>>=
 re_summary <- summary(re_fit)
+re_summary$estimand_interpretation
+re_summary$population_parameters_raw_centre
+re_summary$population_parameters_study_average
 re_summary$study_sd_raw
 re_summary$study_sd_transformed
 @

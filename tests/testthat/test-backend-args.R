@@ -142,10 +142,10 @@ test_that("legacy Stan argument use is deprecated", {
   )
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.11")
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.12")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.11\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.12\\)."
   )
 
   major_functions <- c(

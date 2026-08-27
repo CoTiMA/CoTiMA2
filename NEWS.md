@@ -1,3 +1,13 @@
+# CoTiMA2 0.14.12
+
+- Hierarchical summaries now distinguish the transformed raw-scale population
+  centre from the equal-study average of transformed study parameters. The
+  latter is calculated within every posterior draw and is normally the
+  meta-analytic natural-scale estimand.
+- Added equal-study posterior summaries for jointly transformed T0VAR and T0
+  covariance elements. Calling `summary()` prints a concise interpretation of
+  the different population, study-specific, and heterogeneity estimands.
+
 # CoTiMA2 0.14.11
 
 - Added backend-independent, parameter-selective primary-study contrasts via
