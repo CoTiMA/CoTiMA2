@@ -1104,6 +1104,65 @@ DRIFT parameters, old and new specifications are not necessarily the same
 model. Analyses of residual DRIFT heterogeneity with \code{ctmaRedHet} must add
 \code{"DRIFT"} to \code{studyVarying} explicitly.
 
+\subsubsection{A controlled comparison of dummy and weighted coding}
+
+Changing the coding can alter numerical conditioning even when both
+parameterizations describe the same model. The function
+\code{ctmaStudyCodingBenchmark} conducts a controlled comparison by fitting the
+dummy-coded and weighted-coded versions with the same data, model arguments,
+Stan controls, number of chains, and random seed. It is intended as a
+computational diagnostic before committing resources to a long Bayesian fit.
+The two fits are run sequentially, so the required wall-clock time is the sum
+of both pilot fits.
+
+\begin{lstlisting}[language=R]
+coding_benchmark <- ctmaStudyCodingBenchmark(
+  ctmaInitFit = initFit,
+  studyVarying = c("DIFFUSION", "T0VAR"),
+  fitArgs = list(
+    binaries = c(1, 0),
+    randomIntercepts = "CINT",
+    scaleTime = 1 / 12
+  ),
+  iter = 200L,
+  warmup = 150L,
+  chains = 4L,
+  coresToUse = 4L,
+  seed = 20260907L,
+  adapt_delta = 0.80,
+  max_treedepth = 10L,
+  retain_fits = FALSE
+)
+
+coding_benchmark
+coding_benchmark$comparison
+coding_benchmark$weighted_speedup_vs_dummy
+\end{lstlisting}
+
+The comparison reports elapsed time per condition and per post-warmup
+iteration, divergences, maximum-tree-depth events, leapfrog effort, acceptance,
+$\widehat{R}$, and effective sample size. A value of 3 for
+\code{weighted\_speedup\_vs\_dummy}, for example, means that weighted coding was
+three times faster in that matched pilot. Frequent maximum-tree-depth events
+indicate difficult posterior geometry even in the absence of divergences.
+Short pilots often have poor $\widehat{R}$ and effective sample sizes and must
+not be used for substantive inference.
+
+The named list \code{fitArgs} is the appropriate place for model-specific
+arguments. Supplying them once ensures that both coding conditions fit exactly
+the same model. Controlled arguments such as \code{studyCoding}, \code{iter},
+and \code{chains} cannot be included in \code{fitArgs}. Additional Stan options
+can be supplied through \code{backendArgs}; the benchmark itself controls
+\code{warmup}, \code{adapt\_delta}, and \code{max\_treedepth}. Because fitted Stan
+objects can be large, \code{retain\_fits=FALSE} stores the comparison and
+parameter summaries without retaining both complete fits.
+
+Simulated studies with identical true effects provide a particularly clean
+test of computational parameterization: dummy and weighted coding should not
+produce systematic substantive differences. This does not test performance
+under genuine between-study heterogeneity. A separate heterogeneous simulation
+is required for that purpose.
+
 \subsection{Partial CoTiMA (\code{ctmaFit})}
 
 Figure 36 demonstrates some further possibilities for conducting a CoTiMA; additional capabilities are explained in Appendix B. The CoTiMA model specified in Figure 36 fixes the effect of V2toV1 to 0.0 (which we do not generally recommend - let the evidence decide rather theoretical expectations), by labeling the according drift \code{0} or \code{"}\code{0}\code{"}. Further, only the effect V1toV2 is invariant across primary studies as defined in the \code{invariantDrift} argument (which could be reasonable -- and which could be decided based upon a statistical test see Subsection 7.3). The estimated drift coefficients of this partial CoTiMA are shown in Figure 37.
@@ -2771,6 +2830,35 @@ Argument & Default & Possible \newline{}Values & Explanation \\
 \code{min.val.n.}\code{V}\code{ars} & \code{1} & any integer value between 0 and number of manifest variables & Specifies the minimum no. of valid variables (i.e., non-NA) that has to be available per participant. Default = 1 (retains cases with only 1 valid variable), 0 would retain cases will all variables missing (not very useful). Retaining participants who provide a single valid variable is technically possible, but these participants contribute to the estimation of the variance/mean of this variable only. Since variance/mean are 1/0 in most CoTiMA applications, this is not very informative but at the cost of additional computational burden. Setting \code{min.val.n.Vars}\code{ }\code{=}\code{ }\code{2} is recommended. \\
 \code{min.val.Tpoints} & \code{1} & any integer value between 1 and number of available time points & Minimum no. of valid time points (i.e. time points where \code{min.val.n.Vars} is met). Default = 1 retains participants with full set of valid variables at least at one single time point (which will become T0). Setting \code{min.val.Tpoints}\code{ }\code{=}\code{ }\code{2} or higher values retains participants which provide longitudinal information. Since T0 covariances are usually not too interesting, \code{min.val.Tpoints}\code{ }\code{=}\code{ }\code{2} may be more reasonable than the default = 1. \\
 \code{standardization} & \code{"}\code{none}\code{"} & Any of \code{"}\code{none}\code{"}, \code{"}\code{withinTimeA}\code{"}, \code{"}\code{withinTimeB}\code{"}, \code{"}\code{withinColumn}\code{"}, \code{"}\code{withinPerson}\code{"}, or \code{"}\code{overall}\code{"} & Different ways to standardize raw data are possible (\code{"}\code{w}\code{ithinTimeA}\code{"}\code{ }standardizes within time points and deletes cases with missing T0 data. \code{"}\code{w}\code{ithinTimeB}\code{"} standardizes within time points and does not delete cases, and in subsequent ctsem or CoTiMA applications the user is advised to use the argument \code{sameInitialTimes}\code{ }\code{=}\code{ }\code{TRUE}. This argument probably handles raw data in the way primary studies do when computing pairwise correlation matrices. \code{"}\code{withinColumn}\code{"} standardizes variables after arranging them in wide format. Since time points without valid data are eliminated for each case (i.e., values are moved from later to earlier time points), this makes the difference to \code{"}\code{withinTimeA}\code{"} and \code{"}\code{withinTimeB}\code{"}. \code{"}\code{withinPerson}\code{"} standardizes all variables within person. \code{"}\code{overall}\code{"} standardizes all variables across all persons. \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\small
+\begin{longtable}{p{0.18\linewidth} p{0.14\linewidth} p{0.22\linewidth} p{0.38\linewidth}}
+\toprule
+Argument & Default & Possible \newline{}Values & Explanation \\
+\midrule
+\multicolumn{3}{p{0.54\linewidth}}{\normalsize \code{ctmaStudyCodingBenchmark (-)}} & Runs matched short Bayesian Stan pilots for dummy and weighted primary-study coding and compares their runtime and NUTS geometry. Both conditions use the same data, model arguments, controls, chains, and seed. This is a computational diagnostic and not a substitute for a sufficiently long Bayesian analysis. \\[0.45em]
+\endfirsthead
+\toprule
+Argument & Default & Possible \newline{}Values & Explanation \\
+\midrule
+\multicolumn{3}{p{0.54\linewidth}}{\normalsize \code{ctmaStudyCodingBenchmark (-)}} & \emph{\ldots{} continued} \\[0.45em]
+\endhead
+\code{ctmaInitFit} & required & \code{ctmaInit} fit-object & Input object used unchanged in both coding conditions. \\
+\code{studyVarying} & \code{c("DIFFUSION",} \newline{}\code{"T0VAR")} & vector of parameter families & Selects the parameter families that receive study effects in both pilots. \\
+\code{fitArgs} & \code{list()} & named list & Model-specific \code{ctmaFit} arguments shared by both conditions, for example \code{binaries}, \code{randomIntercepts}, and \code{scaleTime}. Controlled benchmark arguments must not be repeated here. \\
+\code{iter} & \code{200} & integer > 1 & Total Stan iterations per chain. Short pilots diagnose computation but do not provide publication-ready posterior inference. \\
+\code{warmup} & \code{150} & integer from 0 to \code{iter-1} & Warm-up and NUTS adaptation iterations per chain. \\
+\code{chains} & \code{4} & positive integer & Number of matched Stan chains. \\
+\code{coresToUse} & \code{min(chains, 4)} & positive integer & Number of chains evaluated concurrently. \\
+\code{seed} & \code{20260907} & non-negative integer & Random seed reset before each coding condition. \\
+\code{adapt\_delta} & \code{0.80} & value between 0 and 1 & Stan target acceptance probability shared by both conditions. \\
+\code{max\_treedepth} & \code{10} & positive integer & Maximum NUTS tree depth shared by both conditions. \\
+\code{backendArgs} & \code{list()} & named list & Additional Stan backend controls shared by both conditions. Do not repeat \code{warmup}, \code{adapt\_delta}, or \code{max\_treedepth}. \\
+\code{retain\_fits} & \code{FALSE} & \code{FALSE/TRUE} & Whether both potentially large CoTiMA/Stan fit objects are retained in the returned benchmark object. Diagnostics and substantive parameter summaries are retained in either case. \\
+\code{verbose} & \code{0} & non-negative integer & Verbosity passed to both calls of \code{ctmaFit}. \\
 \bottomrule
 \end{longtable}
 \normalsize
