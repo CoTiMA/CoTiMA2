@@ -4,6 +4,14 @@
 /doc/
 /Meta/
 /inst/doc/
+/vignettes/*.aux
+/vignettes/*-concordance.tex
+/vignettes/*.log
+/vignettes/*.out
+/vignettes/*.pdf
+/vignettes/*.synctex.gz
+/vignettes/*.tex
+/vignettes/*.toc
 
 .DS_Store
 *.Rcheck/
