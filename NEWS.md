@@ -1,3 +1,12 @@
+# CoTiMA2 0.14.13
+
+- Fixed Stan Bayesian fits started through `ctmaFit()`, `ctmaAllInvFit()`, or
+  `ctmaInit()` so that an unspecified warmup is set to half of `iter` instead
+  of being passed to ctsem as zero warmup. An explicit `backendArgs$warmup`
+  override is now supported and validated.
+- Added a short study-coding diagnostic under `tools/` to compare dummy and
+  weighted design geometry and, optionally, bounded Julia optimization pilots.
+
 # CoTiMA2 0.14.12
 
 - Hierarchical summaries now distinguish the transformed raw-scale population

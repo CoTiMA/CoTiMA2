@@ -1329,7 +1329,7 @@ ctmaInit <- function(
                 gendata=CoTiMAStanctArgs$gendata,
                 control=CoTiMAStanctArgs$control,
                 verbose=verbose,
-                warmup=CoTiMAStanctArgs$warmup,
+                warmup=.ctmaStanWarmup(CoTiMAStanctArgs),
                 cores=1) ))
 
               hessianWarning[[i]] <- list(warn_hessinv = fits$warn_hessinv,

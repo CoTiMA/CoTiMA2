@@ -1421,7 +1421,7 @@ ctmaFit <- function(
       control=CoTiMAStanctArgs$control,
       #verbose=CoTiMAStanctArgs$verbose,
       verbose=verbose,
-      warmup=CoTiMAStanctArgs$warmup,
+      warmup=.ctmaStanWarmup(CoTiMAStanctArgs),
       cores=coresToUse,
       inits=inits)
 

@@ -421,7 +421,7 @@ ctmaAllInvFit <- function(
       gendata=CoTiMAStanctArgs$gendata,
       control=CoTiMAStanctArgs$control,
       verbose=CoTiMAStanctArgs$verbose,
-      warmup=CoTiMAStanctArgs$warmup,
+      warmup=.ctmaStanWarmup(CoTiMAStanctArgs),
       cores=coresToUse))
 
       #Msg <- "\nComputing results summary of all invariant model.\n"

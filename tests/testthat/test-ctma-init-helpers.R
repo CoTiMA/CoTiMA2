@@ -138,6 +138,22 @@ test_that("ctmaFit direct controls have defined precedence", {
   expect_identical(explicit$verbose, 0)
 })
 
+test_that("Stan warmup defaults to half of iter and can be overridden", {
+  defaults <- CoTiMA2:::.ctmaResolveFitStanArgs(iter = 100L)
+  expect_null(defaults$warmup)
+  expect_identical(CoTiMA2:::.ctmaStanWarmup(defaults), 50L)
+
+  explicit <- CoTiMA2:::.ctmaResolveFitStanArgs(
+    overrides = list(warmup = 30L),
+    iter = 100L
+  )
+  expect_identical(CoTiMA2:::.ctmaStanWarmup(explicit), 30L)
+  expect_error(
+    CoTiMA2:::.ctmaStanWarmup(list(iter = 100L, warmup = 100L)),
+    "0 <= warmup < iter"
+  )
+})
+
 test_that("ctmaFit rejects unknown legacy Stan controls", {
   expect_error(
     CoTiMA2:::.ctmaResolveFitStanArgs(list(not_a_control = TRUE)),
