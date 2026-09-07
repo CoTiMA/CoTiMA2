@@ -1,5 +1,9 @@
 # CoTiMA2 0.14.14
 
+- Renamed package documentation sources from `CoTiMA_...` to `CoTiMA2_...`
+  and synchronized the User Guide filename and title page with package version
+  0.14.14. The tarball build script now stops when the User Guide name or
+  embedded version does not match `DESCRIPTION`.
 - Added `ctmaStudyCodingBenchmark()` for a controlled, paired comparison of
   dummy and weighted study coding with identical Stan settings, seeds, model
   arguments, and data. It reports runtime per post-warmup iteration,

@@ -1601,7 +1601,7 @@ The following commands knit this document in RStudio or from the R console.
 
 <<knit-document, purl=FALSE>>=
 knitr::knit2pdf(
-  "CoTiMA_Random_Effects.Rnw",
+  "CoTiMA2_Random_Effects.Rnw",
   clean = FALSE
 )
 

@@ -1,5 +1,5 @@
 % !Rnw weave = knitr
-%\VignetteIndexEntry{Random-Intercept CoTiMA with Study-Level Random Effects}
+%\VignetteIndexEntry{Random-Intercept CoTiMA2 with Study-Level Random Effects}
 %\VignetteEngine{knitr::knitr}
 %\VignetteEncoding{UTF-8}
 \documentclass[11pt]{article}
@@ -23,7 +23,7 @@
 \newcommand{\Normal}{\mathcal{N}}
 \newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
 
-\title{Random-Intercept CoTiMA with Study-Level Random Effects:\\
+\title{Random-Intercept CoTiMA2 with Study-Level Random Effects:\\
   Phantom Continuous-Time Processes and Their Heterogeneity}
 \author{C. Dormann, T. Hagen, \& $\widehat{\textnormal{C}}$. G. Petee}
 \date{\today}
@@ -88,7 +88,7 @@ manifest means are consequently zero and mean-level heterogeneity between
 studies is not the target. The RI component instead concerns the covariance of
 stable person-level deviations.
 
-For large RI models, Julia ML uses \code{warm_start="auto"} by default. The
+For large RI models, Julia ML uses \code{warm\_start="auto"} by default. The
 pilot samples complete persons within studies and estimates only the common
 population/base parameters, including the pooled person-level RI covariance;
 TI-predictor effects remain zero during this pass. The initial ten-percent

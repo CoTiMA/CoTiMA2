@@ -10,11 +10,53 @@ if (!file.exists(description)) {
 desc <- read.dcf(description)
 package_name <- unname(desc[1L, "Package"])
 package_version <- unname(desc[1L, "Version"])
-parent_dir <- dirname(package_dir)
-archive <- file.path(parent_dir, sprintf("%s_%s.tar.gz", package_name, package_version))
+archive <- file.path(
+  package_dir,
+  sprintf("%s_%s.tar.gz", package_name, package_version)
+)
 r_bin <- file.path(R.home("bin"), "R")
 
 vignette_dir <- file.path(package_dir, "vignettes")
+expected_user_guide <- sprintf(
+  "CoTiMA2_User_Guide_%s.Rnw",
+  package_version
+)
+expected_user_guide_path <- file.path(vignette_dir, expected_user_guide)
+if (!file.exists(expected_user_guide_path)) {
+  available_guides <- list.files(
+    vignette_dir,
+    pattern = "^(CoTiMA2?|CoTiMA)_User_Guide_.*\\.[Rr]nw$"
+  )
+  stop(
+    "Documentation version mismatch. Expected '", expected_user_guide,
+    "' for package version ", package_version, ". Found: ",
+    if (length(available_guides)) paste(available_guides, collapse = ", ")
+    else "no versioned User Guide", "."
+  )
+}
+user_guide_lines <- readLines(expected_user_guide_path, warn = FALSE)
+required_guide_text <- c(
+  "%\\VignetteIndexEntry{CoTiMA2 User Guide}",
+  paste0("Version ", package_version)
+)
+missing_guide_text <- required_guide_text[
+  !vapply(required_guide_text, function(x) {
+    any(grepl(x, user_guide_lines, fixed = TRUE))
+  }, logical(1L))
+]
+if (length(missing_guide_text)) {
+  stop(
+    "The User Guide does not match CoTiMA2 version ", package_version,
+    ". Missing text: ", paste(missing_guide_text, collapse = "; "), "."
+  )
+}
+legacy_sources <- list.files(vignette_dir, pattern = "^CoTiMA_.*\\.[Rr]nw$")
+if (length(legacy_sources)) {
+  stop(
+    "Rename package documentation sources from 'CoTiMA_' to 'CoTiMA2_': ",
+    paste(legacy_sources, collapse = ", "), "."
+  )
+}
 vignette_sources <- list.files(vignette_dir, pattern = "\\.[Rr]nw$",
   full.names = TRUE)
 if (length(vignette_sources)) {
@@ -42,12 +84,12 @@ if (length(vignette_sources)) {
   setwd(vignette_wd)
 }
 
-old_wd <- setwd(parent_dir)
+old_wd <- setwd(package_dir)
 on.exit(setwd(old_wd), add = TRUE)
 status <- system2(
   r_bin,
   c("CMD", "build", "--no-build-vignettes",
-    shQuote(basename(package_dir))),
+    "."),
   stdout = "",
   stderr = ""
 )
@@ -57,11 +99,13 @@ if (!identical(status, 0L) || !file.exists(archive)) {
 
 verify_lib <- tempfile("cotima2-install-")
 dir.create(verify_lib)
-on.exit(unlink(verify_lib, recursive = TRUE, force = TRUE), add = TRUE)
 status <- system2(
   r_bin,
-  c("CMD", "INSTALL", "--no-test-load", "-l", shQuote(verify_lib),
-    shQuote(archive)),
+  c(
+    "CMD", "INSTALL", "--no-test-load",
+    paste0("--library=", verify_lib),
+    shQuote(basename(archive))
+  ),
   stdout = "",
   stderr = ""
 )

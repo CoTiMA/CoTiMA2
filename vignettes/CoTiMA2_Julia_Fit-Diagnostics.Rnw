@@ -154,7 +154,7 @@ Interpret the consistency check before interpreting speed:
   \item If likelihood and gradient are both safe, parallel subject processing
     may be used for optimization.
   \item If either check fails, CoTiMA2 retains the deterministic safe path.
-    Increasing \code{subject_threads} then cannot accelerate the affected
+    Increasing \code{subject\_threads} then cannot accelerate the affected
     calculation.
   \item The choice is made for the fit and retained. It is not repeatedly
     switched during optimization.

@@ -120,10 +120,10 @@ The current development version uses two principal files:
     remove much of the performance benefit.
 \end{description}
 
-During package development, \code{julia_file} identifies the local
+During package development, \code{julia\_file} identifies the local
 \code{CtsemJulia.jl}.  In an installed CoTiMA package, the file should reside
 under \code{inst/julia/CtsemJulia.jl}; \code{system.file()} can then find it and
-ordinary users should not need to supply \code{julia_file}.
+ordinary users should not need to supply \code{julia\_file}.
 
 The Julia \code{Project.toml} and \code{Manifest.toml} describe the Julia
 packages used by the backend.  They make the computational environment more
@@ -133,7 +133,7 @@ reproducible.  They are implementation files rather than model input files.
 
 CoTiMA2 does not attach the user-guide datasets automatically.  This avoids a
 dangerous ambiguity: a request such as \code{selectedStudies=1:10} must not
-silently use packaged \code{delta_t1}, \code{sampleSize1}, or
+silently use packaged \code{delta\_t1}, \code{sampleSize1}, or
 \code{empcov1} objects when the user has not created study 1.  Load only the
 examples required for an exercise:
 
@@ -444,12 +444,12 @@ warmup than a diagonal metric, especially when there are many parameters.
     \code{ctmaFit(fit=FALSE)} object, or path to an RDS file containing one.
   \item[\code{study}] Selects an element when \code{studyFitList} contains
     several fits.  It is otherwise ignored.
-  \item[\code{julia_file}] Path to \code{CtsemJulia.jl}.  The installed package
+  \item[\code{julia\_file}] Path to \code{CtsemJulia.jl}.  The installed package
     will locate this file automatically; it is explicit in development code.
   \item[\code{initialize}] If \code{TRUE}, initialize JuliaCall when Julia is
     not active.  Julia cannot be restarted with a different thread count in
     the same R process.
-  \item[\code{julia_home}] Directory used by JuliaCall to locate Julia.  The
+  \item[\code{julia\_home}] Directory used by JuliaCall to locate Julia.  The
     default automatically searches the system path and common Juliaup
     installation locations; supply it only for an unusual installation.
   \item[\code{validate}] Compare Julia's likelihood with the retained Stan
@@ -472,42 +472,42 @@ warmup than a diagonal metric, especially when there are many parameters.
     optimization stage.  It is a ceiling, not a required iteration count.
   \item[\code{chunksize}] ForwardDiff chunk size for derivatives.  The default
     is generally suitable; changing it is an advanced performance adjustment.
-  \item[\code{gradient_tolerance}] Maximum absolute raw-scale gradient required
+  \item[\code{gradient\_tolerance}] Maximum absolute raw-scale gradient required
     to regard an ML fit as converged.
-  \item[\code{function_relative_tolerance}] Optional relative objective-change
+  \item[\code{function\_relative\_tolerance}] Optional relative objective-change
     stopping rule.  Zero disables it so a small objective change cannot hide a
     large raw gradient.
-  \item[\code{parameter_relative_tolerance}] Optional relative parameter-change
+  \item[\code{parameter\_relative\_tolerance}] Optional relative parameter-change
     stopping rule.  Zero disables it.
-  \item[\code{optimizer_initial_step}] Controls the target largest raw-coordinate
+  \item[\code{optimizer\_initial\_step}] Controls the target largest raw-coordinate
     displacement in the automatically preconditioned first L-BFGS step.
   \item[\code{multistart}] Number of independent ML optimizations.  Start one
     uses \code{inits} unchanged; remaining starts are reproducibly jittered.
-  \item[\code{parallel_starts}] Number of ML starts run concurrently in
+  \item[\code{parallel\_starts}] Number of ML starts run concurrently in
     separate local Julia processes.
-  \item[\code{threads_per_start}] Subject-likelihood threads allocated to each
-    ML process.  Budget \code{parallel_starts * threads_per_start} cores.
-  \item[\code{multistart_jitter}] Relative raw-scale perturbation for starts
+  \item[\code{threads\_per\_start}] Subject-likelihood threads allocated to each
+    ML process.  Budget \code{parallel\_starts * threads\_per\_start} cores.
+  \item[\code{multistart\_jitter}] Relative raw-scale perturbation for starts
     after the first.  The default 0.1 is a ten-percent perturbation, with a
     small scale floor for parameters initialized at zero.
-  \item[\code{warm_start}] \code{"auto"} (the default), \code{TRUE}, or
+  \item[\code{warm\_start}] \code{"auto"} (the default), \code{TRUE}, or
     \code{FALSE}. Before the ordinary full-data ML fit, the automatic option
     may estimate population/base parameters on a stratified subset of complete
     persons while keeping TI-predictor effects fixed at zero. Explicitly
     supplied \code{inits} disable this pilot.
-  \item[\code{warm_start_fraction}] Initially requested fraction of persons
+  \item[\code{warm\_start\_fraction}] Initially requested fraction of persons
     (default 0.10). This is not a hard limit: identification, study, repeated-
     measurement, and binary-category checks can enlarge the pilot.
-  \item[\code{warm_start_subjects_per_parameter}] Minimum number of informative
+  \item[\code{warm\_start\_subjects\_per\_parameter}] Minimum number of informative
     persons per population/base parameter (default 20).
-  \item[\code{warm_start_minimum_per_study}] Minimum number of persons sampled
+  \item[\code{warm\_start\_minimum\_per\_study}] Minimum number of persons sampled
     from every study (default 25), or every available person in a smaller
     study.
-  \item[\code{warm_start_maximum_subjects}] Soft computational ceiling
+  \item[\code{warm\_start\_maximum\_subjects}] Soft computational ceiling
     (default 5000). Structural minima take priority over this ceiling.
-  \item[\code{warm_start_binary_minimum}] Minimum persons representing every
+  \item[\code{warm\_start\_binary\_minimum}] Minimum persons representing every
     available zero and one category of each binary manifest (default 20).
-  \item[\code{warm_start_maxiters}] Maximum L-BFGS iterations in the subset
+  \item[\code{warm\_start\_maxiters}] Maximum L-BFGS iterations in the subset
     pilot (default 250).
   \item[\code{carefulFit}] If \code{TRUE} (recommended), first optimize
     population parameters with TI effects fixed, then include TI effects, and
@@ -516,51 +516,51 @@ warmup than a diagonal metric, especially when there are many parameters.
     \code{inits}, setting \code{carefulFit=FALSE} usually provides the more
     efficient refinement because all parameters are optimized jointly from
     that retained point.
-  \item[\code{staged_optimization}] Deprecated alias for \code{carefulFit}; do
+  \item[\code{staged\_optimization}] Deprecated alias for \code{carefulFit}; do
     not use it in new analyses.
   \item[\code{confidence}] Confidence level used for ML raw-parameter intervals.
   \item[\code{transformed}] Transform approximate raw draws through ctsem and
     construct ctsem-style matrices and summaries.  For a large ML fit it is
     often convenient to set this to \code{FALSE} and add samples later.
-  \item[\code{transformed_draws}] Number of raw draws used to approximate
+  \item[\code{transformed\_draws}] Number of raw draws used to approximate
     nonlinear transformed summaries.
-  \item[\code{transformed_cores}] Cores used by ctsem while transforming draws.
+  \item[\code{transformed\_cores}] Cores used by ctsem while transforming draws.
     These are distinct from Julia likelihood threads.
   \item[\code{seed}] Random seed for transformed draws and NUTS sampling.
   \item[\code{chains}] Number of independent NUTS chains.
   \item[\code{warmup}] Adaptation iterations per NUTS chain.  Warmup draws are
     not retained for inference.
   \item[\code{samples}] Retained posterior draws per chain.
-  \item[\code{target_accept}] Target NUTS acceptance probability.  Values near
+  \item[\code{target\_accept}] Target NUTS acceptance probability.  Values near
     0.8--0.9 are common; increasing it may reduce divergences at the cost of
     smaller steps and more computation.
-  \item[\code{max_depth}] Maximum NUTS tree depth.  Repeated retained-sample
+  \item[\code{max\_depth}] Maximum NUTS tree depth.  Repeated retained-sample
     depth hits indicate truncated trajectories; increasing it also raises the
     maximum possible computational work per iteration.
   \item[\code{metric}] \code{"diagonal"} adapts one scale per parameter;
     \code{"dense"} also adapts correlations and therefore requires more
     warmup and memory.
-  \item[\code{init_jitter}] Standard deviation of chain-specific perturbations
+  \item[\code{init\_jitter}] Standard deviation of chain-specific perturbations
     around \code{inits} on the raw scale.
-  \item[\code{nuts_progress}] Show compact aggregate NUTS progress across all
+  \item[\code{nuts\_progress}] Show compact aggregate NUTS progress across all
     chains, including completed iterations, elapsed time, and an ETA. The line
     is overwritten at each update where supported by the console.
-  \item[\code{progress_every}] Number of NUTS iterations between progress
+  \item[\code{progress\_every}] Number of NUTS iterations between progress
     messages from each parallel worker (default 25). Smaller values update the
     display more often but add a little inter-process communication.
-  \item[\code{parallel_chains}] Number of Bayesian chains run concurrently in
+  \item[\code{parallel\_chains}] Number of Bayesian chains run concurrently in
     separate local Julia worker processes.  One retains sequential behavior.
-  \item[\code{threads_per_chain}] Subject-likelihood threads assigned to every
-    concurrent chain.  Ensure that \code{parallel_chains * threads_per_chain}
+  \item[\code{threads\_per\_chain}] Subject-likelihood threads assigned to every
+    concurrent chain.  Ensure that \code{parallel\_chains * threads\_per\_chain}
     does not exceed the intended CPU budget.
-  \item[\code{performance_warning}] Print a heuristic warning when ctsem's
+  \item[\code{performance\_warning}] Print a heuristic warning when ctsem's
     compiled Stan route may be faster for the model at hand.
-  \item[\code{show_trace}] Print the ML optimizer trace.  The latest trace line
+  \item[\code{show\_trace}] Print the ML optimizer trace.  The latest trace line
     overwrites the preceding line where the console supports carriage returns.
-  \item[\code{julia_threads}] Julia threads used for subject likelihoods and
+  \item[\code{julia\_threads}] Julia threads used for subject likelihoods and
     gradients.  The value is fixed when Julia starts; restart R before changing
     it in an already initialized session.
-  \item[\code{blas_threads}] Threads used by BLAS inside each calculation.
+  \item[\code{blas\_threads}] Threads used by BLAS inside each calculation.
     \code{1} is normally appropriate because ctsem matrices are small and
     subject-level Julia parallelism is already active.
 \end{description}
@@ -592,10 +592,10 @@ The user-facing methods are:
     transformed samples.
   \item[\code{vcov(object, ...)}] Returns the inverse-Hessian covariance for
     ML or the empirical covariance of retained raw NUTS draws for Bayes.
-  \item[\code{summary(object, ctsem_fit, transformed_draws,
-    transformed_cores, seed, digits, study_specific, ...)}] Returns the stored
+  \item[\code{summary(object, ctsem\_fit, transformed\_draws,
+    transformed\_cores, seed, digits, study\_specific, ...)}] Returns the stored
     ctsem-style summary or creates it using a matching setup.  \code{digits}
-    controls printed decimals.  If \code{study_specific=TRUE}, study-specific
+    controls printed decimals.  If \code{study\_specific=TRUE}, study-specific
     estimates evaluated at each observed TI-predictor profile are appended;
     this supports dummy and weighted-effect coding.
 \end{description}
@@ -688,7 +688,7 @@ coef(uncertaintyFit, type = "study")
 
 The Julia thread count is fixed when Julia starts.  If a different value is
 used for the later Hessian calculation, restart R before calling
-\code{ctmaJuliaFit()} and use the intended \code{julia_threads} value in the
+\code{ctmaJuliaFit()} and use the intended \code{julia\_threads} value in the
 first Julia call of that session.
 
 \subsection{Adding transformed samples later}
@@ -807,7 +807,7 @@ At present the Julia study-RE backend supports Bayesian estimation for
 independent, noncentered, type-1 raw/DRIFT study effects.  Stan remains the
 general backend for MAP, conditional/joint ML, correlated random effects, and
 other random-effect types.  The \code{backendArgs} list contains Julia-specific
-overrides; the top-level \code{chains}, \code{seed}, and \code{init_jitter}
+overrides; the top-level \code{chains}, \code{seed}, and \code{init\_jitter}
 remain ordinary \code{ctmaReFit()} arguments.
 
 \section{Moderator-associated reduction in random-effect heterogeneity}
@@ -877,7 +877,7 @@ hierarchical distribution is defined.
 
 For Bayesian fits, \code{ctmaReRedHet()} independently combines draws from the
 two separately fitted posterior distributions and reports an interval and the
-probability that the reduction exceeds \code{practical_threshold}.  This is a
+probability that the reduction exceeds \code{practical\_threshold}.  This is a
 descriptive cross-model Monte Carlo comparison, not a joint posterior
 distribution and not evidence that the moderators causally explain the
 heterogeneity.  With multiple random effects, the function also reports the
@@ -893,10 +893,10 @@ The main arguments are:
     the moderators.
   \item[\code{probs}] Lower, median, and upper probabilities for the
     cross-model Monte Carlo interval.
-  \item[\code{comparison_draws}] Number of independently combined
+  \item[\code{comparison\_draws}] Number of independently combined
     cross-model draw pairs.
   \item[\code{seed}] Seed for reproducible pairing.
-  \item[\code{practical_threshold}] Reduction threshold used for the reported
+  \item[\code{practical\_threshold}] Reduction threshold used for the reported
     exceedance probability.
 \end{description}
 
@@ -966,7 +966,7 @@ criterion has been met.  Conversely, reaching \code{maxiters} with a large
 gradient is not convergence.  When \code{carefulFit=TRUE}, iteration totals are
 distributed across stages and \code{maxiters} applies to each stage.
 
-With \code{warm_start="auto"}, CoTiMA2 first determines whether a smaller pilot
+With \code{warm\_start="auto"}, CoTiMA2 first determines whether a smaller pilot
 is both useful and defensible. Complete person records are sampled within
 studies; the requested fraction is enlarged when necessary for the number of
 base parameters, repeated measurements, small studies, or binary categories.
@@ -976,8 +976,8 @@ of all persons, the automatic pilot is skipped. After subset optimization, its
 full-length candidate vector is evaluated on all data and accepted only when
 its full-data objective is finite and no worse than the ordinary starting
 point. Thus the pilot cannot silently replace a better default start. Details
-are retained in \code{fit$warm_start} and timing in
-\code{fit$warm_start_timing}.
+are retained in \code{fit$warm\_start} and timing in
+\code{fit$warm\_start\_timing}.
 
 \subsubsection{Continuing an existing Julia fit}
 
@@ -1009,7 +1009,7 @@ refined_fit <- ctmaFit(
 @
 
 Explicit \code{inits} already disable the subset warm start, so
-\code{warm_start=FALSE} is redundant but documents the intended refinement
+\code{warm\_start=FALSE} is redundant but documents the intended refinement
 workflow. Reusing raw estimates is safe only when the data and their ordering,
 \code{scaleTime}, binary specification, random-intercept or individual-varying
 specification, TI predictors, and parameter ordering are unchanged. Otherwise
@@ -1044,14 +1044,14 @@ diagnostic guidelines, not substitutes for model-specific judgment.
 \section{Practical computing guidance}
 
 \begin{itemize}
-  \item \textbf{Thread count.} The default \code{julia_threads="auto"}
+  \item \textbf{Thread count.} The default \code{julia\_threads="auto"}
     creates a pool with one fewer thread than the CPUs available to the R
     process.  Set it before Julia is first initialized and restart R to change
-    the pool capacity.  \code{subject_threads} limits concurrent subject tasks
+    the pool capacity.  \code{subject\_threads} limits concurrent subject tasks
     and can be changed between fits without restarting R.  Keep
-    \code{blas_threads=1} unless a benchmark demonstrates a benefit.
+    \code{blas\_threads=1} unless a benchmark demonstrates a benefit.
   \item \textbf{Concurrent chains.} Budget CPU use as
-    \code{parallel_chains * threads_per_chain}; BLAS should normally remain at
+    \code{parallel\_chains * threads\_per\_chain}; BLAS should normally remain at
     one thread.  Worker startup adds overhead, so parallel execution is useful
     for substantive chains rather than very short smoke tests.
   \item \textbf{ML multistart.} Multistart improves robustness and explores
@@ -1129,13 +1129,13 @@ the best valid throughput configuration,
 staged (\code{carefulFit=TRUE}) optimizer pilots. It recommends the alternative
 using both objective improvement per elapsed second and reduction of the raw
 gradient. The default is five iterations per stage; change this with, for example,
-\code{pilot_iterations=10L}. Models without time-invariant effects need no
+\code{pilot\_iterations=10L}. Models without time-invariant effects need no
 staged optimization, so only \code{carefulFit=FALSE} is tested. These short
 pilots are a heuristic and do not establish convergence.
 
 Explicit values in \code{backendArgs} are retained as constraints. Candidate
 strategies can be restricted with, for example,
-\code{candidate_carefulFit=FALSE}. With \code{backend="stan"}, the function
+\code{candidate\_carefulFit=FALSE}. With \code{backend="stan"}, the function
 validates and returns the Stan controls and reports setup cost; pooled
 ctsem/Stan fitting does not expose Julia's subject-task or ForwardDiff chunk
 controls.
@@ -1261,12 +1261,12 @@ juliaSystem2(
 Restart R once more after this bootstrap.  \code{ctmaJuliaFit()} and
 Julia-based \code{ctmaReFit()} use the same discovery routine as
 \code{ctmaJuliaSetup()}, even when \code{Sys.which("julia")} remains empty.
-An explicit \code{julia_home} is therefore needed only for an unusual
+An explicit \code{julia\_home} is therefore needed only for an unusual
 installation.  A failed JuliaCall initialization also requires an R restart;
 the embedded Julia runtime cannot be repaired or replaced reliably inside
 that R process.
 If \code{Suppressor} and \code{RCall} were already installed successfully,
-\code{ctmaJuliaSetup(bootstrap_juliacall=FALSE)} skips the default-environment
+\code{ctmaJuliaSetup(bootstrap\_juliacall=FALSE)} skips the default-environment
 bootstrap and proceeds directly to the isolated CoTiMA project.  This is also
 the appropriate recovery when an unrelated package such as Conda fails while
 the default Julia environment is being processed.
@@ -1292,10 +1292,10 @@ For a new class of model:
 
 \begin{description}
   \item[\code{Cannot find CtsemJulia.jl}] Supply the development path through
-    \code{julia_file}.  Installed-package users should verify that CoTiMA was
+    \code{julia\_file}.  Installed-package users should verify that CoTiMA was
     installed with its \code{inst/julia} directory.
   \item[Julia thread mismatch] Restart R and make the first Julia call with the
-    intended \code{julia_threads}.  Closing only an object does not unload the
+    intended \code{julia\_threads}.  Closing only an object does not unload the
     embedded Julia runtime.
   \item[Positive-definite factorization failure] The trial parameter vector
     implied an invalid or numerically unstable covariance.  Use better
@@ -1314,7 +1314,7 @@ For a new class of model:
     progress display passing through JuliaCall.  The backend now uses a compact
     single-line progress callback; the issue was cosmetic and did not alter
     draws.
-  \item[Bayesian tree depth is always maximal] Increase \code{max_depth} only
+  \item[Bayesian tree depth is always maximal] Increase \code{max\_depth} only
     after checking adaptation, metric, scaling, and warmup.  A deeper tree can
     make every iteration substantially slower.
 \end{description}
