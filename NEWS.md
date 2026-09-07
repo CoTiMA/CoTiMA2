@@ -1,3 +1,15 @@
+# CoTiMA2 0.14.14
+
+- Added `ctmaStudyCodingBenchmark()` for a controlled, paired comparison of
+  dummy and weighted study coding with identical Stan settings, seeds, model
+  arguments, and data. It reports runtime per post-warmup iteration,
+  divergences, tree-depth saturation, leapfrog effort, acceptance, R-hat, and
+  effective sample size while clearly treating short runs as computational
+  diagnostics rather than substantive posterior analyses.
+- Documented that simulations with identical true effects across studies are
+  useful for isolating coding-related computational geometry but do not test
+  behavior under genuine between-study heterogeneity.
+
 # CoTiMA2 0.14.13
 
 - Fixed Stan Bayesian fits started through `ctmaFit()`, `ctmaAllInvFit()`, or
