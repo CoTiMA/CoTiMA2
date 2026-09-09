@@ -17,7 +17,8 @@
     mode = "quick",
     scenarios = "",
     seed = 20260909L,
-    retain_fits = FALSE
+    retain_fits = FALSE,
+    resume = TRUE
   )
   for (arg in args) {
     if (!startsWith(arg, "--") || !grepl("=", arg, fixed = TRUE)) stop(
@@ -32,6 +33,8 @@
   defaults$cores <- as.integer(defaults$cores)
   defaults$seed <- as.integer(defaults$seed)
   defaults$retain_fits <- tolower(as.character(defaults$retain_fits)) %in%
+    c("true", "t", "1", "yes")
+  defaults$resume <- tolower(as.character(defaults$resume)) %in%
     c("true", "t", "1", "yes")
   defaults$mode <- match.arg(tolower(defaults$mode), c("quick", "full"))
   defaults$scenarios <- trimws(strsplit(
@@ -144,8 +147,21 @@
   if (!length(value) || is.na(value)) default else value
 }
 
+.ctma_interval <- function(table, parameter) {
+  if (is.null(table) || !parameter %in% rownames(table)) {
+    return(c(lower = NA_real_, upper = NA_real_))
+  }
+  columns <- colnames(table)
+  lower_name <- intersect(c("2.5%", "2.5%ile", "l95", "lower"), columns)[1L]
+  upper_name <- intersect(c("97.5%", "97.5%ile", "u95", "upper"), columns)[1L]
+  c(
+    lower = if (is.na(lower_name)) NA_real_ else .ctma_scalar(table[parameter, lower_name]),
+    upper = if (is.na(upper_name)) NA_real_ else .ctma_scalar(table[parameter, upper_name])
+  )
+}
+
 .ctma_run_recovery_case <- function(
-    scenario, design, cores, output, retain_fit = FALSE) {
+    scenario, design, cores, output, retain_fit = FALSE, seed = NA_integer_) {
   parameter <- switch(
     scenario, cint = "cint_eta1", drift = "drift_eta1",
     diffusion = "diff_eta1", t0var = "T0var_eta1"
@@ -177,13 +193,16 @@
       parameter %in% rownames(study_table)) {
     .ctma_scalar(study_table[parameter, "mean"])
   } else NA_real_
+  study_interval <- .ctma_interval(study_table, parameter)
+  subject_table <- fit_summary[["popsd.id"]]
   subject_estimate <- if (design$truth$subject_cint_sd > 0 &&
-      !is.null(fit_summary[["popsd.id"]]) &&
-      "cint_eta1" %in% rownames(fit_summary[["popsd.id"]])) {
-    .ctma_scalar(fit_summary[["popsd.id"]]["cint_eta1", "mean"])
+      !is.null(subject_table) && "cint_eta1" %in% rownames(subject_table)) {
+    .ctma_scalar(subject_table["cint_eta1", "mean"])
   } else NA_real_
+  subject_interval <- .ctma_interval(subject_table, "cint_eta1")
   result <- list(
     scenario = scenario,
+    seed = seed,
     status = "completed",
     nstudy = length(unique(design$data$study)),
     nsubjects = length(unique(design$data$id)),
@@ -197,10 +216,23 @@
     gap_per_subject = .ctma_scalar(check$gap_per_subject),
     true_study_sd = design$truth$study_sd,
     estimated_study_sd = study_estimate,
+    study_ci_lower = unname(study_interval[["lower"]]),
+    study_ci_upper = unname(study_interval[["upper"]]),
+    study_ci_covers_truth = if (all(is.finite(study_interval))) {
+      design$truth$study_sd >= study_interval[["lower"]] &&
+        design$truth$study_sd <= study_interval[["upper"]]
+    } else NA,
     study_sd_relative_error = abs(study_estimate - design$truth$study_sd) /
       design$truth$study_sd,
     true_subject_cint_sd = design$truth$subject_cint_sd,
     estimated_subject_cint_sd = subject_estimate,
+    subject_cint_ci_lower = unname(subject_interval[["lower"]]),
+    subject_cint_ci_upper = unname(subject_interval[["upper"]]),
+    subject_cint_ci_covers_truth = if (
+        design$truth$subject_cint_sd > 0 && all(is.finite(subject_interval))) {
+      design$truth$subject_cint_sd >= subject_interval[["lower"]] &&
+        design$truth$subject_cint_sd <= subject_interval[["upper"]]
+    } else NA,
     fit = if (retain_fit) fit else NULL,
     check = check
   )
@@ -225,7 +257,10 @@
     "gradient_norm", "loglik", "fit_seconds", "check_seconds",
     "laplace_gap", "gap_per_subject", "true_study_sd",
     "estimated_study_sd", "study_sd_relative_error",
-    "true_subject_cint_sd", "estimated_subject_cint_sd", "error"
+    "study_ci_lower", "study_ci_upper", "study_ci_covers_truth",
+    "true_subject_cint_sd", "estimated_subject_cint_sd",
+    "subject_cint_ci_lower", "subject_cint_ci_upper",
+    "subject_cint_ci_covers_truth", "seed", "error"
   )
   rows <- lapply(results, function(x) {
     out <- setNames(rep(list(NA), length(fields)), fields)
@@ -342,19 +377,41 @@
   names(results) <- scenarios
   for (i in seq_along(scenarios)) {
     scenario <- scenarios[[i]]
+    scenario_seed <- options$seed + i
+    scenario_file <- file.path(options$output, paste0(scenario, ".rds"))
+    if (isTRUE(options$resume) && file.exists(scenario_file)) {
+      prior <- tryCatch(readRDS(scenario_file), error = function(e) NULL)
+      reusable <- !is.null(prior) && identical(prior$status, "completed") &&
+        identical(prior$scenario, scenario) &&
+        identical(as.integer(prior$seed), as.integer(scenario_seed)) &&
+        identical(as.integer(prior$nstudy), as.integer(dimensions$nstudy)) &&
+        identical(as.integer(prior$nsubjects),
+          as.integer(dimensions$nstudy * dimensions$subjects_per_study)) &&
+        identical(as.integer(prior$nobs), as.integer(
+          dimensions$nstudy * dimensions$subjects_per_study * dimensions$nobs))
+      if (isTRUE(reusable)) {
+        message("Reusing completed ctsemjulia recovery scenario: ", scenario)
+        results[[i]] <- prior
+        next
+      }
+    }
     message("Running ctsemjulia recovery scenario: ", scenario)
     design <- .ctma_simulate_univariate(
       scenario = scenario, nstudy = dimensions$nstudy,
       subjects_per_study = dimensions$subjects_per_study,
-      nobs = dimensions$nobs, seed = options$seed + i
+      nobs = dimensions$nobs, seed = scenario_seed
     )
     results[[i]] <- tryCatch(
       .ctma_run_recovery_case(
         scenario, design, options$cores, options$output,
-        options$retain_fits
+        options$retain_fits, seed = scenario_seed
       ),
       error = function(e) .ctma_failed_case(scenario, e)
     )
+    if (!identical(results[[i]]$status, "completed")) {
+      results[[i]]$seed <- scenario_seed
+      saveRDS(results[[i]], scenario_file)
+    }
   }
   provenance <- list(
     timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),

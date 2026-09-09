@@ -486,6 +486,25 @@ The run creates \code{REPORT.md}, \code{summary.csv}, and
 screen, not proof of unbiasedness or correct interval coverage.  Replication
 over multiple seeds and model dimensions remains necessary.
 
+For a resumable Monte Carlo validation, use the separate controller.  Each
+replication runs in an independent R/Julia process, and completed scenario
+files are reused after an interruption only when their scenario, seed, and
+design dimensions match:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-monte-carlo.R \
+  --mode=full --replications=10 \
+  --workers=4 --cores-per-fit=4
+\end{verbatim}
+
+The aggregate report includes convergence rates, bias, relative bias, RMSE,
+absolute error, Laplace/quadrature gaps, execution times, and 95\% interval
+coverage when ctsem exposes finite interval limits.  Use one worker on a
+laptop initially.  On a many-core workstation, first benchmark a small batch
+and ensure that \code{workers * cores-per-fit} leaves at least one physical
+core free.  Full details, output files, and restart options are described in
+\code{tools/CTSEMJULIA\_VALIDATION.md}.
+
 Do not treat a non-hierarchical Stan or CoTiMA2-Julia fit as a numerical gold
 standard for this validation.  Such a model estimates study fixed effects or
 a pooled fixed effect, whereas the native Laplace model integrates Gaussian

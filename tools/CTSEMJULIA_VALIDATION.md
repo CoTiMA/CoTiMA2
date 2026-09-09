@@ -91,3 +91,35 @@ reference estimate for the hierarchical Laplace cases: it optimizes a
 different likelihood and targets a different estimand. Cross-backend timing
 and numerical comparisons become valid only when the backends express the
 same random-effects model.
+
+## Resumable Monte Carlo validation
+
+The single-run checks above can be replicated with independent simulation
+seeds by the portable controller:
+
+```sh
+Rscript tools/ctsemjulia-monte-carlo.R \
+  --mode=full \
+  --replications=10 \
+  --workers=4 \
+  --cores-per-fit=4
+```
+
+Every replication runs in its own R/Julia process, while its four scenarios
+run sequentially in that process to amortize Julia startup. Do not request
+more than the available physical CPU cores; leaving at least one core free is
+enforced. On a laptop, start with one worker. On a many-core workstation,
+increase the number of workers only after a small timing pilot.
+
+Results are checkpointed under `replications/rep-NNNN/` immediately after
+each scenario. Repeating the same command reuses only completed files whose
+scenario, seed, and design dimensions agree; failed or interrupted scenarios
+are run again. `--replication-start=` permits a separate, non-overlapping
+batch. `--aggregate-only=true` rebuilds the reports without fitting.
+
+The controller creates `replication-summary.csv`, `monte-carlo-summary.csv`,
+`MONTE_CARLO_REPORT.md`, `monte-carlo-results.rds`, per-replication logs, and
+a run manifest. Aggregate diagnostics include convergence, bias, relative
+bias, RMSE, absolute error, Laplace/quadrature gaps, timings, and 95-percent
+interval coverage whenever ctsem supplies finite limits for the random-effect
+standard deviation.
