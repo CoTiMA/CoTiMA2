@@ -466,6 +466,14 @@ initial-state standard-deviation factor, not the variance itself. The full suite
 tests CINT, DRIFT, DIFFUSION, and T0VAR and follows each fit with adaptive
 quadrature through \code{ctLaplaceCheck()}.
 
+The single-run suite defaults to fixed standardized normal quantiles for the
+study effects. This deterministic design is useful as a regression test. The
+Monte Carlo controller instead defaults to independently sampled study
+effects in every replication (\code{--study-effects=random}), which is
+required when interpreting bias, RMSE, and interval coverage across simulated
+study populations. Either behavior can be selected explicitly with
+\code{--study-effects=quantiles} or \code{--study-effects=random}.
+
 Open Terminal, change to the CoTiMA2 project directory, and execute:
 
 \begin{verbatim}

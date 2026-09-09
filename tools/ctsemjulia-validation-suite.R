@@ -6,7 +6,7 @@
 # raw-scale targets.
 
 `%||%` <- function(x, y) if (is.null(x) || !length(x)) y else x
-.ctma_validation_schema <- 2L
+.ctma_validation_schema <- 3L
 
 .ctma_validation_options <- function(args = commandArgs(trailingOnly = TRUE)) {
   defaults <- list(
@@ -18,6 +18,7 @@
     mode = "quick",
     scenarios = "",
     seed = 20260909L,
+    study_effects = "quantiles",
     retain_fits = FALSE,
     resume = TRUE
   )
@@ -38,6 +39,9 @@
   defaults$resume <- tolower(as.character(defaults$resume)) %in%
     c("true", "t", "1", "yes")
   defaults$mode <- match.arg(tolower(defaults$mode), c("quick", "full"))
+  defaults$study_effects <- match.arg(
+    tolower(defaults$study_effects), c("quantiles", "random")
+  )
   defaults$scenarios <- trimws(strsplit(
     as.character(defaults$scenarios), ",", fixed = TRUE
   )[[1L]])
@@ -80,8 +84,10 @@
 }
 
 .ctma_simulate_univariate <- function(
-    scenario, nstudy, subjects_per_study, nobs, seed) {
+    scenario, nstudy, subjects_per_study, nobs, seed,
+    study_effects = c("quantiles", "random")) {
   set.seed(seed)
+  study_effects <- match.arg(study_effects)
   scenario <- match.arg(
     scenario, c("cint", "drift", "diffusion", "t0var")
   )
@@ -109,7 +115,9 @@
     transform, location, truth$raw_study_sd
   )
   truth$subject_cint_sd <- 10 * truth$raw_subject_cint_sd
-  z <- .ctma_standardized_quantiles(nstudy)
+  z <- if (study_effects == "quantiles") {
+    .ctma_standardized_quantiles(nstudy)
+  } else stats::rnorm(nstudy)
   study_raw <- truth$raw_study_sd * z
   raw_drift <- rep(truth$raw_drift_mean, nstudy)
   raw_diffusion <- rep(truth$raw_diffusion_mean, nstudy)
@@ -152,6 +160,7 @@
   }
   list(
     data = do.call(rbind, rows), truth = truth,
+    study_effects = study_effects,
     realised_study_raw = study_raw,
     transformed = data.frame(
       study = seq_len(nstudy), cint = 10 * raw_study_cint, drift = drift,
@@ -231,6 +240,7 @@
     validation_schema = .ctma_validation_schema,
     scenario = scenario,
     seed = seed,
+    study_effects = design$study_effects,
     status = "completed",
     nstudy = length(unique(design$data$study)),
     nsubjects = length(unique(design$data$id)),
@@ -291,7 +301,7 @@
     "study_ci_lower", "study_ci_upper", "study_ci_covers_truth",
     "true_subject_cint_sd", "estimated_subject_cint_sd",
     "subject_cint_ci_lower", "subject_cint_ci_upper",
-    "subject_cint_ci_covers_truth", "seed", "error"
+    "subject_cint_ci_covers_truth", "seed", "study_effects", "error"
   )
   rows <- lapply(results, function(x) {
     out <- setNames(rep(list(NA), length(fields)), fields)
@@ -333,6 +343,7 @@
     paste0("- Platform: ", provenance$platform),
     paste0("- Julia threads requested: ", provenance$cores),
     paste0("- Validation mode: ", provenance$mode),
+    paste0("- Study-effect generation: ", provenance$study_effects),
     "",
     "## Results",
     "",
@@ -417,6 +428,7 @@
       reusable <- !is.null(prior) && identical(prior$status, "completed") &&
         identical(prior$validation_schema, .ctma_validation_schema) &&
         identical(prior$scenario, scenario) &&
+        identical(prior$study_effects, options$study_effects) &&
         identical(as.integer(prior$seed), as.integer(scenario_seed)) &&
         identical(as.integer(prior$nstudy), as.integer(dimensions$nstudy)) &&
         identical(as.integer(prior$nsubjects),
@@ -433,7 +445,8 @@
     design <- .ctma_simulate_univariate(
       scenario = scenario, nstudy = dimensions$nstudy,
       subjects_per_study = dimensions$subjects_per_study,
-      nobs = dimensions$nobs, seed = scenario_seed
+      nobs = dimensions$nobs, seed = scenario_seed,
+      study_effects = options$study_effects
     )
     results[[i]] <- tryCatch(
       .ctma_run_recovery_case(
@@ -444,6 +457,7 @@
     )
     if (!identical(results[[i]]$status, "completed")) {
       results[[i]]$seed <- scenario_seed
+      results[[i]]$study_effects <- options$study_effects
       saveRDS(results[[i]], scenario_file)
     }
   }
@@ -453,6 +467,7 @@
     ctsem = as.character(utils::packageVersion("ctsem")),
     R = R.version.string, platform = R.version$platform,
     cores = options$cores, mode = options$mode, seed = options$seed,
+    study_effects = options$study_effects,
     ctsemjulia_status = status
   )
   table <- .ctma_validation_table(results)

@@ -33,6 +33,12 @@ The quick mode runs the first two cases. Full mode runs all four with more
 studies, people, and observations. Each fit is followed by
 `ctsem::ctLaplaceCheck(nodes = 5)`.
 
+The single-run suite defaults to `--study-effects=quantiles`. It uses fixed,
+standardized normal quantiles at the study level, providing a stable
+regression test whose only random variation comes from subjects, processes,
+and measurements. Use `--study-effects=random` to draw the study effects
+independently from their generating normal distribution.
+
 ## Running it on macOS or Ubuntu
 
 Open Terminal, change to the CoTiMA2 project directory, and execute:
@@ -112,6 +118,11 @@ Rscript tools/ctsemjulia-monte-carlo.R \
   --workers=4 \
   --cores-per-fit=4
 ```
+
+The Monte Carlo controller defaults to `--study-effects=random`; this is the
+appropriate mode for bias, RMSE, and coverage studies. To replicate the
+deterministic engineering design instead, explicitly add
+`--study-effects=quantiles`.
 
 Every replication runs in its own R/Julia process, while its four scenarios
 run sequentially in that process to amortize Julia startup. Do not request

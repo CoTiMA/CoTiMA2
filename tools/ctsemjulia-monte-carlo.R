@@ -13,6 +13,7 @@
     development_library = "",
     julia_bindir = Sys.getenv("JULIA_BINDIR"),
     mode = "full", scenarios = "", seed = 20260909L,
+    study_effects = "random",
     replications = 10L, replication_start = 1L,
     workers = 1L, cores_per_fit = 4L, retain_fits = FALSE,
     aggregate_only = FALSE
@@ -33,6 +34,9 @@
     tolower(as.character(x)) %in% c("true", "t", "1", "yes")
   })
   defaults$mode <- match.arg(tolower(defaults$mode), c("quick", "full"))
+  defaults$study_effects <- match.arg(
+    tolower(defaults$study_effects), c("quantiles", "random")
+  )
   if (any(vapply(defaults[integers[-1L]], function(x) is.na(x) || x < 1L, logical(1L)))) {
     stop("Replication and worker counts must be positive integers.", call. = FALSE)
   }
@@ -52,6 +56,7 @@
     .mc_quote_arg("output", replication_dir),
     .mc_quote_arg("cores", options$cores_per_fit),
     .mc_quote_arg("mode", options$mode),
+    .mc_quote_arg("study-effects", options$study_effects),
     .mc_quote_arg("seed", seed),
     .mc_quote_arg("retain-fits", tolower(options$retain_fits)),
     .mc_quote_arg("resume", "true")
@@ -82,7 +87,7 @@
     if (is.null(x) || is.null(x$scenario)) return(NULL)
     rep_name <- basename(dirname(file))
     replication <- suppressWarnings(as.integer(sub("^rep-", "", rep_name)))
-    fields <- c("scenario", "status", "seed", "converged", "fit_seconds", "check_seconds",
+    fields <- c("scenario", "status", "seed", "study_effects", "converged", "fit_seconds", "check_seconds",
       "gap_per_subject", "true_raw_study_sd", "true_study_sd",
       "estimated_study_sd", "study_sd_relative_error",
       "study_ci_covers_truth", "true_subject_cint_sd", "estimated_subject_cint_sd",
@@ -141,7 +146,9 @@
   lines <- c("# CoTiMA2 ctsemjulia Monte Carlo validation", "",
     paste0("Generated: ", format(Sys.time(), tz = "UTC", usetz = TRUE)), "",
     paste0("- Requested replications: ", options$replications),
-    paste0("- Mode: ", options$mode), paste0("- Workers: ", options$workers),
+    paste0("- Mode: ", options$mode),
+    paste0("- Study-effect generation: ", options$study_effects),
+    paste0("- Workers: ", options$workers),
     paste0("- Cores per fit: ", options$cores_per_fit), "", "## Aggregate results", "")
   if (!nrow(summary)) {
     lines <- c(lines, "No completed scenario files were found.")
