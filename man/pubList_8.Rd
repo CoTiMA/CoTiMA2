@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 9.
 }
 \usage{
-pubList_8
+data(pubList_8)
 }
 \description{
 pubList_8 example list

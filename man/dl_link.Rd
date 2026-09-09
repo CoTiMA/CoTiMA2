@@ -8,7 +8,7 @@
 An object of class \code{character} of length 1.
 }
 \usage{
-dl_link
+data(dl_link)
 }
 \description{
 dl_link example path

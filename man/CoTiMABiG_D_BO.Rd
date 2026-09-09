@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 10.
 }
 \usage{
-CoTiMABiG_D_BO
+data(CoTiMABiG_D_BO)
 }
 \description{
 ctmaBiG-object reproducing results of Guthier et al. (2020)

@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 13.
 }
 \usage{
-CoTiMAMod1onFullFit_6
+data(CoTiMAMod1onFullFit_6)
 }
 \description{
 ctmaFit-object with a categorical moderator of the full drift matrix

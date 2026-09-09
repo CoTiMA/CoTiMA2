@@ -30,7 +30,7 @@
 \begin{document}
 \maketitle
 
-<<setup, include=FALSE, purl=FALSE>>=
+<<setup, include=FALSE, purl=TRUE>>=
 knitr::opts_chunk$set(
   echo = TRUE, eval = FALSE, purl = FALSE, warning = FALSE, message = FALSE,
   comment = "#>", tidy = FALSE, size = "small"

@@ -8,7 +8,7 @@
 An object of class \code{character} of length 6.
 }
 \usage{
-source1
+data(source1)
 }
 \description{
 source1 example vector

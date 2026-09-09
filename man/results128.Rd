@@ -8,7 +8,7 @@
 An object of class \code{list} of length 3.
 }
 \usage{
-results128
+data(results128)
 }
 \description{
 results128 example list

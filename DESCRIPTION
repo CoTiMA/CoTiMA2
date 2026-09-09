@@ -53,8 +53,10 @@ Suggests:
     testthat (>= 3.0.0),
     rstan (>= 2.32.0),
     JuliaCall,
+    JuliaConnectoR,
     posterior,
-    knitr
+    knitr,
+    withr
 VignetteBuilder: knitr
 SystemRequirements: Julia (>= 1.10) for the optional Julia estimation backend
 Config/testthat/edition: 3

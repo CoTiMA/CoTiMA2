@@ -8,7 +8,7 @@
 An object of class \code{character} of length 1.
 }
 \usage{
-country4
+data(country4)
 }
 \description{
 country4 example vector

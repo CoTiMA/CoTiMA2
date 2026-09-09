@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 1.
 }
 \usage{
-sampleSize1
+data(sampleSize1)
 }
 \description{
 sampleSize1 example vector

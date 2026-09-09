@@ -8,7 +8,7 @@
 An object of class \code{matrix} (inherits from \code{array}) with 4 rows and 4 columns.
 }
 \usage{
-empcov18
+data(empcov18)
 }
 \description{
 empcov18 example matrix

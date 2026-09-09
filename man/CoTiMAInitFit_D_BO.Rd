@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 12.
 }
 \usage{
-CoTiMAInitFit_D_BO
+data(CoTiMAInitFit_D_BO)
 }
 \description{
 ctmaInit-object created by Guthier et al. (2020) with 48 primary studies

@@ -8,7 +8,7 @@
 An object of class \code{character} of length 4.
 }
 \usage{
-variableNames32
+data(variableNames32)
 }
 \description{
 variableNames32 example vector

@@ -8,7 +8,7 @@
 An object of class \code{list} of length 7.
 }
 \usage{
-rawData228
+data(rawData228)
 }
 \description{
 rawData228 example list

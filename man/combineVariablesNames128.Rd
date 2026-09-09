@@ -8,7 +8,7 @@
 An object of class \code{character} of length 3.
 }
 \usage{
-combineVariablesNames128
+data(combineVariablesNames128)
 }
 \description{
 combineVariablesNames128 example vector

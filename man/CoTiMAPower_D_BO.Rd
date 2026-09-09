@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 10.
 }
 \usage{
-CoTiMAPower_D_BO
+data(CoTiMAPower_D_BO)
 }
 \description{
 ctmaPower-object reproducing results of Guthier et al. (2020)

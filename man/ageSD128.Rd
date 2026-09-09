@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 1.
 }
 \usage{
-ageSD128
+data(ageSD128)
 }
 \description{
 ageSD128 example vector

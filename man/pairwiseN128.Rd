@@ -8,7 +8,7 @@
 An object of class \code{matrix} (inherits from \code{array}) with 9 rows and 9 columns.
 }
 \usage{
-pairwiseN128
+data(pairwiseN128)
 }
 \description{
 pairwiseN128 example vector
