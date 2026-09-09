@@ -93,7 +93,9 @@
     ))
   }
 
-  generated <- .ctma_generate_ctsem_setup(setup, verbose = FALSE)
+  generated <- suppressMessages(
+    .ctma_generate_ctsem_setup(setup, verbose = FALSE)
+  )
   if (!is.null(study_id_ti)) {
     sid <- .ctma_study_id(generated, study_id = NULL,
       study_id_ti = study_id_ti)
@@ -123,6 +125,8 @@
     reDRIFT = NULL,
     reDIFFUSION = NULL,
     reT0VAR = NULL,
+    subject_random_effects = NULL,
+    study_random_effects = NULL,
     subject_parameters = NULL,
     study_parameters = NULL,
     remove_study_fixed_effects = TRUE,
@@ -158,9 +162,34 @@
   adjustable <- !is.na(model$pars$param)
   model$pars$sdscale_study[adjustable] <- sdscale_study
 
+  parameters_in_matrices <- function(matrices, level) {
+    if (is.null(matrices)) return(character())
+    matrices <- unique(toupper(as.character(matrices)))
+    matrices <- matrices[nzchar(matrices) & !is.na(matrices)]
+    available <- unique(toupper(as.character(stats::na.omit(
+      model$pars$matrix
+    ))))
+    unknown_matrices <- setdiff(matrices, available)
+    if (length(unknown_matrices)) stop(
+      "Unknown ", level, "-level random-effect matrix name(s): ",
+      paste(unknown_matrices, collapse = ", "), ". Available matrix names: ",
+      paste(sort(available), collapse = ", "), ".", call. = FALSE
+    )
+    rows <- !is.na(model$pars$param) &
+      toupper(as.character(model$pars$matrix)) %in% matrices
+    parameters <- unique(as.character(model$pars$param[rows]))
+    if (!length(parameters)) stop(
+      "No free raw parameters were found in the requested ", level,
+      "-level random-effect matrices.", call. = FALSE
+    )
+    parameters
+  }
+
   # Reuse CoTiMA2's established matrix-selection semantics. This also validates
   # matrix dimensions and records exactly which raw parameter rows were chosen.
-  generated <- .ctma_generate_ctsem_setup(object, verbose = FALSE)
+  generated <- suppressMessages(
+    .ctma_generate_ctsem_setup(object, verbose = FALSE)
+  )
   selected <- character()
   if (!is.null(reDRIFT) || !is.null(reDIFFUSION) || !is.null(reT0VAR)) {
     spec <- .ctma_re_spec(generated, reDRIFT, reDIFFUSION, reT0VAR)
@@ -176,10 +205,15 @@
   if (!is.null(study_parameters)) {
     selected <- unique(c(selected, as.character(study_parameters)))
   }
+  selected <- unique(c(
+    selected,
+    parameters_in_matrices(study_random_effects, "study")
+  ))
   selected <- unique(selected[nzchar(selected) & !is.na(selected)])
   if (!length(selected)) stop(
     "Select at least one study-level random effect through reDRIFT, ",
-    "reDIFFUSION, reT0VAR, or study_parameters.", call. = FALSE
+    "reDIFFUSION, reT0VAR, study_random_effects, or study_parameters.",
+    call. = FALSE
   )
   unknown <- setdiff(selected, unique(stats::na.omit(model$pars$param)))
   if (length(unknown)) stop(
@@ -189,8 +223,14 @@
   selected_rows <- !is.na(model$pars$param) & model$pars$param %in% selected
   model$pars$indvarying_study[selected_rows] <- TRUE
 
-  if (!is.null(subject_parameters)) {
-    subject_parameters <- unique(as.character(subject_parameters))
+  subject_parameters <- unique(c(
+    as.character(subject_parameters),
+    parameters_in_matrices(subject_random_effects, "subject")
+  ))
+  subject_parameters <- subject_parameters[
+    nzchar(subject_parameters) & !is.na(subject_parameters)
+  ]
+  if (length(subject_parameters)) {
     unknown_subject <- setdiff(
       subject_parameters, unique(stats::na.omit(model$pars$param))
     )
@@ -221,6 +261,55 @@
       intoverpop = "laplace", cores = cores
     ))
   ), class = "ctmaCtsemJuliaLaplacePrep")
+}
+
+.ctmaFitCtsemJuliaBackend <- function(
+    setup, backend_args, cores, cotima_call = NULL,
+    inits = NULL, priors = FALSE, verbose = 0) {
+  prepare_names <- c(
+    "study_id", "study_id_ti", "study_dummy_ti", "reDRIFT",
+    "reDIFFUSION", "reT0VAR", "subject_random_effects",
+    "study_random_effects", "subject_parameters", "study_parameters",
+    "remove_study_fixed_effects", "sdscale_study"
+  )
+  prepare_args <- backend_args[intersect(prepare_names, names(backend_args))]
+  prepared <- do.call(
+    .ctmaPrepareCtsemJuliaLaplace,
+    c(list(object = setup), prepare_args)
+  )
+
+  fit_args <- list()
+  fit_args$inits <- if (!is.null(backend_args$inits)) {
+    backend_args$inits
+  } else inits
+  fit_args$priors <- if (!is.null(backend_args$priors)) {
+    backend_args$priors
+  } else priors
+  fit_args$verbose <- if (!is.null(backend_args$verbose)) {
+    backend_args$verbose
+  } else verbose
+  if (!is.null(backend_args$optimcontrol)) {
+    if (!is.list(backend_args$optimcontrol)) stop(
+      "backendArgs$optimcontrol must be NULL or a named list.",
+      call. = FALSE
+    )
+    fit_args$optimcontrol <- backend_args$optimcontrol
+  }
+  fit_args <- fit_args[!vapply(fit_args, is.null, logical(1L))]
+
+  result <- do.call(
+    .ctmaFitCtsemJuliaLaplace,
+    c(list(prepared = prepared, cores = cores), fit_args)
+  )
+  result$source_object <- setup
+  result$ctsemjulia_prepared <- prepared
+  result$cotima_call <- cotima_call
+  result$backend <- "ctsemjulia"
+  result$argumentList <- setup$argumentList
+  result$argumentList$backend <- "ctsemjulia"
+  result$argumentList$backendArgs <- backend_args
+  result$argumentList$fit <- TRUE
+  result
 }
 
 .ctmaFitCtsemJuliaLaplace <- function(prepared, cores = 1L, ...) {

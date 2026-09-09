@@ -58,7 +58,7 @@ ctmaFit(
   WECnt = TRUE,
   studyCoding = c("dummy", "weighted"),
   studyVarying = c("CINT", "DIFFUSION", "T0VAR"),
-  backend = c("stan", "julia"),
+  backend = c("stan", "julia", "ctsemjulia"),
   backendArgs = list()
 )
 }
@@ -178,10 +178,20 @@ a weighted study average. This applies to both Stan and Julia.}
 studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}. Add
 \code{"DRIFT"} only when study-specific drift parameters are intended.}
 
-\item{backend}{estimation backend. \code{"stan"} is the default; use
-\code{"julia"} for the Julia backend.}
+\item{backend}{Estimation backend. \code{"stan"} is the default;
+\code{"julia"} uses CoTiMA2's Julia implementation, whereas
+\code{"ctsemjulia"} uses ctsem's experimental native Julia/Laplace
+implementation. The native route currently supports maximum-likelihood
+estimation through \code{ctmaFit()} only and requires a compatible ctsem
+development version.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{Named list of controls for the selected backend. For
+\code{backend = "ctsemjulia"}, this includes study and subject identifiers,
+the parameter matrices receiving random effects, optional explicit
+\code{reDRIFT}, \code{reDIFFUSION}, and \code{reT0VAR} selections, priors,
+initial values, and optimizer controls. See
+\code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} for the complete
+list.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,

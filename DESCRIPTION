@@ -1,8 +1,8 @@
 Package: CoTiMA2
 Type: Package
 Title: Experimental Continuous Time Meta-Analysis 2.0 ('CoTiMA2')
-Version: 0.14.14
-Date: 2026-09-07
+Version: 0.14.15
+Date: 2026-09-09
 Authors@R: c(person("Christian", "Dormann", role = c("aut","cph")),
             person("Markus", "Homberg", email = "cotima@uni-mainz.de", role = c("aut", "com", "cre")),
             person("Olga", "Diener", role = c("ctb")),

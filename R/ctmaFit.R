@@ -68,7 +68,11 @@
 #'   Add \code{"DRIFT"} only when study-specific drift parameters are intended.
 #' @param backend estimation backend. \code{"stan"} remains the default;
 #'   \code{"julia"} prepares the same ctsem model and data and then calls the
-#'   validated Julia ML or Bayesian engine.
+#'   validated CoTiMA2 Julia ML or Bayesian engine. Experimental
+#'   \code{"ctsemjulia"} instead uses ctsem's native Julia backend with
+#'   \code{intoverpop = "laplace"} for hierarchical random effects. It
+#'   currently supports ML estimation only and requires the development ctsem
+#'   API detected by CoTiMA2 at run time.
 #' @param backendArgs named backend-specific controls. With the default Stan
 #'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 #'   completed from \code{ctmaBackendDefaults("stan")}. With the Julia
@@ -78,7 +82,14 @@
 #'   becomes \code{maxiters} for ML and is split equally between warmup and
 #'   retained draws for Bayesian estimation; explicit \code{chains} is passed
 #'   to Bayesian estimation. Julia-specific controls in \code{backendArgs}
-#'   remain the preferred way to configure the engine.
+#'   remain the preferred way to configure the engine. For
+#'   \code{backend = "ctsemjulia"}, select study-level random effects with
+#'   \code{study_random_effects} (matrix names such as \code{"CINT"} or
+#'   \code{"DRIFT"}) or exact raw \code{study_parameters}. Optional
+#'   \code{subject_random_effects} and \code{subject_parameters} add
+#'   subject-level effects; existing subject-level settings in the generated
+#'   model are retained. Native ctsem optimizer controls are supplied as
+#'   \code{backendArgs$optimcontrol}.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores
@@ -188,7 +199,7 @@ ctmaFit <- function(
     WECnt=TRUE,
     studyCoding=c("dummy", "weighted"),
     studyVarying=c("CINT", "DIFFUSION", "T0VAR"),
-    backend=c("stan", "julia"),
+    backend=c("stan", "julia", "ctsemjulia"),
     backendArgs=list()
 )
 {  # begin function definition (until end of file)
@@ -219,7 +230,9 @@ ctmaFit <- function(
   CoTiMAStanctArgs <- backend_resolution$stan_args
   resolved_backend_args <- backend_resolution$backend_args
   julia_fit_requested <- identical(backend, "julia") && requested_fit
-  if (julia_fit_requested) fit <- FALSE
+  ctsemjulia_fit_requested <- identical(backend, "ctsemjulia") && requested_fit
+  backend_fit_requested <- julia_fit_requested || ctsemjulia_fit_requested
+  if (backend_fit_requested) fit <- FALSE
 
   catchWarnings <- FALSE
   if (catchWarnings) { # function definition to handle possible errors and warnings during fitting
@@ -1386,7 +1399,7 @@ ctmaFit <- function(
   #if (allInvModel == FALSE) {
   #fitStanctModel <- suppressMessages(ctsem::ctStanFit(
 
-  if (.ctmaShouldShowNoFitBanner(fit, julia_fit_requested)) {
+  if (.ctmaShouldShowNoFitBanner(fit, backend_fit_requested)) {
     print(paste0("#################################################################################"))
     print(paste0("#############  No model is fitted, only data and code are generated. ############"))
     print(paste0("#################################################################################"))
@@ -2429,6 +2442,19 @@ ctmaFit <- function(
       backend_args = resolved_backend_args
     )
     return(invisible(julia_result))
+  }
+
+  if (ctsemjulia_fit_requested) {
+    native_result <- .ctmaFitCtsemJuliaBackend(
+      setup = results,
+      backend_args = resolved_backend_args,
+      cores = coresToUse,
+      cotima_call = cotima_call,
+      inits = inits,
+      priors = priors,
+      verbose = verbose
+    )
+    return(invisible(native_result))
   }
 
   invisible(results)

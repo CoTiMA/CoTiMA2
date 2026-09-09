@@ -64,7 +64,7 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.14\par}
+\vspace{1.0cm}{Version 0.14.15\par}
 
 \vspace{1.0cm}{Christian Dormann, Olga Diener, \& Markus Homberg\par}
 

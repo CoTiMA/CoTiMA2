@@ -185,7 +185,10 @@ test_that("ctmaFit applies backend validation before fitting", {
 })
 
 test_that("ctmaFit keeps Stan as its default backend", {
-  expect_identical(eval(formals(ctmaFit)$backend), c("stan", "julia"))
+  expect_identical(
+    eval(formals(ctmaFit)$backend),
+    c("stan", "julia", "ctsemjulia")
+  )
 
   resolved <- CoTiMA2:::.ctmaResolveFitBackend()
   expect_identical(resolved$backend, "stan")

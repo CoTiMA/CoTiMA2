@@ -10,8 +10,9 @@
 #' remain top-level CoTiMA arguments. \code{backendArgs} is intended only for
 #' controls of the selected estimation engine.
 #'
-#' @param backend Estimation backend, either \code{"stan"} (the default) or
-#'   \code{"julia"}.
+#' @param backend Estimation backend: \code{"stan"} (the default),
+#'   \code{"julia"} for CoTiMA2's Julia engine, or experimental
+#'   \code{"ctsemjulia"} for ctsem's native Julia/Laplace engine.
 #' @param estimation Estimation method. For
 #'   \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
 #'   \code{"none"} returns the common Julia evaluation controls.
@@ -29,15 +30,53 @@
 #' ctmaBackendDefaults()
 #' ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
 #' ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
+#' ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")
 ctmaBackendDefaults <- function(
-    backend = c("stan", "julia"),
+    backend = c("stan", "julia", "ctsemjulia"),
     estimation = NULL,
     workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit",
                  "ctmaEqual", "ctmaReFit")) {
-  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  if (missing(workflow) && identical(tolower(backend[1L]), "ctsemjulia")) {
+    workflow <- "ctmaFit"
+  }
+  backend <- match.arg(
+    tolower(backend), c("stan", "julia", "ctsemjulia")
+  )
 
   if (identical(backend, "stan")) {
     return(.ctmaStanBackendDefaults())
+  }
+
+  if (identical(backend, "ctsemjulia")) {
+    if (!identical(workflow[1L], "ctmaFit")) stop(
+      "backend = 'ctsemjulia' is currently available only for ctmaFit().",
+      call. = FALSE
+    )
+    if (is.null(estimation)) estimation <- "ml"
+    estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
+    if (!identical(estimation, "ml")) stop(
+      "The experimental ctsemjulia backend currently supports ML/Laplace ",
+      "estimation only (use optimize = TRUE).",
+      call. = FALSE
+    )
+    return(list(
+      study_id = NULL,
+      study_id_ti = NULL,
+      study_dummy_ti = NULL,
+      study_random_effects = NULL,
+      subject_random_effects = NULL,
+      study_parameters = NULL,
+      subject_parameters = NULL,
+      reDRIFT = NULL,
+      reDIFFUSION = NULL,
+      reT0VAR = NULL,
+      remove_study_fixed_effects = TRUE,
+      sdscale_study = 1,
+      inits = NULL,
+      optimcontrol = NULL,
+      priors = NULL,
+      verbose = NULL
+    ))
   }
 
   workflow <- match.arg(workflow)
@@ -177,9 +216,11 @@ ctmaBackendDefaults <- function(
 }
 
 .ctmaResolveCores <- function(
-    coresToUse, backend = c("stan", "julia"), task_count = NULL,
+    coresToUse, backend = c("stan", "julia", "ctsemjulia"), task_count = NULL,
     max_stan_workers = 32L, announce = TRUE, workflow = "CoTiMA") {
-  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  backend <- match.arg(
+    tolower(backend), c("stan", "julia", "ctsemjulia")
+  )
   detected <- if (requireNamespace("parallelly", quietly = TRUE)) {
     suppressWarnings(as.integer(parallelly::availableCores()[1L]))
   } else {

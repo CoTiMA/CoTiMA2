@@ -359,10 +359,13 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   invisible(required)
 }
 
-.ctmaResolveFitBackend <- function(backend = c("stan", "julia"),
+.ctmaResolveFitBackend <- function(
+    backend = c("stan", "julia", "ctsemjulia"),
     backendArgs = list(), legacy_stan_args = NULL,
     estimation = c("ML", "Bayes"), workflow = "ctmaFit") {
-  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  backend <- match.arg(
+    tolower(backend)[1L], c("stan", "julia", "ctsemjulia")
+  )
   estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
   if (!is.null(legacy_stan_args)) {
     .Deprecated("backendArgs", package = "CoTiMA2",
@@ -405,6 +408,33 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
       estimation = estimation,
       stan_args = NULL,
       backend_args = julia_args
+    ))
+  }
+
+  if (identical(backend, "ctsemjulia")) {
+    .ctmaJuliaInstallationGuideNote()
+    if (!is.null(legacy_stan_args)) stop(
+      "'CoTiMAStanctArgs' cannot be used with backend = 'ctsemjulia'.",
+      call. = FALSE
+    )
+    if (!identical(estimation, "ml")) stop(
+      "The experimental ctsemjulia backend currently supports ML/Laplace ",
+      "estimation only (use optimize = TRUE).",
+      call. = FALSE
+    )
+    native_args <- .ctmaMergeBackendArgs(
+      ctmaBackendDefaults(
+        backend = "ctsemjulia", estimation = estimation,
+        workflow = workflow
+      ),
+      backendArgs,
+      path = "backendArgs"
+    )
+    return(list(
+      backend = backend,
+      estimation = estimation,
+      stan_args = NULL,
+      backend_args = native_args
     ))
   }
 

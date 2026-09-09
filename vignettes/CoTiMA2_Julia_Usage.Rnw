@@ -810,6 +810,62 @@ other random-effect types.  The \code{backendArgs} list contains Julia-specific
 overrides; the top-level \code{chains}, \code{seed}, and \code{init\_jitter}
 remain ordinary \code{ctmaReFit()} arguments.
 
+\subsection{Experimental native ctsem Julia/Laplace route}
+
+CoTiMA2 also provides an experimental, feature-gated route to ctsem's native
+multilevel Julia implementation.  It is selected with
+\code{backend="ctsemjulia"}.  This is distinct from both CoTiMA2's own
+\code{backend="julia"} and the \code{ctmaRePrep()}--\code{ctmaReFit()}
+workflow described above.  The native route integrates subject- and
+study-level Gaussian random effects using Laplace approximation and currently
+supports maximum-likelihood estimation only.
+
+Random effects may be selected conveniently by ctsem matrix family.  For
+example, the following model gives CINT a random effect at both the subject and
+study levels, while DIFFUSION and T0VAR vary between studies only:
+
+<<ctsem-native-laplace, purl=FALSE>>=
+nativeLaplace <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  optimize = TRUE,
+  coresToUse = -1,
+  scaleTime = 1/12,
+  backendArgs = list(
+    subject_random_effects = "CINT",
+    study_random_effects = c("CINT", "DIFFUSION", "T0VAR"),
+    remove_study_fixed_effects = TRUE,
+    optimcontrol = list(finishsamples = 500)
+  )
+)
+
+summary(nativeLaplace)
+ctsem::ctLaplaceCheck(nativeLaplace)
+@
+
+Exact raw parameter labels can be supplied through
+\code{subject\_parameters} and \code{study\_parameters} when only selected
+cells of a matrix should vary.  The matrix masks \code{reDRIFT},
+\code{reDIFFUSION}, and \code{reT0VAR} are also accepted for compatibility
+with the random-effects workflow.  CoTiMA2 normally infers study membership
+from its study-indicator TI predictors; unusual data structures can instead
+provide \code{study\_id}, \code{study\_id\_ti}, or
+\code{study\_dummy\_ti} explicitly.
+
+The generated ctsem model retains any subject-level random effects already
+requested by the CoTiMA specification.  The
+\code{subject\_random\_effects} and \code{subject\_parameters} controls add
+to them; they do not silently remove existing effects.  Conversely, a model
+may contain study-level random effects without any subject-level random
+effect.  This requires a ctsem development version that supports outer-level
+random effects; CoTiMA2 tests for that capability and stops with an explicit
+message when an older ctsem installation is detected.
+
+This route should currently be treated as experimental.  Always inspect
+optimizer convergence, run \code{ctLaplaceCheck()}, and retain the fitted
+ctsem object.  Do not interpret a fit from an older branch that silently drops
+an outer grouping level.
+
 \section{Moderator-associated reduction in random-effect heterogeneity}
 
 Study-level moderators may account for part of the between-study variation in
