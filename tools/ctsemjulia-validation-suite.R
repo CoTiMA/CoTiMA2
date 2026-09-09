@@ -6,6 +6,7 @@
 # raw-scale targets.
 
 `%||%` <- function(x, y) if (is.null(x) || !length(x)) y else x
+.ctma_validation_schema <- 2L
 
 .ctma_validation_options <- function(args = commandArgs(trailingOnly = TRUE)) {
   defaults <- list(
@@ -63,6 +64,17 @@
   1e-10 + 5 * log1p(exp(2 * raw))
 }
 
+.ctma_transformed_normal_sd <- function(transform, location, scale) {
+  if (!is.finite(scale) || scale <= 0) return(0)
+  first <- stats::integrate(function(z) {
+    transform(location + scale * z) * stats::dnorm(z)
+  }, -8, 8, subdivisions = 1000L, rel.tol = 1e-10)$value
+  second <- stats::integrate(function(z) {
+    transform(location + scale * z)^2 * stats::dnorm(z)
+  }, -8, 8, subdivisions = 1000L, rel.tol = 1e-10)$value
+  sqrt(max(0, second - first^2))
+}
+
 .ctma_standardized_quantiles <- function(n) {
   as.numeric(scale(stats::qnorm((seq_len(n) - 0.5) / n), TRUE, TRUE))
 }
@@ -74,23 +86,36 @@
     scenario, c("cint", "drift", "diffusion", "t0var")
   )
   truth <- list(
-    population_cint = 0.10,
+    raw_cint_mean = 0.01,
     raw_drift_mean = 0.35,
     raw_diffusion_mean = -1.70,
     raw_t0var_mean = -0.80,
-    subject_cint_sd = if (scenario %in% c("cint", "drift")) 0.40 else 0,
-    study_sd = switch(
-      scenario, cint = 0.30, drift = 0.30, diffusion = 0.22, t0var = 0.25
+    raw_subject_cint_sd = if (scenario %in% c("cint", "drift")) 0.04 else 0,
+    raw_study_sd = switch(
+      scenario, cint = 0.03, drift = 0.30, diffusion = 0.22, t0var = 0.25
     ),
     manifest_sd = 0.10
   )
+  transform <- switch(
+    scenario, cint = function(x) 10 * x,
+    drift = .ctma_drift_transform, diffusion = .ctma_diffusion_transform,
+    t0var = .ctma_t0var_transform
+  )
+  location <- switch(
+    scenario, cint = truth$raw_cint_mean, drift = truth$raw_drift_mean,
+    diffusion = truth$raw_diffusion_mean, t0var = truth$raw_t0var_mean
+  )
+  truth$study_sd <- .ctma_transformed_normal_sd(
+    transform, location, truth$raw_study_sd
+  )
+  truth$subject_cint_sd <- 10 * truth$raw_subject_cint_sd
   z <- .ctma_standardized_quantiles(nstudy)
-  study_raw <- truth$study_sd * z
+  study_raw <- truth$raw_study_sd * z
   raw_drift <- rep(truth$raw_drift_mean, nstudy)
   raw_diffusion <- rep(truth$raw_diffusion_mean, nstudy)
   raw_t0var <- rep(truth$raw_t0var_mean, nstudy)
-  study_cint <- rep(0, nstudy)
-  if (scenario == "cint") study_cint <- study_raw
+  raw_study_cint <- rep(0, nstudy)
+  if (scenario == "cint") raw_study_cint <- study_raw
   if (scenario == "drift") raw_drift <- raw_drift + study_raw
   if (scenario == "diffusion") raw_diffusion <- raw_diffusion + study_raw
   if (scenario == "t0var") raw_t0var <- raw_t0var + study_raw
@@ -106,10 +131,12 @@
       (1 - transition^2)
     for (within in seq_len(subjects_per_study)) {
       person <- person + 1L
-      subject_cint <- stats::rnorm(1L, sd = truth$subject_cint_sd)
-      cint <- truth$population_cint + study_cint[[study]] + subject_cint
+      raw_subject_cint <- stats::rnorm(1L, sd = truth$raw_subject_cint_sd)
+      cint <- 10 * (
+        truth$raw_cint_mean + raw_study_cint[[study]] + raw_subject_cint
+      )
       intercept <- (cint / drift[[study]]) * (transition - 1)
-      x <- stats::rnorm(1L, mean = 0, sd = sqrt(t0var[[study]]))
+      x <- stats::rnorm(1L, mean = 0, sd = t0var[[study]])
       y <- numeric(nobs)
       for (occasion in seq_len(nobs)) {
         if (occasion > 1L) {
@@ -127,7 +154,7 @@
     data = do.call(rbind, rows), truth = truth,
     realised_study_raw = study_raw,
     transformed = data.frame(
-      study = seq_len(nstudy), cint = study_cint, drift = drift,
+      study = seq_len(nstudy), cint = 10 * raw_study_cint, drift = drift,
       diffusion = diffusion, t0var = t0var
     )
   )
@@ -201,6 +228,7 @@
   } else NA_real_
   subject_interval <- .ctma_interval(subject_table, "cint_eta1")
   result <- list(
+    validation_schema = .ctma_validation_schema,
     scenario = scenario,
     seed = seed,
     status = "completed",
@@ -214,6 +242,7 @@
     check_seconds = unname(check_time[["elapsed"]]),
     laplace_gap = .ctma_scalar(check$gap),
     gap_per_subject = .ctma_scalar(check$gap_per_subject),
+    true_raw_study_sd = design$truth$raw_study_sd,
     true_study_sd = design$truth$study_sd,
     estimated_study_sd = study_estimate,
     study_ci_lower = unname(study_interval[["lower"]]),
@@ -242,6 +271,7 @@
 
 .ctma_failed_case <- function(scenario, condition) {
   list(
+    validation_schema = .ctma_validation_schema,
     scenario = scenario, status = "failed",
     error = conditionMessage(condition), converged = FALSE,
     fit_seconds = NA_real_, check_seconds = NA_real_,
@@ -256,6 +286,7 @@
     "scenario", "status", "nstudy", "nsubjects", "nobs", "converged",
     "gradient_norm", "loglik", "fit_seconds", "check_seconds",
     "laplace_gap", "gap_per_subject", "true_study_sd",
+    "true_raw_study_sd",
     "estimated_study_sd", "study_sd_relative_error",
     "study_ci_lower", "study_ci_upper", "study_ci_covers_truth",
     "true_subject_cint_sd", "estimated_subject_cint_sd",
@@ -307,15 +338,16 @@
     "",
     paste(
       "| Scenario | Decision | Converged | Fit s | Gap/person |",
-      "True study SD | Estimated study SD | Relative error |"
+      "True raw SD | True reported-scale SD | Estimated SD | Relative error |"
     ),
-    "|---|---:|---:|---:|---:|---:|---:|---:|"
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|"
   )
   for (i in seq_len(nrow(table))) {
     lines <- c(lines, paste0(
       "| ", table$scenario[[i]], " | ", table$decision[[i]], " | ",
       table$converged[[i]] %||% FALSE, " | ", fmt(table$fit_seconds[[i]], 5),
       " | ", fmt(table$gap_per_subject[[i]], 4), " | ",
+      fmt(table$true_raw_study_sd[[i]], 4), " | ",
       fmt(table$true_study_sd[[i]], 4), " | ",
       fmt(table$estimated_study_sd[[i]], 4), " | ",
       fmt(table$study_sd_relative_error[[i]], 4), " |"
@@ -340,8 +372,9 @@
     paste(
       "CINT tests an identity-transformed location effect. DRIFT, DIFFUSION,",
       "and T0VAR test nonlinear ctsem transformations. Random-effect SDs are",
-      "compared on ctsem's unconstrained raw scale, which is the scale on which",
-      "the hierarchical Gaussian distribution is defined."
+      "generated on ctsem's unconstrained raw scale. summary(fit)$popsd",
+      "reports the induced SD after the parameter transform, so recovery is",
+      "evaluated against the corresponding transformed population SD."
     ),
     "",
     paste(
@@ -382,6 +415,7 @@
     if (isTRUE(options$resume) && file.exists(scenario_file)) {
       prior <- tryCatch(readRDS(scenario_file), error = function(e) NULL)
       reusable <- !is.null(prior) && identical(prior$status, "completed") &&
+        identical(prior$validation_schema, .ctma_validation_schema) &&
         identical(prior$scenario, scenario) &&
         identical(as.integer(prior$seed), as.integer(scenario_seed)) &&
         identical(as.integer(prior$nstudy), as.integer(dimensions$nstudy)) &&

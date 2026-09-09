@@ -83,7 +83,8 @@
     rep_name <- basename(dirname(file))
     replication <- suppressWarnings(as.integer(sub("^rep-", "", rep_name)))
     fields <- c("scenario", "status", "seed", "converged", "fit_seconds", "check_seconds",
-      "gap_per_subject", "true_study_sd", "estimated_study_sd", "study_sd_relative_error",
+      "gap_per_subject", "true_raw_study_sd", "true_study_sd",
+      "estimated_study_sd", "study_sd_relative_error",
       "study_ci_covers_truth", "true_subject_cint_sd", "estimated_subject_cint_sd",
       "subject_cint_ci_covers_truth")
     out <- setNames(rep(list(NA), length(fields)), fields)
@@ -111,6 +112,10 @@
       observed = nrow(x), completed = sum(x$status == "completed"),
       converged = sum(x$converged %in% TRUE),
       convergence_rate = sum(x$converged %in% TRUE) / requested_replications,
+      true_raw_study_sd = {
+        value <- unique(x$true_raw_study_sd[is.finite(x$true_raw_study_sd)])
+        if (length(value)) value[[1L]] else NA_real_
+      },
       true_study_sd = if (length(truth)) truth[[1L]] else NA_real_,
       mean_estimated_study_sd = .mc_mean(x$estimated_study_sd),
       bias = .mc_mean(error), relative_bias = .mc_mean(error / x$true_study_sd),

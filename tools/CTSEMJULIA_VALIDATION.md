@@ -13,13 +13,21 @@ fit.
 
 The simulations use a one-variable continuous-time Ornstein--Uhlenbeck model.
 Between-study standard deviations are generated on ctsem's unconstrained raw
-scale, which is also the scale of the Gaussian random effects estimated by
-ctsem.
+scale. The native ctsem summary does not report that raw SD directly:
+`popsd.study` is the induced population SD after applying the parameter's
+possibly nonlinear transform. The validation therefore stores both the raw
+generating SD and the corresponding reported-scale target, and compares the
+estimate only with the latter.
 
 - `cint`: subject- and study-level CINT heterogeneity;
 - `drift`: subject-level CINT and study-level DRIFT heterogeneity;
 - `diffusion`: study-level DIFFUSION heterogeneity;
 - `t0var`: study-level T0VAR heterogeneity.
+
+For diagonal T0VAR parameters, ctsem's transformed value is a standard-
+deviation factor whose square is the initial-state variance. The simulator
+uses that factor directly as the initial-state SD; applying an additional
+square root would simulate a different model.
 
 The quick mode runs the first two cases. Full mode runs all four with more
 studies, people, and observations. Each fit is followed by

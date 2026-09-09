@@ -457,8 +457,12 @@ parameter-selective specification above. This coding is constructed by
 
 The package source contains a separate engineering validation suite for the
 experimental \code{backend="ctsemjulia"}.  It simulates known subject- and
-study-level heterogeneity and compares the estimated standard deviations with
-their generating values on ctsem's unconstrained raw scale.  The full suite
+study-level heterogeneity. Random-effect distributions are generated on
+ctsem's unconstrained raw scale, whereas \code{popsd.study} reports the induced
+standard deviation after the parameter transformation. The suite therefore
+stores both targets and compares the reported estimate with the corresponding
+reported-scale truth. For diagonal T0VAR, the transformed value is the
+initial-state standard-deviation factor, not the variance itself. The full suite
 tests CINT, DRIFT, DIFFUSION, and T0VAR and follows each fit with adaptive
 quadrature through \code{ctLaplaceCheck()}.
 
