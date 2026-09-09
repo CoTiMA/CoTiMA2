@@ -517,6 +517,22 @@ and ensure that \code{workers * cores-per-fit} leaves at least one physical
 core free.  Full details, output files, and restart options are described in
 \code{tools/CTSEMJULIA\_VALIDATION.md}.
 
+The first completed reference experiment used 50 independently simulated data
+sets for each of CINT, DRIFT, DIFFUSION, and T0VAR.  All 200 fits converged;
+the transformed-scale targets, bias, RMSE, coverage, and limitations are
+recorded in
+\code{tools/CTSEMJULIA\_MONTE\_CARLO\_RESULTS\_0.14.15.md}.
+
+After these single-family checks, the script
+\code{tools/ctsemjulia-joint-validation.R} estimates study-level variation in
+CINT, DRIFT, DIFFUSION, and T0VAR simultaneously, together with a person-level
+CINT random effect.  It simulates mutually independent study effects.  The
+current native ctsem Laplace implementation nevertheless estimates a full
+raw-scale correlation matrix, so the joint test also checks whether the six
+freely estimated correlations remain close to their true value of zero.  A
+quick run should precede the full design; \code{--simulate-only=true} checks
+data generation without fitting.
+
 Do not treat a non-hierarchical Stan or CoTiMA2-Julia fit as a numerical gold
 standard for this validation.  Such a model estimates study fixed effects or
 a pooled fixed effect, whereas the native Laplace model integrates Gaussian

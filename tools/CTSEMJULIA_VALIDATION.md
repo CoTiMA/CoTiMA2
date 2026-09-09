@@ -142,3 +142,27 @@ a run manifest. Aggregate diagnostics include convergence, bias, relative
 bias, RMSE, absolute error, Laplace/quadrature gaps, timings, and 95-percent
 interval coverage whenever ctsem supplies finite limits for the random-effect
 standard deviation.
+
+The completed 50-replication reference experiment is documented in
+`tools/CTSEMJULIA_MONTE_CARLO_RESULTS_0.14.15.md`.
+
+## Joint random-effects validation
+
+The single-family suite varies one study-level parameter family at a time.
+The more demanding follow-up estimates study variation in CINT, DRIFT,
+DIFFUSION, and T0VAR simultaneously, together with a person-level CINT random
+effect:
+
+```sh
+Rscript tools/ctsemjulia-joint-validation.R \
+  --mode=quick \
+  --cores=4 \
+  --study-effects=random
+```
+
+Use `--mode=full` only after the quick run succeeds. The simulated study
+effects are independent. The current native ctsem Laplace implementation
+estimates their full raw-scale correlation matrix, so the joint test checks
+both the four SDs and the six correlations whose true values are zero. Use
+`--simulate-only=true` to verify data generation without loading Julia or
+fitting the model.
