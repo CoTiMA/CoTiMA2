@@ -47,10 +47,12 @@ result <- list(
   fit = fit, check = check
 )
 saveRDS(result, file.path(output, "refinement-results.rds"))
-capture.output(print(result[c("seed", "fit_seconds", "check_seconds",
-  "converged", "gradient_norm", "loglik", "popmeans", "popsd",
-  "rawpopcorr", "laplace_gap", "gap_per_subject")])),
-  file = file.path(output, "RESULTS.txt"))
+capture.output(
+  print(result[c("seed", "fit_seconds", "check_seconds", "converged",
+    "gradient_norm", "loglik", "popmeans", "popsd", "rawpopcorr",
+    "laplace_gap", "gap_per_subject")]),
+  file = file.path(output, "RESULTS.txt")
+)
 print(result[c("seed", "fit_seconds", "check_seconds", "converged",
   "gradient_norm", "loglik", "popmeans", "popsd", "rawpopcorr",
   "laplace_gap", "gap_per_subject")])
