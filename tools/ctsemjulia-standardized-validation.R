@@ -62,7 +62,7 @@
     z2 <- as.numeric(scale(cos(2 * pi * (seq_len(nstudy) - .5) / nstudy)))
     r1 <- .35 + .20 * zz
     r2 <- .15 + .16 * z2
-    rho_raw <- rep(atanh(.25), nstudy)
+    rho_raw <- rep(0, nstudy)
     A <- Map(function(x, y) matrix(
       c(.drift(x), .08, .04, .drift(y)), 2L, 2L, byrow = TRUE
     ),
@@ -109,10 +109,8 @@
     varying <- "drift1"
   } else {
     d2 <- "-(0.2 + 2 * log1p_exp(-(2 * PARS[2,1])))"
-    rho <- "0.25"
-    l11 <- paste0("sqrt(-2 * (", d1, " + 0.08 * ", rho, "))")
-    q21 <- paste0("-(0.04 + (", d2, ") * ", rho, " + ", rho,
-      " * (", d1, ") + 0.08)")
+    l11 <- paste0("sqrt(-2 * (", d1, "))")
+    q21 <- "-(0.04 + 0.08)"
     l21 <- paste0("(", q21, ") / (", l11, ")")
     m <- ctsem::ctModel(
       type = "ct", id = c("id", "study"),
@@ -120,12 +118,11 @@
       LAMBDA = diag(2),
       PARS = matrix(c("drift1", "drift2"), 2L, 1L),
       DRIFT = matrix(c(d1, .08, .04, d2), 2L, 2L, byrow = TRUE),
-      T0VAR = matrix(c(1, .25, 0, sqrt(1 - .25^2)), 2L, 2L),
+      T0VAR = diag(2),
       DIFFUSION = matrix(c(
         l11, l21,
         0,
-        paste0("sqrt(-2 * ((", d2, ") + 0.04 * ", rho,
-          ") - (", l21, ")^2)")
+        paste0("sqrt(-2 * (", d2, ") - (", l21, ")^2)")
       ), 2L, 2L),
       T0MEANS = matrix(0, 2L, 1L), CINT = matrix(0, 2L, 1L),
       MANIFESTMEANS = matrix(0, 2L, 1L), MANIFESTVAR = matrix(0, 2L, 2L)
@@ -197,7 +194,7 @@
     paste("This validation fixes latent marginal variances at one. DIFFUSION is",
       "derived from DRIFT and P by Q = -(A P + P A'); it has no independent",
       "study random effect. The bivariate scenario permits study variation in",
-      "two diagonal DRIFT parameters and fixes the T0 correlation at 0.25.",
+      "two diagonal DRIFT parameters and fixes the T0 correlation at zero.",
       "The present native Julia API rejects parameter-dependent expressions in",
       "T0VAR, so a varying T0 correlation with both marginal variances fixed",
       "exactly at one remains an explicitly documented capability gap."), "",

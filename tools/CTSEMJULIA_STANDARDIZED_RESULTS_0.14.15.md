@@ -10,7 +10,7 @@ independently:
 
 The univariate model varies one DRIFT parameter between studies. The bivariate
 model varies both diagonal DRIFT parameters, fixes the cross-effects at 0.08
-and 0.04, and fixes the T0 correlation at 0.25. Both models fix measurement
+and 0.04, and fixes the T0 correlation at zero. Both models fix measurement
 error at zero. The data were generated exactly from their stationary
 transition covariance.
 

@@ -214,8 +214,8 @@ Rscript tools/ctsemjulia-standardized-validation.R \
 The script fixes the marginal latent variances at one and derives process
 noise from `Q = -(A P + P A')`. Consequently, DIFFUSION has no independent
 study random effect. It tests a univariate study-varying drift and a bivariate
-model with two study-varying diagonal drift parameters and a fixed T0
-correlation of 0.25. Use `--mode=full` only after the quick run succeeds.
+model with two study-varying diagonal drift parameters and a fixed zero T0
+correlation. Use `--mode=full` only after the quick run succeeds.
 
 This is an intentionally stronger assumption than standardizing observed
 variables within occasion. Measurement error, finite-sample standardization,
