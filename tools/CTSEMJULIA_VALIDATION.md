@@ -191,3 +191,5 @@ Rscript tools/ctsemjulia-dimensional-validation.R \
 It fits CINT+DRIFT, DIFFUSION+T0VAR, CINT+DRIFT+DIFFUSION, and all four
 families sequentially in isolated R/Julia processes. Completed compatible
 cases are reused, and `DIMENSIONAL_REPORT.md` is updated after every case.
+If an equivalent four-effect result already exists, avoid repeating its costly
+quadrature check by adding `--all-four-result=/path/to/joint-validation-results.rds`.

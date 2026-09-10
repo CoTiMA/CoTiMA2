@@ -17,7 +17,8 @@
     development_library = "/private/tmp/ctsem-juliaFit-lib",
     julia_bindir = Sys.getenv("JULIA_BINDIR"), cores = 4L,
     mode = "full", seed = 20260909L, check_nodes = 5L,
-    study_effects = "quantiles", retain_fit = FALSE, resume = TRUE
+    study_effects = "quantiles", retain_fit = FALSE, resume = TRUE,
+    all_four_result = ""
   )
   for (arg in args) {
     if (!startsWith(arg, "--") || !grepl("=", arg, fixed = TRUE)) stop(
@@ -51,6 +52,29 @@
     identical(as.integer(x$options$check_nodes), options$check_nodes) &&
     identical(x$options$study_effects, options$study_effects) &&
     identical(x$options$components, components)
+}
+
+.dim_external_all_four <- function(file, options) {
+  x <- readRDS(file)
+  expected <- if (options$mode == "quick")
+    c(nstudy = 8L, subjects_per_study = 20L, nobs = 12L) else
+    c(nstudy = 16L, subjects_per_study = 35L, nobs = 20L)
+  observed <- unlist(x$dimensions[names(expected)], use.names = TRUE)
+  compatible <- identical(as.integer(observed), as.integer(expected)) &&
+    identical(as.integer(x$options$seed), options$seed) &&
+    identical(x$options$study_effects, options$study_effects)
+  if (!compatible) stop(
+    "all_four_result does not match mode, seed, or study-effect generation.",
+    call. = FALSE
+  )
+  # Results created before --check-nodes was exposed used the hard-coded value 5.
+  prior_nodes <- x$options$check_nodes
+  if (is.null(prior_nodes)) prior_nodes <- 5L
+  if (!identical(as.integer(prior_nodes), options$check_nodes)) stop(
+    "all_four_result used a different number of quadrature nodes.",
+    call. = FALSE
+  )
+  TRUE
 }
 
 .dim_row <- function(name, components, file, exit_status = 0L) {
@@ -111,7 +135,14 @@
     result_file <- file.path(case_dir, "joint-validation-results.rds")
     dir.create(case_dir, recursive = TRUE, showWarnings = FALSE)
     status <- 0L
-    if (!(options$resume && .dim_reusable(result_file, options, components))) {
+    external_all_four <- name == "all_four" &&
+      nzchar(options$all_four_result) && file.exists(options$all_four_result)
+    if (external_all_four) {
+      .dim_external_all_four(options$all_four_result, options)
+      message("Reusing external all-four result: ", options$all_four_result)
+      result_file <- options$all_four_result
+    } else if (!(options$resume &&
+        .dim_reusable(result_file, options, components))) {
       message("Running dimensional validation: ", name)
       args <- c(joint_script,
         paste0("--project=", shQuote(options$project)),
