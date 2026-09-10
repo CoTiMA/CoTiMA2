@@ -14,27 +14,43 @@ and 0.04, and fixes the T0 correlation at zero. Both models fix measurement
 error at zero. The data were generated exactly from their stationary
 transition covariance.
 
-## Quick result
+## Full result and start-value robustness
 
-The quick design used 8 studies, 20 subjects per study, 12 observations per
-subject, four requested Julia cores, and deterministic study quantiles.
+The full design used 16 studies, 35 subjects per study, 20 observations per
+subject, four requested Julia cores, and deterministic, mutually uncorrelated
+study-effect sequences. Six optimizer configurations (with and without the
+10-iteration careful-fit pass and with initial jitter from 0.01 to 0.20) all
+converged to the same bivariate solution and log likelihood. The fastest was
+the plain fit with jitter 0.05 (31.5 seconds, excluding Hessian and quadrature).
 
-| Scenario | Converged | Gradient norm | Fit seconds | Gap/person | True raw study SD | Estimated study SD |
-|---|---:|---:|---:|---:|---|---|
-| Univariate DRIFT | yes | 1.19e-9 | 50.1 | 5.27e-4 | 0.300 | 0.318 |
-| Bivariate DRIFT | yes | 8.39e-9 | 61.1 | -1.69e-5 | 0.200, 0.160 | 0.153, 0.080 |
+| Seed | Converged | Gradient norm | Fit seconds | Gap/person | True raw SDs | Estimated SDs | Estimated correlation |
+|---|---:|---:|---:|---:|---|---|---:|
+| 20260912 | yes | 7.72e-9 | 94.4 | 2.78e-4 | 0.200, 0.160 | 0.159, 0.169 | -0.152 |
+| 20261010 | yes | 1.41e-9 | 105.1 | 3.47e-4 | 0.200, 0.160 | 0.214, 0.185 | -0.158 |
 
-Both optimizations and both adaptive-quadrature checks passed numerically.
-The small bivariate design underestimates especially the second study SD, so
-the full design is required before drawing a recovery conclusion.
+The corresponding raw population means were 0.326 and 0.163 in the first run,
+and 0.311 and 0.139 in the alternate-seed run, for generating values 0.35 and
+0.15. Both 95-percent intervals covered both generating study SDs and zero
+correlation. The adaptive-quadrature comparisons show small Laplace error.
+
+Numerical generator checks gave an exact unit diagonal for every target
+covariance and a maximum Lyapunov/Cholesky reconstruction error of 4.44e-16.
+Overall empirical variances were 0.970 and 0.981 for the first seed, and 0.999
+and 1.012 for the second.
+
+An exploratory formulation with a nonzero fixed T0 correlation allowed the
+optimizer to enter regions where the implied Q was not positive definite.
+That was a validation-model parameterization error, not a Laplace failure.
+The final zero-correlation formulation keeps Q positive definite over the
+complete parameter domain used here.
 
 ## Remaining API limitation
 
 The native Julia backend currently rejects a parameter-dependent expression in
 T0VAR. Hence a study-varying T0 correlation cannot yet be combined with both
 marginal latent variances fixed exactly at one through the required Cholesky
-identity. The validation fixes the T0 correlation rather than fitting a free
-Cholesky element that would change a marginal variance.
+identity. The validation fixes the T0 correlation at zero rather than fitting
+a free Cholesky element that would change a marginal variance.
 
 These assumptions apply to latent covariance stationarity. Standardizing
 observed variables at each occasion does not by itself impose them in the

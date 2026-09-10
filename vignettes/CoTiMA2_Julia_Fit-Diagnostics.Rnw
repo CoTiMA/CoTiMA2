@@ -582,9 +582,17 @@ automatic property of every CoTiMA correlation input.
 At present the native Julia backend rejects parameter-dependent expressions in
 T0VAR.  A study-varying T0 correlation while both marginal latent variances
 remain fixed exactly at one is therefore a documented capability gap.  The
-bivariate validation fixes that correlation at 0.25 instead of silently
+bivariate validation fixes that correlation at zero instead of silently
 estimating a Cholesky element whose implied second marginal variance would no
 longer equal one.
+
+In the full design, all six start configurations converged to the same
+solution.  Two independent simulation seeds recovered the generating raw
+study SDs $(0.20,0.16)$ as $(0.159,0.169)$ and $(0.214,0.185)$; their
+95-percent intervals covered both generating values.  The corresponding
+Laplace--quadrature gaps were $2.78\times10^{-4}$ and
+$3.47\times10^{-4}$ per person.  Direct numerical checks reproduced the
+Lyapunov covariance to within $4.44\times10^{-16}$.
 
 \section{A concise stopping rule}
 
