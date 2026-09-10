@@ -166,3 +166,28 @@ estimates their full raw-scale correlation matrix, so the joint test checks
 both the four SDs and the six correlations whose true values are zero. Use
 `--simulate-only=true` to verify data generation without loading Julia or
 fitting the model.
+
+Select a nested subset with `--components=`, and change the quadrature check
+with `--check-nodes=`. For example:
+
+```sh
+Rscript tools/ctsemjulia-joint-validation.R \
+  --mode=full \
+  --components=CINT,DRIFT \
+  --check-nodes=5
+```
+
+The completed joint quick and full experiments are documented in
+`tools/CTSEMJULIA_JOINT_RESULTS_0.14.15.md`. To localize approximation error
+systematically, run the resumable nested comparison:
+
+```sh
+Rscript tools/ctsemjulia-dimensional-validation.R \
+  --mode=full \
+  --cores=4 \
+  --check-nodes=5
+```
+
+It fits CINT+DRIFT, DIFFUSION+T0VAR, CINT+DRIFT+DIFFUSION, and all four
+families sequentially in isolated R/Julia processes. Completed compatible
+cases are reused, and `DIMENSIONAL_REPORT.md` is updated after every case.

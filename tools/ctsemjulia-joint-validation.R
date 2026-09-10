@@ -19,6 +19,7 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
     development_library = "/private/tmp/ctsem-juliaFit-lib",
     julia_bindir = Sys.getenv("JULIA_BINDIR"), cores = 4L,
     mode = "quick", seed = 20260909L, study_effects = "random",
+    components = "CINT,DRIFT,DIFFUSION,T0VAR", check_nodes = 5L,
     retain_fit = FALSE, simulate_only = FALSE
   )
   for (arg in args) {
@@ -31,9 +32,22 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
   }
   flag <- function(v) tolower(as.character(v)) %in% c("true", "t", "1", "yes")
   x$cores <- as.integer(x$cores); x$seed <- as.integer(x$seed)
+  x$check_nodes <- as.integer(x$check_nodes)
   x$mode <- match.arg(tolower(x$mode), c("quick", "full"))
   x$study_effects <- match.arg(tolower(x$study_effects), c("random", "quantiles"))
   x$retain_fit <- flag(x$retain_fit); x$simulate_only <- flag(x$simulate_only)
+  x$components <- unique(toupper(trimws(strsplit(
+    as.character(x$components), ",", fixed = TRUE
+  )[[1L]])))
+  allowed <- c("CINT", "DRIFT", "DIFFUSION", "T0VAR")
+  unknown <- setdiff(x$components, allowed)
+  if (!length(x$components) || length(unknown)) stop(
+    "components must be a comma-separated subset of: ",
+    paste(allowed, collapse = ", "), ".", call. = FALSE
+  )
+  if (is.na(x$check_nodes) || x$check_nodes < 1L) stop(
+    "check_nodes must be a positive integer.", call. = FALSE
+  )
   x
 }
 
@@ -46,7 +60,8 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
 }
 
 .joint_simulate <- function(nstudy, subjects_per_study, nobs, seed,
-    study_effects = c("random", "quantiles")) {
+    study_effects = c("random", "quantiles"),
+    components = c("CINT", "DRIFT", "DIFFUSION", "T0VAR")) {
   set.seed(seed); study_effects <- match.arg(study_effects)
   spec <- data.frame(
     component = c("CINT", "DRIFT", "DIFFUSION", "T0VAR"),
@@ -62,6 +77,10 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
   colnames(z) <- spec$component
   raw <- sweep(sweep(z, 2L, spec$raw_study_sd, `*`),
     2L, spec$raw_location, `+`)
+  inactive <- setdiff(spec$component, components)
+  for (component in inactive) {
+    raw[, component] <- spec$raw_location[match(component, spec$component)]
+  }
   values <- cbind(CINT = 10 * raw[, "CINT"],
     DRIFT = .ctma_drift_transform(raw[, "DRIFT"]),
     DIFFUSION = .ctma_diffusion_transform(raw[, "DIFFUSION"]),
@@ -88,7 +107,8 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
     }
   }
   list(data = do.call(rbind, rows), specification = spec,
-    raw_study_values = raw, realised_raw_correlations = stats::cor(raw),
+    raw_study_values = raw,
+    realised_raw_correlations = stats::cor(raw[, components, drop = FALSE]),
     study_effects = study_effects,
     true_subject_cint_sd = 10 * subject_raw_cint_sd)
 }
@@ -98,9 +118,11 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
     list(nstudy = 8L, subjects_per_study = 20L, nobs = 12L) else
     list(nstudy = 16L, subjects_per_study = 35L, nobs = 20L)
   design <- .joint_simulate(dimensions$nstudy, dimensions$subjects_per_study,
-    dimensions$nobs, options$seed, options$study_effects)
+    dimensions$nobs, options$seed, options$study_effects, options$components)
+  selected <- design$specification$component %in% options$components
+  selected_specification <- design$specification[selected, , drop = FALSE]
   dir.create(options$output, recursive = TRUE, showWarnings = FALSE)
-  utils::write.csv(design$specification,
+  utils::write.csv(selected_specification,
     file.path(options$output, "joint-truth.csv"), row.names = FALSE)
   if (options$simulate_only) {
     saveRDS(design, file.path(options$output, "joint-simulation.rds"))
@@ -119,15 +141,17 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
     ctModel = model, argumentList = list()), class = "CoTiMAFit")
   args <- CoTiMA2::ctmaBackendDefaults("ctsemjulia")
   args$study_id <- design$data$study
-  args$study_parameters <- design$specification$parameter
+  args$study_parameters <- selected_specification$parameter
   args$subject_parameters <- "cint_eta1"
   fit_time <- system.time(fit <- CoTiMA2:::.ctmaFitCtsemJuliaBackend(
     setup, args, options$cores, cotima_call = match.call(), verbose = 0))
-  check_time <- system.time(check <- ctsem::ctLaplaceCheck(fit, nodes = 5L))
+  check_time <- system.time(check <- ctsem::ctLaplaceCheck(
+    fit, nodes = options$check_nodes
+  ))
   s <- summary(fit)
   sd_table <- s[["popsd.study"]] %||% s[["popsd"]]
   cor_table <- s[["rawpopcorr.study"]] %||% s[["rawpopcorr"]]
-  recovery <- design$specification
+  recovery <- selected_specification
   recovery$estimated_reported_sd <- vapply(recovery$parameter, function(p)
     if (!is.null(sd_table) && p %in% rownames(sd_table))
       .ctma_scalar(sd_table[p, "mean"]) else NA_real_, numeric(1L))
@@ -152,7 +176,9 @@ source(file.path(.script_dir(), "ctsemjulia-validation-suite.R"))
     check_seconds = unname(check_time[["elapsed"]]),
     gap_per_subject = .ctma_scalar(check$gap_per_subject), recovery = recovery,
     correlations = correlations,
-    realised_raw_correlations = design$realised_raw_correlations,
+    realised_raw_correlations = design$realised_raw_correlations[
+      options$components, options$components, drop = FALSE
+    ],
     true_subject_cint_sd = design$true_subject_cint_sd,
     estimated_subject_cint_sd = subject_estimate,
     fit = if (options$retain_fit) fit else NULL, check = check)
