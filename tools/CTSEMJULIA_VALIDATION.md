@@ -195,3 +195,34 @@ approximation error. Completed compatible cases are reused, and
 `DIMENSIONAL_REPORT.md` is updated after every case.
 If an equivalent four-effect result already exists, avoid repeating its costly
 quadrature check by adding `--all-four-result=/path/to/joint-validation-results.rds`.
+
+## Covariance-stationary standardized validation
+
+The generic suites deliberately estimate DRIFT, DIFFUSION, and T0VAR as
+separate random-effect families. For the idealized case in which the *latent*
+process covariance is standardized and stationary, run the complementary
+restricted test:
+
+```sh
+Rscript tools/ctsemjulia-standardized-validation.R \
+  --mode=quick \
+  --cores=4 \
+  --development-library=/path/to/ctsem-juliaFit-lib \
+  --output=/path/to/standardized-results
+```
+
+The script fixes the marginal latent variances at one and derives process
+noise from `Q = -(A P + P A')`. Consequently, DIFFUSION has no independent
+study random effect. It tests a univariate study-varying drift and a bivariate
+model with two study-varying diagonal drift parameters and a fixed T0
+correlation of 0.25. Use `--mode=full` only after the quick run succeeds.
+
+This is an intentionally stronger assumption than standardizing observed
+variables within occasion. Measurement error, finite-sample standardization,
+and nonstationary latent processes can all leave the latent covariance unlike
+the identity matrix.
+
+The current native Julia API rejects parameter-dependent expressions in
+T0VAR. Therefore, a study-varying T0 correlation combined with both marginal
+latent variances fixed exactly at one is recorded as a remaining capability
+gap rather than approximated by a free Cholesky element.

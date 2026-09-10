@@ -557,6 +557,35 @@ random effects.  Their likelihoods and estimands are therefore different.  A
 speed comparison is meaningful only after the competing backends express the
 same hierarchical model.
 
+\subsection{A standardized covariance-stationary validation}
+
+The preceding engineering experiments deliberately treat DRIFT, DIFFUSION,
+and T0VAR as separate random-effect families.  A complementary validation is
+needed for the stronger, idealized assumption that the \emph{latent} process
+covariance is standardized and stationary.  The script
+\code{tools/ctsemjulia-standardized-validation.R} fixes marginal latent
+variances at one and derives process noise from
+\[
+  \bm Q_s=-(\bm A_s\bm P_s+\bm P_s\bm A_s^\top).
+\]
+DIFFUSION consequently has no independent study random effect.  The quick and
+full modes test a univariate study-varying drift and a bivariate model with two
+study-varying diagonal drift parameters and a fixed T0 correlation.
+
+This restriction is stronger than merely standardizing the observed variables
+at every occasion.  Measurement error, finite-sample standardization, and
+nonstationarity can all make the latent covariance differ from the observed
+unit-variance covariance.  The validation must therefore be interpreted as a
+test of a particular stationary latent data-generating model, not as an
+automatic property of every CoTiMA correlation input.
+
+At present the native Julia backend rejects parameter-dependent expressions in
+T0VAR.  A study-varying T0 correlation while both marginal latent variances
+remain fixed exactly at one is therefore a documented capability gap.  The
+bivariate validation fixes that correlation at 0.25 instead of silently
+estimating a Cholesky element whose implied second marginal variance would no
+longer equal one.
+
 \section{A concise stopping rule}
 
 Do not continue merely because the raw gradient exceeds a conventional target.
