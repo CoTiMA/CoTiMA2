@@ -32,7 +32,7 @@
   x
 }
 
-.drift <- function(raw) -(1e-6 + 2 * log1p(exp(-2 * raw)))
+.drift <- function(raw) -(.2 + 2 * log1p(exp(-2 * raw)))
 .z <- function(n) as.numeric(scale(qnorm((seq_len(n) - .5) / n)))
 .scalar <- function(x) suppressWarnings(as.numeric(x)[1L])
 
@@ -57,11 +57,15 @@
     # Three study effects deliberately use non-collinear deterministic
     # quantiles.  The two diagonal drift effects and the initial correlation
     # vary; marginal variances remain one in every study.
-    z2 <- zz[c(seq(2L, nstudy, 2L), seq(1L, nstudy, 2L))]
+    # A cosine sequence is exactly uncorrelated with the symmetric ordered
+    # normal quantiles, avoiding a nearly singular two-effect design.
+    z2 <- as.numeric(scale(cos(2 * pi * (seq_len(nstudy) - .5) / nstudy)))
     r1 <- .35 + .20 * zz
     r2 <- .15 + .16 * z2
     rho_raw <- rep(atanh(.25), nstudy)
-    A <- Map(function(x, y) matrix(c(.drift(x), .08, .04, .drift(y)), 2L, 2L),
+    A <- Map(function(x, y) matrix(
+      c(.drift(x), .08, .04, .drift(y)), 2L, 2L, byrow = TRUE
+    ),
       r1, r2)
     P <- lapply(tanh(rho_raw), function(r) matrix(c(1, r, r, 1), 2L))
     raw <- cbind(drift1 = r1, drift2 = r2)
@@ -89,7 +93,10 @@
 }
 
 .model <- function(scenario) {
-  d1 <- "-(1e-06 + 2 * log1p_exp(-(2 * PARS[1,1])))"
+  # With positive fixed cross-effects, merely constraining each diagonal below
+  # zero is insufficient to keep Q positive definite throughout optimization.
+  # A -0.2 upper bound is safely inside the admissible region for this design.
+  d1 <- "-(0.2 + 2 * log1p_exp(-(2 * PARS[1,1])))"
   if (scenario == "univariate_drift") {
     m <- ctsem::ctModel(
       type = "ct", id = c("id", "study"), manifestNames = "Y1",
@@ -101,7 +108,7 @@
     )
     varying <- "drift1"
   } else {
-    d2 <- "-(1e-06 + 2 * log1p_exp(-(2 * PARS[2,1])))"
+    d2 <- "-(0.2 + 2 * log1p_exp(-(2 * PARS[2,1])))"
     rho <- "0.25"
     l11 <- paste0("sqrt(-2 * (", d1, " + 0.08 * ", rho, "))")
     q21 <- paste0("-(0.04 + (", d2, ") * ", rho, " + ", rho,
@@ -112,7 +119,7 @@
       manifestNames = c("Y1", "Y2"), latentNames = c("eta1", "eta2"),
       LAMBDA = diag(2),
       PARS = matrix(c("drift1", "drift2"), 2L, 1L),
-      DRIFT = matrix(c(d1, .08, .04, d2), 2L, 2L),
+      DRIFT = matrix(c(d1, .08, .04, d2), 2L, 2L, byrow = TRUE),
       T0VAR = matrix(c(1, .25, 0, sqrt(1 - .25^2)), 2L, 2L),
       DIFFUSION = matrix(c(
         l11, l21,
