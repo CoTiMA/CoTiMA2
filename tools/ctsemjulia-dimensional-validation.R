@@ -39,6 +39,10 @@
 
 .dim_configurations <- list(
   cint_drift = c("CINT", "DRIFT"),
+  cint_diffusion = c("CINT", "DIFFUSION"),
+  cint_t0var = c("CINT", "T0VAR"),
+  drift_diffusion = c("DRIFT", "DIFFUSION"),
+  drift_t0var = c("DRIFT", "T0VAR"),
   diffusion_t0var = c("DIFFUSION", "T0VAR"),
   cint_drift_diffusion = c("CINT", "DRIFT", "DIFFUSION"),
   all_four = c("CINT", "DRIFT", "DIFFUSION", "T0VAR")
@@ -157,7 +161,7 @@
         paste0("--retain-fit=", tolower(options$retain_fit)))
       status <- system2(file.path(R.home("bin"), "Rscript"), args,
         stdout = file.path(case_dir, "run.log"),
-        stderr = TRUE)
+        stderr = file.path(case_dir, "error.log"))
     } else message("Reusing completed dimensional validation: ", name)
     rows[[i]] <- .dim_row(name, components, result_file, status)
     .dim_write_report(do.call(rbind, rows[seq_len(i)]), options)

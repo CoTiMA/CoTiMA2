@@ -544,10 +544,11 @@ SD and correlation estimates but did not eliminate the approximation warning.
 The option \code{--components=} selects a nested subset of the four study
 random-effect families, while \code{--check-nodes=} controls the diagnostic
 quadrature.  The resumable script
-\code{tools/ctsemjulia-dimensional-validation.R} compares CINT+DRIFT,
-DIFFUSION+T0VAR, CINT+DRIFT+DIFFUSION, and all four families in fresh R/Julia
-processes.  This separates a general dimensionality effect from a problem
-introduced by a particular transformed parameter family.
+\code{tools/ctsemjulia-dimensional-validation.R} compares all six pairwise
+combinations, CINT+DRIFT+DIFFUSION, and all four families in fresh R/Julia
+processes.  The complete pairwise design identifies parameter-specific
+interactions, while the three- and four-dimensional fits reveal a more general
+dimensionality effect.
 
 Do not treat a non-hierarchical Stan or CoTiMA2-Julia fit as a numerical gold
 standard for this validation.  Such a model estimates study fixed effects or
