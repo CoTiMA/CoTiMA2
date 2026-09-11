@@ -1678,10 +1678,29 @@ ctmaInit <- function(
         if (any(tmp4 != 0)) estProb[[length(estProb)+0]] <- paste0(estProb[[length(estProb)+0]], " ", paste0(tmp6[tmp4], collapse=" "))
 
         #estProb
-        if ( ( (indVarying == "MANIFEST") | (indVarying == 'CINT') ) & ( (randomIntercepts != "CINT") | (randomIntercepts != "MANIFEST") ) ) {
-          e <- ctsem::ctExtract(studyFit[[i]])
-          model_popsd_tmp <- resultsSummary$popsd
-          if (dim(model_popsd_tmp)[1] != n.latent) {
+        if (indVarying %in% c("MANIFEST", "CINT") &&
+            !randomIntercepts %in% c("CINT", "MANIFEST")) {
+          if (identical(backend, "ctsemjulia")) {
+            native_re <- .ctmaInitCtsemJuliaRandomEffectSummary(
+              resultsSummary, digits = digits
+            )
+            model_popsd[[i]] <- native_re$popsd
+            model_popcov_m[[i]] <- native_re$popcov_mean
+            model_popcov_sd[[i]] <- native_re$popcov_sd
+            model_popcov_T[[i]] <- native_re$popcov_T
+            model_popcov_025[[i]] <- native_re$popcov_025
+            model_popcov_50[[i]] <- native_re$popcov_50
+            model_popcov_975[[i]] <- native_re$popcov_975
+            model_popcor_m[[i]] <- native_re$popcor_mean
+            model_popcor_sd[[i]] <- native_re$popcor_sd
+            model_popcor_T[[i]] <- native_re$popcor_T
+            model_popcor_025[[i]] <- native_re$popcor_025
+            model_popcor_50[[i]] <- native_re$popcor_50
+            model_popcor_975[[i]] <- native_re$popcor_975
+          } else {
+            e <- ctsem::ctExtract(studyFit[[i]])
+            model_popsd_tmp <- resultsSummary$popsd
+            if (dim(model_popsd_tmp)[1] != n.latent) {
             model_popsd[[i]] <- resultsSummary$popsd
             model_popcov_m[[i]] <- round(ctsem::ctCollapse(e$popcov, 1, mean), digits = digits)
             model_popcov_sd[[i]] <- round(ctsem::ctCollapse(e$popcov, 1, stats::sd), digits = digits)
@@ -1700,6 +1719,7 @@ ctmaInit <- function(
             model_popcor_50[[i]] <- ctsem::ctCollapse(e$popcor, 3, function(x) stats::quantile(x, .50))
             model_popcor_975[[i]] <- ctsem::ctCollapse(e$popcor, 3, function(x) stats::quantile(x, .975))
             #model_popcor <- stats::cov2cor(model_popcov_m)
+            }
           }
         }
 

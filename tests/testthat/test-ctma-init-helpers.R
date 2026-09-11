@@ -322,6 +322,25 @@ test_that("ctmaInit native ctsem Julia dispatcher preserves ctFit compatibility"
   expect_identical(result$resultsSummary$npars, 2L)
 })
 
+test_that("ctmaInit converts native Julia random-effect summaries", {
+  popsd <- data.frame(mean = c(2, 3, 4), sd = NA_real_, check.names = FALSE)
+  rownames(popsd) <- c("a", "b", "c")
+  popcor <- data.frame(mean = c(.1, .2, .3), sd = NA_real_)
+  rownames(popcor) <- c("b__a", "c__a", "c__b")
+
+  result <- CoTiMA2:::.ctmaInitCtsemJuliaRandomEffectSummary(
+    list(popsd = popsd, rawpopcorr = popcor)
+  )
+
+  expect_equal(unname(diag(result$popcov_mean)), c(4, 9, 16))
+  expect_equal(
+    result$popcor_mean[lower.tri(result$popcor_mean)],
+    c(.1, .2, .3)
+  )
+  expect_equal(result$popcov_mean["b", "a"], .6)
+  expect_true(all(is.na(result$popcov_sd)))
+})
+
 test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
   testthat::local_mocked_bindings(
     ctmaJuliaFit = function(object, estimation, ...) {

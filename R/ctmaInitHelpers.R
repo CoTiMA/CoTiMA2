@@ -524,6 +524,60 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   result
 }
 
+.ctmaInitCtsemJuliaRandomEffectSummary <- function(results_summary, digits = 4L) {
+  popsd <- results_summary$popsd
+  popcor <- results_summary$rawpopcorr
+  if (!is.data.frame(popsd) || !"mean" %in% names(popsd) ||
+      !is.data.frame(popcor) || !"mean" %in% names(popcor)) {
+    stop(
+      "The native ctsem Julia summary does not contain the expected popsd and rawpopcorr tables.",
+      call. = FALSE
+    )
+  }
+
+  parameter_names <- rownames(popsd)
+  dimension <- length(parameter_names)
+  correlation_mean <- diag(1, dimension)
+  dimnames(correlation_mean) <- list(parameter_names, parameter_names)
+  expected_correlations <- dimension * (dimension - 1L) / 2L
+  if (NROW(popcor) != expected_correlations) {
+    stop(
+      "The native ctsem Julia random-effect correlation table has an unexpected size.",
+      call. = FALSE
+    )
+  }
+  correlation_mean[lower.tri(correlation_mean)] <- popcor$mean
+  correlation_mean[upper.tri(correlation_mean)] <-
+    t(correlation_mean)[upper.tri(correlation_mean)]
+
+  standard_deviations <- popsd$mean
+  covariance_mean <-
+    diag(standard_deviations, dimension) %*%
+    correlation_mean %*%
+    diag(standard_deviations, dimension)
+  dimnames(covariance_mean) <- list(parameter_names, parameter_names)
+
+  unavailable <- matrix(
+    NA_real_, dimension, dimension,
+    dimnames = list(parameter_names, parameter_names)
+  )
+  list(
+    popsd = popsd,
+    popcov_mean = round(covariance_mean, digits),
+    popcov_sd = unavailable,
+    popcov_T = unavailable,
+    popcov_025 = unavailable,
+    popcov_50 = unavailable,
+    popcov_975 = unavailable,
+    popcor_mean = round(correlation_mean, digits),
+    popcor_sd = unavailable,
+    popcor_T = unavailable,
+    popcor_025 = unavailable,
+    popcor_50 = unavailable,
+    popcor_975 = unavailable
+  )
+}
+
 .ctmaJuliaFitFromSetup <- function(setup, estimation, backend_args) {
   do.call(
     ctmaJuliaFit,
