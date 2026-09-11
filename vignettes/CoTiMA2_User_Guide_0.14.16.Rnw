@@ -64,9 +64,9 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.15\par}
+\vspace{1.0cm}{Version 0.14.16\par}
 
-\vspace{1.0cm}{Christian Dormann, Olga Diener, \& Markus Homberg\par}
+\vspace{1.0cm}{Christian Dormann\par}
 
 {September 7, 2026\par}
 
@@ -88,8 +88,8 @@ A critical assumption is the validity of the underlying causal model that descri
 
 \begin{lstlisting}[language=R]
 
-install.packages("CoTiMA")
-library(CoTiMA)
+install.packages("CoTiMA2_0.14.16.tar.gz", repos = NULL, type = "source")
+library(CoTiMA2)
 \end{lstlisting}
 
 \noindent \emph{Figure }\emph{1}\emph{.} Installing CoTiMA from CRAN
@@ -142,9 +142,11 @@ In addition to correlation matrices, a CoTiMA requires further information. Rese
 
 Primary Study 1 further had a sample size of 148, which is stored in the object \code{sampleSize1} (not \code{sampleSize}\code{0}\code{1}). In cases, in which correlation matrices include correlations based on pairwise deletion of missing values, sample sizes vary between correlations, too. This could be specified as explained later.
 
-\begin{lstlisting}[language=R]
+% TEST_ACTIVE_DIRECTORY: activeDirectory <- "/Users/cdormann/SynologyDrive/Synology Drive/CHRISTIAN/TEXTE/METHODEN/R/GitHub CoTiMA2/tests/user_guide_examples/"
 
-activeDirectory <- "../../" # SET A VALID PATH
+\begin{lstlisting}[language=R]
+library(CoTiMA2)
+#activeDirectory <- "../../" # SET A VALID PATH
 CoTiMAstudyList_3 <- ctmaPrep(selectedStudies = c(1, 4, 313),
     activeDirectory = activeDirectory)
 saveRDS(CoTiMAstudyList_3, paste0(activeDirectory, "CoTiMAstudyList_3.rds"))
@@ -159,14 +161,15 @@ After a list of primary study information has been complied with \code{ctmaPrep}
 The use of \code{ctmaInit} is shown in Figure 5. Before using \code{ctmaInit}, define the \code{activeDirectory} (where to save results) if not done yet and the number of computer cores to be used with \code{coresToUse}. This can then be used in all subsequent function calls. \code{ctmaInit} generates a fit-object \code{CoTiMAInitFit\_3} from the list of compiled studies \code{CoTiMAstudyList\_3}\code{.} The fit-object \code{CoTiMAstudyList\_3}\code{ }will be used later for aggregating (i.e., meta-analyzing) drift effects, performing moderator analyses, estimating publication bias, calculation of expected power and required samples sizes for different time intervals, plotting, and much more. In virtually all cases, the CoTiMA functions to perform these tasks require \code{CoTiMAInitFit\_3} as an argument. \code{ctmaInit} requires the number of latent variables (\code{n.latent}) per measurement occasion to be provided by the user as well as an \code{activeDirectory}, which is where \code{ctmaInit} saves the fitted CTSEM models for each primary study. These separate CTSEM model fit files become interesting later. More interesting at this stage it the complied list of all fitted models, which is stored in a fit-object named \code{CoTiMAInitFit\_3}, and which can be saved to disk with \code{saveRDS}. Using \code{summary(CoTiMAInitFit\_3)} displays the results, of which we selected the most interesting ones in Figure 6.
 
 \begin{lstlisting}[language=R]
-
-activeDirectory <- "../../" # SET A VALID PATH
+#activeDirectory <- "../../" # SET A VALID PATH
 CoTiMAInitFit_3 <- ctmaInit(primaryStudies = CoTiMAstudyList_3,
     n.latent = 2,
+    backend='julia',
     activeDirectory = activeDirectory,
     coresToUse = 2)
 summary(CoTiMAInitFit_3)
 saveRDS(CoTiMAInitFit_3, paste0(activeDirectory, "CoTiMAInitFit_3.rds"))
+
 \end{lstlisting}
 
 \noindent \emph{Figure }\emph{5}\emph{.} Fitting a ctsem Model to each Primary Study (\code{ctmaInit})
@@ -208,7 +211,7 @@ A full CoTiMA, with \emph{full} indicating that all drift parameters are simulta
 
 \begin{lstlisting}[language=R]
 
-activeDirectory <- "../../" # SET A VALID PATH
+#activeDirectory <- "../../" # SET A VALID PATH
 CoTiMAFullFit_3 <- ctmaFit(ctmaInitFit = CoTiMAInitFit_3,
     coresToUse = 2)
 saveRDS(CoTiMAFullFit_3, paste0(activeDirectory, "CoTiMAFullFit_3.rds"))

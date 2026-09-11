@@ -1,5 +1,7 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.16
+
 - `ctmaInit(backend = "ctsemjulia")` now supports native ctsem Julia
   maximum-likelihood fits of individual primary studies. Models without
   person-level random effects use direct ML; ctsem's `intoverpop = "auto"`
