@@ -878,6 +878,15 @@ random-effect SD can be estimable even when a correlation involving that
 effect is not.  An independent or blockwise covariance option requires a
 corresponding native ctsem API.
 
+This is not merely a theoretical qualification.  In six independent
+16-study simulations with three study-varying raw coordinates, all fits
+converged accurately, but three fits flagged one weak correlation direction
+in the unstructured random-effect covariance.  The marginal SDs were still
+recovered reasonably on average.  Therefore, report and interpret marginal
+heterogeneity separately from correlations among study effects, and treat a
+weak correlation warning as a reason for parsimony or sensitivity analysis
+rather than as automatic evidence that all marginal SD estimates are invalid.
+
 \section{Moderator-associated reduction in random-effect heterogeneity}
 
 Study-level moderators may account for part of the between-study variation in

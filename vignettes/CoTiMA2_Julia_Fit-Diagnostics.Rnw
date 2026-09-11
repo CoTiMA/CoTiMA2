@@ -607,11 +607,25 @@ $1.81\times10^{-4}$ per person.  A reporting bug initially displayed the third
 SD as \code{NA}: the validator had reduced the truth label
 \code{rho\_raw\_sd} to \code{rho} instead of matching \code{rho\_raw}.  The
 corrected full fit had no unidentified Hessian direction
-(code{nweak=0}), no negative direction, and an identifiability condition
+(\code{nweak=0}), no negative direction, and an identifiability condition
 number of 30,699.  A separate eight-study diagnostic did contain flat
 correlation directions, but it had only eight outer-level units for nine free
 population parameters and was therefore rank-limited by construction.  It
 must not be used to diagnose the 16-study fit.
+
+Six independent repetitions of the 16-study correlation design all
+converged, with a maximum gradient norm of $8.35\times10^{-9}$ and a maximum
+Laplace--quadrature gap of $2.12\times10^{-4}$ per person.  Across repetitions,
+the generating study SDs $(0.20,0.16,0.18)$ had mean estimates
+$(0.188,0.189,0.183)$, median estimates $(0.182,0.200,0.187)$, and RMSEs
+$(0.052,0.066,0.026)$.  Thus, recovery was best for the raw T0-correlation SD
+and most variable for the second drift SD.  Three of the six fits flagged one
+weak random-effect-correlation direction: twice the correlation between the
+two drift effects and once the correlation between the T0-correlation effect
+and the first drift effect.  These warnings varied by simulated data set and
+did not prevent convergence, but they show that a formally adequate number of
+studies does not guarantee stable estimation of every element of a fully
+unstructured random-effect covariance matrix.
 
 The current native multilevel API constructs a full covariance among all
 study-varying parameters.  CoTiMA2's \code{covariance="independent"},
@@ -624,9 +638,9 @@ validation.  Users should nevertheless inspect
 \code{summary(fit)}.  A marginal study SD can be estimable even when one or
 more correlations involving that effect are not.
 
-For focused repetitions, code{--scenarios=} accepts a comma-separated subset
-of code{univariate\_drift}, code{bivariate\_drift}, and
-code{bivariate\_drift\_correlation}.  For example, a new seed can repeat only
+For focused repetitions, \code{--scenarios=} accepts a comma-separated subset
+of \code{univariate\_drift}, \code{bivariate\_drift}, and
+\code{bivariate\_drift\_correlation}.  For example, a new seed can repeat only
 the correlation scenario:
 
 \begin{verbatim}

@@ -256,3 +256,16 @@ corrected.  An upstream API for an explicitly independent or blockwise
 study-effect covariance remains desirable for parsimony and sensitivity
 analysis, but it is not required for technical identification of this full
 16-study model.
+
+A six-seed repetition gives a more qualified picture than the single full
+fit. All six 16-study fits converged; the maximum gradient norm was
+`8.35e-09`, and the maximum Laplace--quadrature gap was `2.12e-04` per person.
+For generating SDs `(0.20, 0.16, 0.18)`, mean estimates were
+`(0.188, 0.189, 0.183)`, medians were `(0.182, 0.200, 0.187)`, and RMSEs were
+`(0.052, 0.066, 0.026)`. Three fits nevertheless returned one weak
+random-effect-correlation direction: `rawcor_drift2__drift1.study` twice and
+`rawcor_rho_raw__drift1.study` once. Thus the native route and marginal SD
+recovery are supported, while the unstructured covariance can still contain
+sample-dependent weak correlation directions. This strengthens the case for
+an independent or blockwise covariance API as a parsimony and robustness
+option.
