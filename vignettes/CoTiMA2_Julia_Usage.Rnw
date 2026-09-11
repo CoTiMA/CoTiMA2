@@ -836,6 +836,30 @@ workflow-specific message after the compatibility check.  Currently,
 backend.  In \code{ctmaInit()}, primary studies are processed sequentially;
 \code{doPar} must currently equal 1 to avoid nested R/Julia parallelism.
 
+For \code{ctmaInit()}, the two older heterogeneity arguments have different
+meanings.  \code{randomIntercepts="MANIFEST"} (or \code{"CINT"}) adds
+explicit latent intercept processes to each primary-study model.  In contrast,
+\code{indVarying="MANIFEST"} (or \code{"CINT"}) marks parameters as varying
+between persons; with \code{backend="ctsemjulia"}, this second specification
+activates native Laplace integration.  A primary-study fit records the selected
+route in, for example,
+\code{initNative\$studyFitList[[1]]\$ctsemjulia\_mode}.
+
+<<ctsem-native-init-laplace, purl=FALSE>>=
+initNative <- ctmaInit(
+  primaryStudies = CoTiMAstudyList_3,
+  n.latent = 2,
+  activeDirectory = activeDirectory,
+  indVarying = "MANIFEST",
+  backend = "ctsemjulia",
+  coresToUse = -1,
+  doPar = 1
+)
+
+initNative$studyFitList[[1]]$ctsemjulia_mode  # "laplace"
+summary(initNative)
+@
+
 A model without random effects needs no special backend controls:
 
 <<ctsem-native-direct, purl=FALSE>>=

@@ -6,6 +6,11 @@
   selects Laplace integration when the primary-study model contains such
   effects. The initial implementation requires `doPar = 1` to avoid nested
   R/Julia parallelism.
+  Native `popsd` and raw-correlation summaries are converted into CoTiMA2's
+  random-effect SD, covariance, and correlation output. In `ctmaInit()`,
+  `indVarying` requests person-level variation and activates Laplace
+  integration; `randomIntercepts` instead adds explicit latent intercept
+  processes.
 
 - Every CoTiMA function exposing a `backend` argument now detects an explicit
   `backend = "ctsemjulia"` request. If the compatible native ctsem Julia API is

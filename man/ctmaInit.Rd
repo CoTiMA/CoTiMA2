@@ -53,9 +53,7 @@ ctmaInit(
 
 \item{activeDirectory}{defines another active directory than the one used in \code{\link{ctmaPrep}}}
 
-\item{binaries}{Indicator vector identifying binary manifest variables.
-Their response location must be estimated through a freely estimated
-connected CINT (recommended) or MANIFESTMEANS parameter.}
+\item{binaries}{which manifest is a binary. Still experimental}
 
 \item{chains}{number of chains to sample, during HMC or post-optimization importance sampling.}
 
@@ -63,7 +61,10 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{cint}{default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')}
 
-\item{coresToUse}{if neg., the value is subtracted from available cores, else value = cores to use}
+\item{coresToUse}{if negative, the value is added to the number of detected
+cores; thus \code{-1} uses all but one core. With the Julia backend this is
+automatically translated into an ML or Bayesian thread allocation unless
+an explicit Julia thread control is supplied in \code{backendArgs}.}
 
 \item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
 
@@ -79,11 +80,19 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{experimental}{used for debugging puposes (default = FALSE)}
 
-\item{finishsamples}{number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).}
+\item{finishsamples}{number of samples to draw (either from Hessian-based
+covariance or the posterior distribution) for final results computation
+(default = 1000). With the Julia backend this sets
+\code{backendArgs$transformed_draws}, unless that control is supplied
+explicitly in \code{backendArgs}.}
 
 \item{fit}{TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})}
 
-\item{indVarying}{control for unobserved heterogeneity by having randomly (inter-individually) varying manifest means}
+\item{indVarying}{control for unobserved heterogeneity through randomly
+(inter-individually) varying manifest means. With
+\code{backend="ctsemjulia"}, \code{"MANIFEST"} or \code{"CINT"}
+activates ctsem's native Laplace integration. This is distinct from
+\code{randomIntercepts}, which adds explicit latent intercept processes.}
 
 \item{indVaryingT0}{deprecated. Automatically set to NULL.}
 
@@ -107,7 +116,12 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{priors}{if FALSE, any priors are disabled – sometimes desirable for optimization}
 
-\item{randomIntercepts}{(default = FALSE) Experimental. Overrides ctsem's default mode for modelling indVarying cints.}
+\item{randomIntercepts}{(default = FALSE) Experimental. Adds explicit
+latent intercept processes and overrides ctsem's default representation
+of individually varying intercepts. It is not synonymous with
+\code{indVarying}; use \code{indVarying="MANIFEST"} or \code{"CINT"}
+to request person-level random effects integrated by Laplace under
+\code{backend="ctsemjulia"}.}
 
 \item{sameInitialTimes}{Only important for raw data. If TRUE (default=FALSE), T0MEANS occurs for every subject at the same time, rather than just at the earliest observation.}
 

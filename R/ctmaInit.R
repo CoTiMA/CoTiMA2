@@ -25,7 +25,11 @@
 #'   \code{backendArgs$transformed_draws}, unless that control is supplied
 #'   explicitly in \code{backendArgs}.
 #' @param fit TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})
-#' @param indVarying control for unobserved heterogeneity by having randomly (inter-individually) varying manifest means
+#' @param indVarying control for unobserved heterogeneity through randomly
+#'   (inter-individually) varying manifest means. With
+#'   \code{backend="ctsemjulia"}, \code{"MANIFEST"} or \code{"CINT"}
+#'   activates ctsem's native Laplace integration. This is distinct from
+#'   \code{randomIntercepts}, which adds explicit latent intercept processes.
 #' @param indVaryingT0 deprecated. Automatically set to NULL.
 #' @param iter number of interation (defaul = 1000). Sometimes larger values could be required fom Bayesian estimation
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
@@ -37,7 +41,12 @@
 #' @param optimize if set to FALSE, Stan's Hamiltonian Monte Carlo sampler is used (default = TRUE = maximum a posteriori / importance sampling) .
 #' @param primaryStudies list of primary study information created with \code{\link{ctmaPrep}}
 #' @param priors if FALSE, any priors are disabled – sometimes desirable for optimization
-#' @param randomIntercepts (default = FALSE) Experimental. Overrides ctsem's default mode for modelling indVarying cints.
+#' @param randomIntercepts (default = FALSE) Experimental. Adds explicit
+#'   latent intercept processes and overrides ctsem's default representation
+#'   of individually varying intercepts. It is not synonymous with
+#'   \code{indVarying}; use \code{indVarying="MANIFEST"} or \code{"CINT"}
+#'   to request person-level random effects integrated by Laplace under
+#'   \code{backend="ctsemjulia"}.
 #' @param sameInitialTimes Only important for raw data. If TRUE (default=FALSE), T0MEANS occurs for every subject at the same time, rather than just at the earliest observation.
 #' @param saveRawData save (synthesised pseudo) raw date. List: saveRawData$studyNumbers, $fileName, $row.names, col.names, $sep, $dec
 #' @param saveSingleStudyModelFit save the fit of single study ctsem models (could save a lot of time afterwards if the fit is loaded)
