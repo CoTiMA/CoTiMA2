@@ -37,6 +37,17 @@
 .z <- function(n) as.numeric(scale(qnorm((seq_len(n) - .5) / n)))
 .scalar <- function(x) suppressWarnings(as.numeric(x)[1L])
 
+.match_study_sd_parameters <- function(truth_names, estimate_names) {
+  vapply(truth_names, function(x) {
+    candidates <- unique(c(
+      sub("_sd$", "", x),
+      sub("_raw_sd$", "", x)
+    ))
+    hit <- candidates[candidates %in% estimate_names]
+    if (length(hit)) hit[[1L]] else NA_character_
+  }, character(1L), USE.NAMES = FALSE)
+}
+
 .expm2 <- function(A) {
   if (length(A) == 1L) return(matrix(exp(A[[1L]]), 1L, 1L))
   e <- eigen(A)
@@ -201,7 +212,13 @@
   sm <- summary(fit)
   tab <- sm[["popsd.study"]] %||% sm[["popsd"]]
   estimates <- if (is.null(tab)) numeric() else setNames(tab[, "mean"], rownames(tab))
-  target_parameters <- sub("_raw_sd$", "", names(design$truth))
+  target_parameters <- .match_study_sd_parameters(
+    names(design$truth), names(estimates)
+  )
+  estimated_sd <- rep(NA_real_, length(target_parameters))
+  matched <- !is.na(target_parameters)
+  estimated_sd[matched] <- estimates[target_parameters[matched]]
+  identifiability <- fit$identifiability %||% NULL
   list(
     scenario = scenario, status = "completed",
     nstudy = dims$nstudy, nsubjects = dims$nstudy * dims$nper,
@@ -209,9 +226,8 @@
     gradient_norm = .scalar(fit$estimate$gradient_norm),
     fit_seconds = unname(tm[["elapsed"]]), laplace_gap = .scalar(ck$gap),
     gap_per_subject = .scalar(ck$gap_per_subject), truth = design$truth,
-    estimated_raw_study_sd = setNames(
-      estimates[target_parameters], names(design$truth)
-    ),
+    estimated_raw_study_sd = setNames(estimated_sd, names(design$truth)),
+    identifiability = identifiability,
     fit = if (opts$retain_fits) fit else NULL, check = ck
   )
 }
@@ -250,11 +266,33 @@
       "correlation through a static PARS expression while retaining both",
       "marginal variances at exactly one; DIFFUSION is derived from the same",
       "three study-varying raw coordinates."), "",
-    "| Scenario | Status | Converged | Fit s | Gap/person |", "|---|---|---:|---:|---:|"
+    paste("An `NA` in the recovered-SD column means that the requested SD could",
+      "not be matched to the fitted summary; it does not by itself diagnose",
+      "non-identifiability. Identifiability warnings reported by ctsem are",
+      "listed separately below."), "",
+    "| Scenario | Status | Converged | Gradient norm | Fit s | Gap/person | Recovered study SDs |",
+    "|---|---|---:|---:|---:|---:|---|"
   )
-  for (x in out) lines <- c(lines, sprintf("| %s | %s | %s | %.3f | %.6g |",
-    x$scenario, x$status, x$converged %||% NA, x$fit_seconds %||% NA,
-    x$gap_per_subject %||% NA))
+  for (x in out) {
+    recovered <- if (is.null(x$estimated_raw_study_sd)) "" else paste(
+      sprintf("%s=%.3f", names(x$estimated_raw_study_sd),
+        x$estimated_raw_study_sd), collapse = "; "
+    )
+    lines <- c(lines, sprintf("| %s | %s | %s | %.6g | %.3f | %.6g | %s |",
+      x$scenario, x$status, x$converged %||% NA,
+      x$gradient_norm %||% NA, x$fit_seconds %||% NA,
+      x$gap_per_subject %||% NA, recovered))
+  }
+  identification_notes <- unlist(lapply(out, function(x) {
+    id <- x$identifiability %||% NULL
+    bad <- id$parameters %||% id$not_estimable %||%
+      id$notEstimable %||% character()
+    if (!length(bad)) return(NULL)
+    paste0("- `", x$scenario, "`: ", paste(bad, collapse = ", "))
+  }))
+  lines <- c(lines, "", "## Identifiability warnings", "",
+    if (length(identification_notes)) identification_notes else
+      "No explicit non-estimable parameter directions were returned.")
   writeLines(lines, file.path(opts$output, "REPORT.md"))
   print(out)
   message("Validation report: ", file.path(opts$output, "REPORT.md"))
