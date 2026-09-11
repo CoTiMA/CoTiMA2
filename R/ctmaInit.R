@@ -2047,6 +2047,8 @@ ctmaInit <- function(
     }
 
     results <- list(activeDirectory=activeDirectory,
+                    backend=backend,
+                    backendArgs=resolved_backend_args,
                     plot.type="drift", model.type=type,
                     coresToUse=coresToUse, n.studies=n.studies,
                     n.latent=n.latent,
