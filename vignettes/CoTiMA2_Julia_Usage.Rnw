@@ -822,6 +822,18 @@ path.  When subject- or study-level Gaussian random effects are present, it
 uses Laplace approximation.  The backend currently supports
 maximum-likelihood estimation only.
 
+Every CoTiMA2 function that exposes a code{backend} argument checks an
+explicit code{backend="ctsemjulia"} request before doing substantive work.
+If the required native API or code{JuliaConnectoR} is missing, the resulting
+error reports the installed ctsem version and missing capabilities.  It also
+prints an ``at your own risk'' installation recipe for Charles Driver's
+code{juliaFit} branch.  That recipe deliberately uses a separate R library;
+it does not overwrite the production ctsem installation.  Restart R and put
+the isolated library first in code{.libPaths()} before loading CoTiMA2.
+Functions that do not yet implement the native route stop with a separate
+workflow-specific message after the compatibility check.  Currently,
+code{ctmaFit()} is the public entry point for this backend.
+
 A model without random effects needs no special backend controls:
 
 <<ctsem-native-direct, purl=FALSE>>=

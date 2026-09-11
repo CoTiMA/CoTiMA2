@@ -46,6 +46,8 @@ ctmaFitConfig <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaFitConfig")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaFitConfig")
+
   backend <- match.arg(tolower(backend), c("julia", "stan"))
   time_limit <- as.numeric(time_limit)[1L]
   if (!is.finite(time_limit) || time_limit <= 0) {

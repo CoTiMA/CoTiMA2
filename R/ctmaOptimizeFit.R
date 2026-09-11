@@ -131,6 +131,8 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaOptimizeFit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaOptimizeFit")
+
   julia_backend_overrides <- backendArgs
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   if (identical(backend, "julia")) {

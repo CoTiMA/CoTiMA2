@@ -412,6 +412,10 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   }
 
   if (identical(backend, "ctsemjulia")) {
+    .ctmaCheckCtsemJuliaRequest(
+      backend, workflow = workflow,
+      supported = identical(workflow, "ctmaFit")
+    )
     .ctmaJuliaInstallationGuideNote()
     if (!is.null(legacy_stan_args)) stop(
       "'CoTiMAStanctArgs' cannot be used with backend = 'ctsemjulia'.",

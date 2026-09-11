@@ -51,17 +51,55 @@
   ), class = "ctmaCtsemJuliaLaplaceStatus")
 }
 
+.ctmaCtsemJuliaInstallCode <- function() {
+  paste(
+    'ctsemJuliaLib <- path.expand("~/R/ctsem-juliaFit-lib")',
+    'dir.create(ctsemJuliaLib, recursive = TRUE, showWarnings = FALSE)',
+    '.libPaths(c(ctsemJuliaLib, .libPaths()))',
+    'if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")',
+    'install.packages("JuliaConnectoR", lib = ctsemJuliaLib)',
+    'remotes::install_github(',
+    '  "cdriveraus/ctsem", ref = "juliaFit",',
+    '  lib = ctsemJuliaLib, dependencies = TRUE, upgrade = "never"',
+    ')',
+    '',
+    '# Restart R, then select the isolated library before loading CoTiMA2:',
+    'ctsemJuliaLib <- path.expand("~/R/ctsem-juliaFit-lib")',
+    '.libPaths(c(ctsemJuliaLib, .libPaths()))',
+    'library(CoTiMA2)',
+    sep = "\n"
+  )
+}
+
 .ctmaRequireCtsemJuliaLaplace <- function() {
   status <- .ctmaCtsemJuliaLaplaceStatus()
   if (!isTRUE(status$available)) {
     stop(
       "The experimental ctsem Julia/Laplace adapter is unavailable. ",
       status$reason,
-      " Use an isolated ctsem juliaFit installation for prototype testing; ",
-      "do not replace a working production ctsem installation.",
+      "\n\nAt your own risk, install Charles Driver's experimental ctsem ",
+      "juliaFit branch into an isolated R library. Do not replace a working ",
+      "production ctsem installation:\n\n",
+      .ctmaCtsemJuliaInstallCode(),
       call. = FALSE
     )
   }
+  invisible(status)
+}
+
+.ctmaCheckCtsemJuliaRequest <- function(backend, workflow,
+                                        supported = FALSE) {
+  requested <- length(backend) && !is.na(backend[1L]) &&
+    identical(tolower(as.character(backend[1L])), "ctsemjulia")
+  if (!requested) return(invisible(NULL))
+
+  status <- .ctmaRequireCtsemJuliaLaplace()
+  if (!isTRUE(supported)) stop(
+    "A compatible ctsem Julia/Laplace API is installed, but ", workflow,
+    "() does not yet support backend = 'ctsemjulia'. Use ctmaFit() for ",
+    "the experimental native ctsem Julia backend.",
+    call. = FALSE
+  )
   invisible(status)
 }
 

@@ -49,6 +49,8 @@ ctmaEqual <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaEqual")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaEqual")
+
   # check if fit object is specified
   if (is.null(ctmaInvariantFit)){
     if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}

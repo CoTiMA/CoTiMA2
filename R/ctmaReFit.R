@@ -1551,6 +1551,8 @@ ctmaReFit <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReFit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaReFit")
+
   # `method` is retained as a backward-compatible alias. Previously,
   # method="sample" meant Bayesian sampling and method="optimize" meant MAP.
   if (!is.null(method)) {

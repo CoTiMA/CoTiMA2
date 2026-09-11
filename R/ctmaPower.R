@@ -106,6 +106,8 @@ ctmaPower <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaPower")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaPower")
+
   { ### CHECKS
 
     scale_time_was_supplied <- !missing(scaleTime) && !is.null(scaleTime)

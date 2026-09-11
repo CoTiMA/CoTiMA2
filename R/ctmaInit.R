@@ -142,6 +142,8 @@ ctmaInit <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaInit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaInit")
+
   requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) {
     "ML"
   } else {

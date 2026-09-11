@@ -1,5 +1,11 @@
 # CoTiMA2 development
 
+- Every CoTiMA function exposing a `backend` argument now detects an explicit
+  `backend = "ctsemjulia"` request. If the compatible native ctsem Julia API is
+  absent, the error provides an at-your-own-risk recipe that installs Charles
+  Driver's `juliaFit` branch and `JuliaConnectoR` into an isolated R library,
+  without replacing the user's production ctsem installation.
+
 - `ctmaFit(backend = "ctsemjulia")` now uses native ctsem Julia ML directly
   for models without random effects and retains the Laplace path when subject-
   or study-level random effects are requested. The fitted object records the

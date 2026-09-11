@@ -15,6 +15,71 @@ test_that("native ctsem Julia/Laplace capability detection is structured", {
   if (!status$available) expect_type(status$reason, "character")
 })
 
+test_that("missing native API reports isolated at-your-own-risk setup code", {
+  local_mocked_bindings(
+    .ctmaCtsemJuliaLaplaceStatus = function() structure(list(
+      available = FALSE,
+      reason = "The installed ctsem 3.11.1 is missing the native API."
+    ), class = "ctmaCtsemJuliaLaplaceStatus"),
+    .package = "CoTiMA2"
+  )
+
+  expect_error(
+    .ctmaRequireCtsemJuliaLaplace(),
+    "At your own risk"
+  )
+  install_code <- .ctmaCtsemJuliaInstallCode()
+  expect_match(install_code, "cdriveraus/ctsem", fixed = TRUE)
+  expect_match(install_code, "juliaFit", fixed = TRUE)
+  expect_match(install_code, "ctsem-juliaFit-lib", fixed = TRUE)
+  expect_match(install_code, "Restart R", fixed = TRUE)
+})
+
+test_that("ctsemjulia requests are checked centrally for every workflow", {
+  calls <- 0L
+  local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() {
+      calls <<- calls + 1L
+      list(available = TRUE)
+    },
+    .package = "CoTiMA2"
+  )
+
+  expect_silent(.ctmaCheckCtsemJuliaRequest("stan", "ctmaInit"))
+  expect_identical(calls, 0L)
+  expect_silent(.ctmaCheckCtsemJuliaRequest(
+    "ctsemjulia", "ctmaFit", supported = TRUE
+  ))
+  expect_identical(calls, 1L)
+  expect_error(
+    .ctmaCheckCtsemJuliaRequest("ctsemjulia", "ctmaInit"),
+    "does not yet support"
+  )
+  expect_identical(calls, 2L)
+})
+
+test_that("all backend entry points intercept unsupported ctsemjulia requests", {
+  local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .package = "CoTiMA2"
+  )
+  entry_points <- list(
+    ctmaAllInvFit = ctmaAllInvFit,
+    ctmaInit = ctmaInit,
+    ctmaEqual = ctmaEqual,
+    ctmaPower = ctmaPower,
+    ctmaOptimizeFit = ctmaOptimizeFit,
+    ctmaReFit = ctmaReFit,
+    ctmaFitConfig = ctmaFitConfig
+  )
+  for (name in names(entry_points)) {
+    expect_error(
+      do.call(entry_points[[name]], list(backend = "ctsemjulia")),
+      paste0(name, "\\(\\) does not yet support")
+    )
+  }
+})
+
 test_that("study effects do not require a subject-level random effect", {
   model <- list(
     subjectIDname = "id",

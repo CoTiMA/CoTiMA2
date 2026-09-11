@@ -70,6 +70,8 @@ ctmaAllInvFit <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaAllInvFit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaAllInvFit")
+
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"
 

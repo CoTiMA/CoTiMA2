@@ -58,6 +58,10 @@ test_that("ctsemjulia defaults expose the experimental native interface", {
 })
 
 test_that("ctsemjulia resolves separately from the CoTiMA2 Julia backend", {
+  local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .package = "CoTiMA2"
+  )
   expect_message(
     resolved <- CoTiMA2:::.ctmaResolveFitBackend(
       backend = "ctsemjulia",
