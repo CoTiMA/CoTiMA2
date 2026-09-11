@@ -33,6 +33,7 @@
 }
 
 .drift <- function(raw) -(.2 + 2 * log1p(exp(-2 * raw)))
+.bounded_drift <- function(raw) -(.2 + .8 / (1 + exp(-raw)))
 .z <- function(n) as.numeric(scale(qnorm((seq_len(n) - .5) / n)))
 .scalar <- function(x) suppressWarnings(as.numeric(x)[1L])
 
@@ -44,7 +45,9 @@
 
 .simulate <- function(scenario, nstudy, nper, nobs, seed) {
   set.seed(seed)
-  scenario <- match.arg(scenario, c("univariate_drift", "bivariate_drift"))
+  scenario <- match.arg(scenario, c(
+    "univariate_drift", "bivariate_drift", "bivariate_drift_correlation"
+  ))
   zz <- .z(nstudy)
   rows <- vector("list", nstudy * nper)
   person <- 0L
@@ -53,7 +56,7 @@
     A <- lapply(raw, function(x) matrix(.drift(x), 1L))
     P <- replicate(nstudy, matrix(1), simplify = FALSE)
     truth <- c(drift1_raw_sd = .30)
-  } else {
+  } else if (scenario == "bivariate_drift") {
     # Three study effects deliberately use non-collinear deterministic
     # quantiles.  The two diagonal drift effects and the initial correlation
     # vary; marginal variances remain one in every study.
@@ -70,6 +73,25 @@
     P <- lapply(tanh(rho_raw), function(r) matrix(c(1, r, r, 1), 2L))
     raw <- cbind(drift1 = r1, drift2 = r2)
     truth <- c(drift1_raw_sd = .20, drift2_raw_sd = .16)
+  } else {
+    # Three mutually orthogonal deterministic study scores isolate recovery of
+    # both drift coordinates and the raw stationary-correlation coordinate.
+    z2 <- as.numeric(scale(cos(2 * pi * (seq_len(nstudy) - .5) / nstudy)))
+    candidate <- sin(4 * pi * (seq_len(nstudy) - .5) / nstudy)
+    z3 <- as.numeric(scale(qr.resid(qr(cbind(1, zz, z2)), candidate)))
+    r1 <- .25 + .20 * zz
+    r2 <- -.10 + .16 * z2
+    rho_raw <- .18 * z3
+    rho <- .3 * tanh(rho_raw)
+    A <- Map(function(x, y) matrix(
+      c(.bounded_drift(x), .08, .04, .bounded_drift(y)),
+      2L, 2L, byrow = TRUE
+    ), r1, r2)
+    P <- lapply(rho, function(r) matrix(c(1, r, r, 1), 2L))
+    raw <- cbind(drift1 = r1, drift2 = r2, rho_raw = rho_raw)
+    truth <- c(
+      drift1_raw_sd = .20, drift2_raw_sd = .16, rho_raw_sd = .18
+    )
   }
   for (s in seq_len(nstudy)) {
     F <- .expm2(A[[s]])
@@ -107,7 +129,7 @@
       MANIFESTMEANS = matrix(0), MANIFESTVAR = matrix(0)
     )
     varying <- "drift1"
-  } else {
+  } else if (scenario == "bivariate_drift") {
     d2 <- "-(0.2 + 2 * log1p_exp(-(2 * PARS[2,1])))"
     l11 <- paste0("sqrt(-2 * (", d1, "))")
     q21 <- "-(0.04 + 0.08)"
@@ -128,6 +150,31 @@
       MANIFESTMEANS = matrix(0, 2L, 1L), MANIFESTVAR = matrix(0, 2L, 2L)
     )
     varying <- c("drift1", "drift2")
+  } else {
+    # Bounded diagonal drifts and |rho| < .3 make the derived Q positive
+    # definite over the complete admissible parameter domain for the fixed
+    # cross-effects used here, rather than merely at the starting values.
+    d1 <- "-(0.2 + 0.8 / (1 + exp(-PARS[1,1])))"
+    d2 <- "-(0.2 + 0.8 / (1 + exp(-PARS[2,1])))"
+    rho <- "(0.3 * tanh(PARS[3,1]))"
+    q11 <- paste0("-2 * (", d1, " + 0.08 * ", rho, ")")
+    q22 <- paste0("-2 * (", d2, " + 0.04 * ", rho, ")")
+    q21 <- paste0("-(0.08 + 0.04 + ", rho, " * (", d1, " + ", d2, "))")
+    l11 <- paste0("sqrt(", q11, ")")
+    l21 <- paste0("(", q21, ") / (", l11, ")")
+    l22 <- paste0("sqrt(", q22, " - (", l21, ")^2)")
+    m <- ctsem::ctModel(
+      type = "ct", id = c("id", "study"),
+      manifestNames = c("Y1", "Y2"), latentNames = c("eta1", "eta2"),
+      LAMBDA = diag(2),
+      PARS = matrix(c("drift1", "drift2", "rho_raw"), 3L, 1L),
+      DRIFT = matrix(c(d1, .08, .04, d2), 2L, 2L, byrow = TRUE),
+      T0VAR = matrix(c(1, 0, rho, 1), 2L, 2L, byrow = TRUE),
+      DIFFUSION = matrix(c(l11, l21, 0, l22), 2L, 2L),
+      T0MEANS = matrix(0, 2L, 1L), CINT = matrix(0, 2L, 1L),
+      MANIFESTMEANS = matrix(0, 2L, 1L), MANIFESTVAR = matrix(0, 2L, 2L)
+    )
+    varying <- c("drift1", "drift2", "rho_raw")
   }
   m$pars$indvarying <- FALSE
   m$pars$transform[m$pars$matrix == "PARS"] <- "param"
@@ -138,7 +185,9 @@
 
 .run_one <- function(scenario, dims, opts) {
   design <- .simulate(scenario, dims$nstudy, dims$nper, dims$nobs,
-    opts$seed + match(scenario, c("univariate_drift", "bivariate_drift")))
+    opts$seed + match(scenario, c(
+      "univariate_drift", "bivariate_drift", "bivariate_drift_correlation"
+    )))
   model <- .model(scenario)
   tm <- system.time({
     fit <- ctsem::ctFit(
@@ -178,7 +227,9 @@
   dims <- if (opts$mode == "quick") {
     list(nstudy = 8L, nper = 20L, nobs = 12L)
   } else list(nstudy = 16L, nper = 35L, nobs = 20L)
-  scenarios <- c("univariate_drift", "bivariate_drift")
+  scenarios <- c(
+    "univariate_drift", "bivariate_drift", "bivariate_drift_correlation"
+  )
   out <- lapply(scenarios, function(s) tryCatch(
     .run_one(s, dims, opts),
     error = function(e) list(scenario = s, status = "failed",
@@ -193,11 +244,12 @@
     paste0("- Mode: ", opts$mode), paste0("- Julia cores: ", opts$cores), "",
     paste("This validation fixes latent marginal variances at one. DIFFUSION is",
       "derived from DRIFT and P by Q = -(A P + P A'); it has no independent",
-      "study random effect. The bivariate scenario permits study variation in",
-      "two diagonal DRIFT parameters and fixes the T0 correlation at zero.",
-      "The present native Julia API rejects parameter-dependent expressions in",
-      "T0VAR, so a varying T0 correlation with both marginal variances fixed",
-      "exactly at one remains an explicitly documented capability gap."), "",
+      "study random effect. The original bivariate scenario permits study",
+      "variation in two diagonal DRIFT parameters and fixes the T0 correlation",
+      "at zero. The correlation scenario additionally varies a bounded T0",
+      "correlation through a static PARS expression while retaining both",
+      "marginal variances at exactly one; DIFFUSION is derived from the same",
+      "three study-varying raw coordinates."), "",
     "| Scenario | Status | Converged | Fit s | Gap/person |", "|---|---|---:|---:|---:|"
   )
   for (x in out) lines <- c(lines, sprintf("| %s | %s | %s | %.3f | %.6g |",
