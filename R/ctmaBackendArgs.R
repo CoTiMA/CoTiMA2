@@ -49,8 +49,10 @@ ctmaBackendDefaults <- function(
   }
 
   if (identical(backend, "ctsemjulia")) {
-    if (!identical(workflow[1L], "ctmaFit")) stop(
-      "backend = 'ctsemjulia' is currently available only for ctmaFit().",
+    workflow <- workflow[1L]
+    if (!workflow %in% c("ctmaFit", "ctmaInit")) stop(
+      "backend = 'ctsemjulia' is currently available only for ctmaFit() ",
+      "and ctmaInit().",
       call. = FALSE
     )
     if (is.null(estimation)) estimation <- "ml"
@@ -60,7 +62,14 @@ ctmaBackendDefaults <- function(
       "estimation only (use optimize = TRUE).",
       call. = FALSE
     )
-    return(list(
+    common <- list(
+      inits = NULL,
+      optimcontrol = NULL,
+      priors = NULL,
+      verbose = NULL
+    )
+    if (identical(workflow, "ctmaInit")) return(common)
+    return(c(list(
       study_id = NULL,
       study_id_ti = NULL,
       study_dummy_ti = NULL,
@@ -72,12 +81,8 @@ ctmaBackendDefaults <- function(
       reDIFFUSION = NULL,
       reT0VAR = NULL,
       remove_study_fixed_effects = TRUE,
-      sdscale_study = 1,
-      inits = NULL,
-      optimcontrol = NULL,
-      priors = NULL,
-      verbose = NULL
-    ))
+      sdscale_study = 1
+    ), common))
   }
 
   workflow <- match.arg(workflow)

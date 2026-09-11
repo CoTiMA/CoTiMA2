@@ -1,5 +1,12 @@
 # CoTiMA2 development
 
+- `ctmaInit(backend = "ctsemjulia")` now supports native ctsem Julia
+  maximum-likelihood fits of individual primary studies. Models without
+  person-level random effects use direct ML; ctsem's `intoverpop = "auto"`
+  selects Laplace integration when the primary-study model contains such
+  effects. The initial implementation requires `doPar = 1` to avoid nested
+  R/Julia parallelism.
+
 - Every CoTiMA function exposing a `backend` argument now detects an explicit
   `backend = "ctsemjulia"` request. If the compatible native ctsem Julia API is
   absent, the error provides an at-your-own-risk recipe that installs Charles

@@ -48,11 +48,14 @@
 #' @param T0var (default = 'auto')
 #' @param useSV if TRUE (default=FALSE) start values will be used if provided in the list of primary studies
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit - for debugging
-#' @param backend Estimation backend, either \code{"stan"} (the default) or
-#'   the experimental \code{"julia"} backend.
-#' @param backendArgs Named list of controls for the selected backend. Julia
-#'   controls follow \code{\link{ctmaJuliaFit}}. Primary studies are currently
-#'   processed sequentially; parallel starts or chains can run within a study.
+#' @param backend Estimation backend: \code{"stan"} (the default), CoTiMA2's
+#'   experimental \code{"julia"} backend, or ctsem's experimental native
+#'   \code{"ctsemjulia"} backend for maximum-likelihood estimation.
+#' @param backendArgs Named list of controls for the selected backend. CoTiMA2
+#'   Julia controls follow \code{\link{ctmaJuliaFit}}. For
+#'   \code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
+#'   \code{priors}, and \code{verbose}. Primary studies are currently processed
+#'   sequentially with either Julia backend.
 
 #'
 #' @importFrom RPushbullet pbPost
@@ -133,7 +136,7 @@ ctmaInit <- function(
     T0var='auto',
     useSV=FALSE,
     verbose=0,
-    backend=c("stan", "julia"),
+    backend=c("stan", "julia", "ctsemjulia"),
     backendArgs=list()
 )
 
@@ -142,7 +145,10 @@ ctmaInit <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaInit")
   on.exit(.ctma_timer(), add = TRUE)
 
-  .ctmaCheckCtsemJuliaRequest(backend, "ctmaInit")
+  .ctmaCheckCtsemJuliaRequest(
+    backend, "ctmaInit",
+    supported = identical(tolower(backend[1L]), "ctsemjulia")
+  )
 
   requested_estimation <- if (isTRUE(as.logical(optimize)[1L])) {
     "ML"
@@ -166,11 +172,11 @@ ctmaInit <- function(
       resolved_backend_args = resolved_backend_args
     )
   }
-  if (identical(backend, "julia") && doPar > 1L) {
+  if (backend %in% c("julia", "ctsemjulia") && doPar > 1L) {
     stop(
-      "ctmaInit(backend='julia') currently requires doPar = 1. Use Julia's ",
-      "parallel_starts/threads_per_start or parallel_chains/threads_per_chain ",
-      "inside backendArgs.",
+      "ctmaInit(backend='", backend, "') currently requires doPar = 1. ",
+      "This prevents nested R/Julia parallelism while the native route is ",
+      "being validated.",
       call. = FALSE
     )
   }
@@ -1226,6 +1232,20 @@ ctmaInit <- function(
                 backend_args = resolved_backend_args,
                 estimation = requested_estimation,
                 start_values = inits,
+                digits = digits
+              )
+              results_summary <- results$resultsSummary
+            } else if (identical(backend, "ctsemjulia")) {
+              results <- .ctmaInitCtsemJuliaStudyFit(
+                datalong = emprawLong[[i]],
+                model = currentModel,
+                same_initial_times = sameInitialTimes,
+                backend_args = resolved_backend_args,
+                start_values = inits,
+                priors = priors,
+                finishsamples = finishsamples,
+                cores = coresToUse,
+                verbose = verbose,
                 digits = digits
               )
               results_summary <- results$resultsSummary

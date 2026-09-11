@@ -259,7 +259,10 @@ test_that("Julia backend requests point users to the installation guide", {
 })
 
 test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism", {
-  expect_identical(eval(formals(ctmaInit)$backend), c("stan", "julia"))
+  expect_identical(
+    eval(formals(ctmaInit)$backend),
+    c("stan", "julia", "ctsemjulia")
+  )
   defaults <- ctmaBackendDefaults("julia", "ML", "ctmaInit")
   expect_true(defaults$uncertainty)
   expect_true(defaults$transformed)
@@ -271,6 +274,51 @@ test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism
     ),
     "currently requires doPar = 1"
   )
+})
+
+test_that("ctmaInit native ctsem Julia dispatcher preserves ctFit compatibility", {
+  captured <- NULL
+  testthat::local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .ctmaNativeCtsemJuliaFit = function(args) {
+      captured <<- args
+      list(
+        pars = data.frame(),
+        standata = list(priors = 0L)
+      )
+    },
+    .ctmaNativeCtsemJuliaSummary = function(fit, digits) {
+      list(loglik = -4, npars = 2L, digits = digits)
+    },
+    .package = "CoTiMA2"
+  )
+
+  model <- list(pars = data.frame(
+    param = "drift_eta1", indvarying = FALSE
+  ))
+  result <- CoTiMA2:::.ctmaInitCtsemJuliaStudyFit(
+    datalong = data.frame(id = 1L, time = 0, V1 = 0),
+    model = model,
+    same_initial_times = FALSE,
+    backend_args = list(
+      inits = NULL, optimcontrol = NULL, priors = NULL, verbose = NULL
+    ),
+    start_values = 0.2,
+    priors = FALSE,
+    finishsamples = 25L,
+    cores = 3L,
+    verbose = 0,
+    digits = 4L
+  )
+
+  expect_identical(captured$backend, "julia")
+  expect_identical(captured$intoverpop, "auto")
+  expect_identical(captured$cores, 3L)
+  expect_identical(captured$inits, 0.2)
+  expect_identical(captured$optimcontrol$finishsamples, 25L)
+  expect_identical(result$backend, "ctsemjulia")
+  expect_identical(result$ctsemjulia_mode, "direct")
+  expect_identical(result$resultsSummary$npars, 2L)
 })
 
 test_that("ctmaFit Julia dispatcher forwards the prepared setup", {

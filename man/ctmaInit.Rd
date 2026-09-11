@@ -44,7 +44,7 @@ ctmaInit(
   T0var = "auto",
   useSV = FALSE,
   verbose = 0,
-  backend = c("stan", "julia"),
+  backend = c("stan", "julia", "ctsemjulia"),
   backendArgs = list()
 )
 }
@@ -129,10 +129,15 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit - for debugging}
 
-\item{backend}{estimation backend, either \code{"stan"} (default) or
-\code{"julia"}.}
+\item{backend}{Estimation backend: \code{"stan"} (the default), CoTiMA2's
+experimental \code{"julia"} backend, or ctsem's experimental native
+\code{"ctsemjulia"} backend for maximum-likelihood estimation.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{Named list of controls for the selected backend. CoTiMA2
+Julia controls follow \code{\link{ctmaJuliaFit}}. For
+\code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
+\code{priors}, and \code{verbose}. Primary studies are currently processed
+sequentially with either Julia backend.}
 }
 \value{
 ctmaFit returns a list containing some arguments supplied, the fitted models, different elements summarizing the main results,

@@ -51,9 +51,10 @@ test_that("ctsemjulia defaults expose the experimental native interface", {
     ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit"),
     "supports ML"
   )
-  expect_error(
-    ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit"),
-    "only for ctmaFit"
+  init_defaults <- ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")
+  expect_named(
+    init_defaults,
+    c("inits", "optimcontrol", "priors", "verbose")
   )
 })
 

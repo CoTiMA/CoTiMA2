@@ -414,7 +414,7 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   if (identical(backend, "ctsemjulia")) {
     .ctmaCheckCtsemJuliaRequest(
       backend, workflow = workflow,
-      supported = identical(workflow, "ctmaFit")
+      supported = workflow %in% c("ctmaFit", "ctmaInit")
     )
     .ctmaJuliaInstallationGuideNote()
     if (!is.null(legacy_stan_args)) stop(
@@ -455,6 +455,69 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     stan_args = selected,
     backend_args = selected
   )
+}
+
+.ctmaNativeCtsemJuliaFit <- function(args) {
+  do.call(ctsem::ctFit, args)
+}
+
+.ctmaNativeCtsemJuliaSummary <- function(fit, digits) {
+  summary(
+    fit, digits = 2 * digits, parmatrices = TRUE,
+    residualcov = FALSE
+  )
+}
+
+.ctmaInitCtsemJuliaStudyFit <- function(
+    datalong, model, same_initial_times, backend_args,
+    start_values = NULL, priors = FALSE, finishsamples = NULL,
+    cores = 1L, verbose = 0, digits = 4L) {
+  .ctmaRequireCtsemJuliaLaplace()
+  cores <- as.integer(cores)[1L]
+  if (is.na(cores) || cores < 1L) stop(
+    "cores must be one positive integer.", call. = FALSE
+  )
+
+  fit_args <- list(
+    datalong = datalong,
+    model = model,
+    fit = TRUE,
+    sameInitialTimes = same_initial_times,
+    backend = "julia",
+    intoverpop = "auto",
+    cores = cores,
+    priors = if (is.null(backend_args$priors)) priors else {
+      backend_args$priors
+    },
+    verbose = if (is.null(backend_args$verbose)) verbose else {
+      backend_args$verbose
+    }
+  )
+  init <- if (is.null(backend_args$inits)) start_values else {
+    backend_args$inits
+  }
+  if (!is.null(init) && length(init) && all(is.finite(init))) {
+    fit_args$inits <- as.numeric(init)
+  }
+  optimcontrol <- backend_args$optimcontrol
+  if (is.null(optimcontrol)) optimcontrol <- list()
+  if (!is.list(optimcontrol)) stop(
+    "backendArgs$optimcontrol must be NULL or a named list.",
+    call. = FALSE
+  )
+  if (!is.null(finishsamples) && is.null(optimcontrol$finishsamples)) {
+    optimcontrol$finishsamples <- as.integer(finishsamples)[1L]
+  }
+  if (length(optimcontrol)) fit_args$optimcontrol <- optimcontrol
+
+  result <- .ctmaNativeCtsemJuliaFit(fit_args)
+  result$resultsSummary <- .ctmaNativeCtsemJuliaSummary(result, digits)
+  result$backend <- "ctsemjulia"
+  result$ctsemjulia_mode <- if (
+    is.data.frame(model$pars) && "indvarying" %in% names(model$pars) &&
+      any(model$pars$indvarying %in% TRUE, na.rm = TRUE)
+  ) "laplace" else "direct"
+  result
 }
 
 .ctmaJuliaFitFromSetup <- function(setup, estimation, backend_args) {
