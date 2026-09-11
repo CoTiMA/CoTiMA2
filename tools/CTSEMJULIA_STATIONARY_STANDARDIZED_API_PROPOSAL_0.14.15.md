@@ -113,11 +113,16 @@ API and apply the following rules:
   supported, only its off-diagonal correlation coordinates may vary; diagonal
   variances remain fixed at one.
 
-Random effects on DRIFT may be correlated using the existing `covariance`,
-`covarianceBlocks`, `reBlocks`, and `blockStructures` arguments.  The induced
-dependence between DRIFT and derived DIFFUSION must not be represented as a
-second random-effect block: it is deterministic, not an independently
-estimated covariance.
+The existing `covariance`, `covarianceBlocks`, `reBlocks`, and
+`blockStructures` arguments currently configure the separate `ctmaRePrep()`
+workflow; they are **not yet wired to** `backend = "ctsemjulia"`.  The native
+multilevel route presently constructs a full covariance among the selected
+study effects.  A public stationary implementation therefore needs an upstream
+ctsem mechanism for fixing outer-level correlations to zero or otherwise
+specifying their structure before it can promise independent or blockwise
+study effects.  The induced dependence between DRIFT and derived DIFFUSION
+must not be represented as a second random-effect block: it is deterministic,
+not an independently estimated covariance.
 
 Person-level random effects remain conceptually possible.  The first release
 should allow them only if the native backend's parameter transformations and
@@ -238,7 +243,16 @@ unit diagonal and correlation `rho`; the complete DIFFUSION factor was derived
 from the same three coordinates through the Lyapunov equation.  With eight
 studies and 160 people, optimization converged with gradient norm `5.54e-09`
 and a Laplace--quadrature gap of `1.73e-04` per person.  The deliberately small
-design did not identify two correlations among the three study random effects,
-so it establishes backend capability but not recovery.  A larger recovery run
-or an explicitly independent study-effect covariance structure is required
-before promoting this parameterization.
+design did not identify two correlations among the three study random effects.
+That diagnostic had only eight outer-level units for nine free population
+parameters and was rank-limited by construction.  It establishes backend
+capability but cannot diagnose the larger design.  In the 16-study full design,
+the generating raw study SDs `(0.20, 0.16, 0.18)` were estimated as
+`(0.196, 0.150, 0.244)`, with no unidentified or negative Hessian direction and
+an identifiability condition number of 30,699.  The first report displayed the
+third SD as `NA` only because `rho_raw_sd` was matched incorrectly to `rho`.
+The validator's name matching and identifiability reporting have been
+corrected.  An upstream API for an explicitly independent or blockwise
+study-effect covariance remains desirable for parsimony and sensitivity
+analysis, but it is not required for technical identification of this full
+16-study model.

@@ -14,7 +14,8 @@
     output = path.expand("~/CoTiMA_Benchmark/ctsemjulia-standardized"),
     development_library = "/private/tmp/ctsem-juliaFit-lib",
     julia_bindir = Sys.getenv("JULIA_BINDIR"), cores = 4L,
-    mode = "quick", seed = 20260910L, retain_fits = FALSE
+    mode = "quick", scenarios = "all", seed = 20260910L,
+    retain_fits = FALSE
   )
   for (a in args) {
     if (!startsWith(a, "--") || !grepl("=", a, fixed = TRUE))
@@ -27,6 +28,22 @@
   x$cores <- as.integer(x$cores)
   x$seed <- as.integer(x$seed)
   x$mode <- match.arg(tolower(x$mode), c("quick", "full"))
+  available_scenarios <- c(
+    "univariate_drift", "bivariate_drift", "bivariate_drift_correlation"
+  )
+  requested_scenarios <- trimws(strsplit(
+    tolower(as.character(x$scenarios)), ",", fixed = TRUE
+  )[[1L]])
+  if (identical(requested_scenarios, "all")) {
+    requested_scenarios <- available_scenarios
+  }
+  unknown_scenarios <- setdiff(requested_scenarios, available_scenarios)
+  if (!length(requested_scenarios) || length(unknown_scenarios)) stop(
+    "'scenarios' must be 'all' or a comma-separated subset of: ",
+    paste(available_scenarios, collapse = ", "), ".",
+    call. = FALSE
+  )
+  x$scenarios <- unique(requested_scenarios)
   x$retain_fits <- tolower(as.character(x$retain_fits)) %in%
     c("true", "t", "1", "yes")
   x
@@ -243,9 +260,7 @@
   dims <- if (opts$mode == "quick") {
     list(nstudy = 8L, nper = 20L, nobs = 12L)
   } else list(nstudy = 16L, nper = 35L, nobs = 20L)
-  scenarios <- c(
-    "univariate_drift", "bivariate_drift", "bivariate_drift_correlation"
-  )
+  scenarios <- opts$scenarios
   out <- lapply(scenarios, function(s) tryCatch(
     .run_one(s, dims, opts),
     error = function(e) list(scenario = s, status = "failed",
@@ -257,7 +272,9 @@
   lines <- c(
     "# CoTiMA2 covariance-stationary standardized validation", "",
     paste0("Generated: ", format(Sys.time(), tz = "UTC", usetz = TRUE)), "",
-    paste0("- Mode: ", opts$mode), paste0("- Julia cores: ", opts$cores), "",
+    paste0("- Mode: ", opts$mode),
+    paste0("- Scenarios: ", paste(scenarios, collapse = ", ")),
+    paste0("- Julia cores: ", opts$cores), "",
     paste("This validation fixes latent marginal variances at one. DIFFUSION is",
       "derived from DRIFT and P by Q = -(A P + P A'); it has no independent",
       "study random effect. The original bivariate scenario permits study",

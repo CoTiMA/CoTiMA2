@@ -9,6 +9,7 @@
 \usepackage{lmodern}
 \usepackage[a4paper,margin=2.5cm]{geometry}
 \usepackage{booktabs,longtable,array,tabularx}
+\usepackage{bm}
 \usepackage{xcolor}
 \usepackage{microtype}
 \usepackage{url}
@@ -569,8 +570,10 @@ variances at one and derives process noise from
   \bm Q_s=-(\bm A_s\bm P_s+\bm P_s\bm A_s^\top).
 \]
 DIFFUSION consequently has no independent study random effect.  The quick and
-full modes test a univariate study-varying drift and a bivariate model with two
-study-varying diagonal drift parameters and a fixed zero T0 correlation.
+full modes test a univariate study-varying drift, a bivariate model with two
+study-varying diagonal drift parameters and a fixed zero T0 correlation, and a
+bivariate model in which a third raw study effect defines a bounded T0
+correlation while both marginal T0 variances remain exactly one.
 
 This restriction is stronger than merely standardizing the observed variables
 at every occasion.  Measurement error, finite-sample standardization, and
@@ -579,12 +582,15 @@ unit-variance covariance.  The validation must therefore be interpreted as a
 test of a particular stationary latent data-generating model, not as an
 automatic property of every CoTiMA correlation input.
 
-At present the native Julia backend rejects parameter-dependent expressions in
-T0VAR.  A study-varying T0 correlation while both marginal latent variances
-remain fixed exactly at one is therefore a documented capability gap.  The
-bivariate validation fixes that correlation at zero instead of silently
-estimating a Cholesky element whose implied second marginal variance would no
-longer equal one.
+The native Julia backend previously rejected parameter-dependent expressions
+in T0VAR.  The \code{juliaFit} development branch now resolves composed static
+T0VAR expressions over multiple PARS coordinates and differentiates them.  A
+smoke test and the standardized validation therefore use
+\code{rho = 0.3 * tanh(rho\_raw)} in the off-diagonal T0VAR cell, keep both
+diagonal entries fixed at one, and derive the complete DIFFUSION factor from
+DRIFT and this target covariance.  This support applies to static initial-state
+expressions.  Time-dependent predictors and latent-state references do not
+define one initial covariance and remain outside the supported scope.
 
 In the full design, all six start configurations converged to the same
 solution.  Two independent simulation seeds recovered the generating raw
@@ -593,6 +599,30 @@ study SDs $(0.20,0.16)$ as $(0.159,0.169)$ and $(0.214,0.185)$; their
 Laplace--quadrature gaps were $2.78\times10^{-4}$ and
 $3.47\times10^{-4}$ per person.  Direct numerical checks reproduced the
 Lyapunov covariance to within $4.44\times10^{-16}$.
+
+The extended full validation also converged when the T0 correlation varied by
+study.  It estimated the generating raw study SDs $(0.20,0.16,0.18)$ as
+$(0.196,0.150,0.244)$ and showed a Laplace--quadrature discrepancy of
+$1.81\times10^{-4}$ per person.  A reporting bug initially displayed the third
+SD as \code{NA}: the validator had reduced the truth label
+\code{rho\_raw\_sd} to \code{rho} instead of matching \code{rho\_raw}.  The
+corrected full fit had no unidentified Hessian direction
+(code{nweak=0}), no negative direction, and an identifiability condition
+number of 30,699.  A separate eight-study diagnostic did contain flat
+correlation directions, but it had only eight outer-level units for nine free
+population parameters and was therefore rank-limited by construction.  It
+must not be used to diagnose the 16-study fit.
+
+The current native multilevel API constructs a full covariance among all
+study-varying parameters.  CoTiMA2's \code{covariance="independent"},
+\code{"equicorrelated"}, and block specifications belong to the separate
+\code{ctmaRePrep()} workflow and are not yet transmitted to
+\code{backend="ctsemjulia"}.  A structured-covariance API would permit more
+parsimonious models, but the full 16-study covariance was identified in this
+validation.  Users should nevertheless inspect
+\code{fit$identifiability} and the random-effect-correlation section of
+\code{summary(fit)}.  A marginal study SD can be estimable even when one or
+more correlations involving that effect are not.
 
 \section{A concise stopping rule}
 
