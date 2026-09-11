@@ -44,13 +44,24 @@ That was a validation-model parameterization error, not a Laplace failure.
 The final zero-correlation formulation keeps Q positive definite over the
 complete parameter domain used here.
 
-## Remaining API limitation
+## Extended correlation validation
 
-The native Julia backend currently rejects a parameter-dependent expression in
-T0VAR. Hence a study-varying T0 correlation cannot yet be combined with both
-marginal latent variances fixed exactly at one through the required Cholesky
-identity. The validation fixes the T0 correlation at zero rather than fitting
-a free Cholesky element that would change a marginal variance.
+The ctsem development branch now accepts the required static,
+parameter-dependent T0VAR expression.  The extended validation therefore
+varies a bounded T0 correlation between studies while fixing both marginal
+latent variances exactly at one and deriving DIFFUSION from the same stationary
+covariance.  Six independent 16-study fits all converged.  For generating raw
+study SDs `(0.20, 0.16, 0.18)`, the mean estimates were
+`(0.188, 0.189, 0.183)` and the median estimates were
+`(0.182, 0.200, 0.187)`.
+
+Three of the six fits flagged one weak correlation in the unstructured
+study-random-effect covariance: `rawcor_drift2__drift1.study` in two seeds and
+`rawcor_rho_raw__drift1.study` in one.  This does not invalidate the marginal
+SD recovery, but it supports adding independent or blockwise covariance
+structures for parsimony and sensitivity analysis.  Static initial-state
+expressions are supported; row-varying time-dependent predictors do not define
+a single T0 covariance and remain outside this scope.
 
 These assumptions apply to latent covariance stationarity. Standardizing
 observed variables at each occasion does not by itself impose them in the

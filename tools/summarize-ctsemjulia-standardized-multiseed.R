@@ -31,6 +31,7 @@
       converged = FALSE, gradient_norm = NA_real_, fit_seconds = NA_real_,
       laplace_gap = NA_real_, gap_per_subject = NA_real_,
       nweak = NA_integer_, identifiability_condition = NA_real_,
+      weak_directions = NA_character_,
       parameter = NA_character_, truth = NA_real_, estimate = NA_real_,
       error_sd = NA_real_, relative_error = NA_real_,
       stringsAsFactors = FALSE
@@ -44,6 +45,9 @@
       gap_per_subject = x$gap_per_subject,
       nweak = x$identifiability$nweak %||% NA_integer_,
       identifiability_condition = x$identifiability$condition %||% NA_real_,
+      weak_directions = paste(
+        x$identifiability$parameters %||% character(), collapse = "; "
+      ),
       parameter = names(truth), truth = as.numeric(truth),
       estimate = as.numeric(estimate),
       error_sd = as.numeric(estimate - truth),
@@ -78,11 +82,34 @@
   })
   aggregate <- do.call(rbind, summary_rows)
   rownames(aggregate) <- NULL
+  run_directions <- unique(completed[c(
+    "seed", "scenario", "weak_directions"
+  )])
+  direction_values <- unlist(strsplit(
+    run_directions$weak_directions[nzchar(run_directions$weak_directions)],
+    "; ", fixed = TRUE
+  ), use.names = FALSE)
+  direction_summary <- if (length(direction_values)) {
+    counts <- sort(table(direction_values), decreasing = TRUE)
+    data.frame(
+      direction = names(counts), seeds_flagged = as.integer(counts),
+      fraction_of_completed_seeds = as.integer(counts) /
+        length(unique(completed$seed)),
+      stringsAsFactors = FALSE
+    )
+  } else data.frame(
+    direction = character(), seeds_flagged = integer(),
+    fraction_of_completed_seeds = numeric(), stringsAsFactors = FALSE
+  )
   write.csv(detail, file.path(opts$input, "MULTISEED_DETAIL.csv"),
     row.names = FALSE)
   write.csv(aggregate, file.path(opts$input, "MULTISEED_SUMMARY.csv"),
     row.names = FALSE)
-  saveRDS(list(detail = detail, summary = aggregate),
+  write.csv(direction_summary,
+    file.path(opts$input, "MULTISEED_DIRECTIONS.csv"), row.names = FALSE)
+  saveRDS(list(
+    detail = detail, summary = aggregate, directions = direction_summary
+  ),
     file.path(opts$input, "MULTISEED_SUMMARY.rds"))
   runs <- unique(completed[c("seed", "converged", "gradient_norm",
     "fit_seconds", "gap_per_subject", "nweak",
@@ -105,9 +132,25 @@
     aggregate$empirical_sd[i], aggregate$rmse[i],
     aggregate$mean_absolute_relative_error[i]
   ))
+  lines <- c(lines, "", "## Weak identifiability directions", "")
+  if (!nrow(direction_summary)) {
+    lines <- c(lines, "No weak directions were returned.")
+  } else {
+    lines <- c(lines,
+      "| Direction | Seeds flagged | Fraction of completed seeds |",
+      "|---|---:|---:|"
+    )
+    for (i in seq_len(nrow(direction_summary))) lines <- c(lines, sprintf(
+      "| `%s` | %d | %.3f |", direction_summary$direction[i],
+      direction_summary$seeds_flagged[i],
+      direction_summary$fraction_of_completed_seeds[i]
+    ))
+  }
   writeLines(lines, file.path(opts$input, "MULTISEED_REPORT.md"))
   print(aggregate)
-  invisible(list(detail = detail, summary = aggregate))
+  invisible(list(
+    detail = detail, summary = aggregate, directions = direction_summary
+  ))
 }
 
 if (sys.nframe() == 0L) .main(.options())
