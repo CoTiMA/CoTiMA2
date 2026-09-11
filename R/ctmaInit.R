@@ -1383,7 +1383,13 @@ ctmaInit <- function(
           #
           studyFit[[i]] <- results
           if (is.null(studyFit[[i]]$standata$priors)) studyFit[[i]]$standata$priors <- 0 # CHD added Sep 2023
-          studyFit[[i]]$resultsSummary <- summary(studyFit[[i]])
+          # The native ctsem Julia dispatcher has already requested the
+          # parameter-matrix summary needed by the legacy CoTiMA extraction.
+          # Replacing it with summary(fit) here would drop `parmatrices` for
+          # this backend.
+          if (!identical(backend, "ctsemjulia")) {
+            studyFit[[i]]$resultsSummary <- summary(studyFit[[i]])
+          }
 
           df <- "deprecated"
           studyFit[[i]]$resultsSummary$'df (CoTiMA)' <- df
