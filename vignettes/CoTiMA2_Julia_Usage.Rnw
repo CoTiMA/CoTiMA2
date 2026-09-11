@@ -866,6 +866,18 @@ optimizer convergence, run \code{ctLaplaceCheck()}, and retain the fitted
 ctsem object.  Do not interpret a fit from an older branch that silently drops
 an outer grouping level.
 
+The current native route estimates a full covariance among all random effects
+selected at a grouping level.  The arguments \code{covariance},
+\code{covarianceBlocks}, \code{reBlocks}, and \code{blockStructures} configure
+the separate \code{ctmaRePrep()} workflow and are not currently passed to
+\code{backend="ctsemjulia"}.  Consequently, inspect
+\code{fit\$identifiability} and the random-effect-correlation section of
+\code{summary(fit)}, especially when the number of studies is small relative
+to the number of population SD and correlation parameters.  A marginal
+random-effect SD can be estimable even when a correlation involving that
+effect is not.  An independent or blockwise covariance option requires a
+corresponding native ctsem API.
+
 \section{Moderator-associated reduction in random-effect heterogeneity}
 
 Study-level moderators may account for part of the between-study variation in
