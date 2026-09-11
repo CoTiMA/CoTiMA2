@@ -624,6 +624,24 @@ validation.  Users should nevertheless inspect
 \code{summary(fit)}.  A marginal study SD can be estimable even when one or
 more correlations involving that effect are not.
 
+For focused repetitions, code{--scenarios=} accepts a comma-separated subset
+of code{univariate\_drift}, code{bivariate\_drift}, and
+code{bivariate\_drift\_correlation}.  For example, a new seed can repeat only
+the correlation scenario:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-standardized-validation.R \
+  --mode=full \
+  --scenarios=bivariate_drift_correlation \
+  --seed=20260920 \
+  --cores=4
+\end{verbatim}
+
+Independent seed directories can subsequently be combined with
+\code{tools/summarize-ctsemjulia-standardized-multiseed.R}.  Its report keeps
+scenarios separate and summarizes mean and median recovery, empirical spread,
+RMSE, convergence, gradient norms, identifiability, and Laplace gaps.
+
 \section{A concise stopping rule}
 
 Do not continue merely because the raw gradient exceeds a conventional target.
