@@ -317,6 +317,7 @@ test_that("ctmaInit native ctsem Julia dispatcher preserves ctFit compatibility"
   expect_identical(captured$inits, 0.2)
   expect_identical(captured$optimcontrol$finishsamples, 25L)
   expect_identical(result$backend, "ctsemjulia")
+  expect_identical(result$ctstanmodelbase, model)
   expect_identical(result$ctsemjulia_mode, "direct")
   expect_identical(result$resultsSummary$npars, 2L)
 })

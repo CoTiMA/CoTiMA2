@@ -512,6 +512,10 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
 
   result <- .ctmaNativeCtsemJuliaFit(fit_args)
   result$resultsSummary <- .ctmaNativeCtsemJuliaSummary(result, digits)
+  # ctmaInit's legacy extraction restores `currentModel` from this field.
+  # Native ctsem Julia fits retain the model under `$model`, so expose the
+  # established compatibility alias used by Stan and CoTiMA2's Julia adapter.
+  result$ctstanmodelbase <- model
   result$backend <- "ctsemjulia"
   result$ctsemjulia_mode <- if (
     is.data.frame(model$pars) && "indvarying" %in% names(model$pars) &&
