@@ -1,3 +1,10 @@
+# CoTiMA2 development
+
+- `ctmaFit(backend = "ctsemjulia")` now uses native ctsem Julia ML directly
+  for models without random effects and retains the Laplace path when subject-
+  or study-level random effects are requested. The fitted object records the
+  selected route in `$ctsemjulia_mode`.
+
 # CoTiMA2 0.14.14
 
 - Renamed package documentation sources from `CoTiMA_...` to `CoTiMA2_...`

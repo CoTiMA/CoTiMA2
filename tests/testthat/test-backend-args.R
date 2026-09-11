@@ -35,7 +35,7 @@ test_that("Julia defaults are workflow and estimation specific", {
   )
 })
 
-test_that("ctsemjulia defaults expose the experimental Laplace interface", {
+test_that("ctsemjulia defaults expose the experimental native interface", {
   defaults <- ctmaBackendDefaults("ctsemjulia")
 
   expect_named(defaults, c(
@@ -49,7 +49,7 @@ test_that("ctsemjulia defaults expose the experimental Laplace interface", {
   expect_identical(defaults$sdscale_study, 1)
   expect_error(
     ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit"),
-    "ML/Laplace"
+    "supports ML"
   )
   expect_error(
     ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit"),

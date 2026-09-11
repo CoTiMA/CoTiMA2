@@ -12,7 +12,8 @@
 #'
 #' @param backend Estimation backend: \code{"stan"} (the default),
 #'   \code{"julia"} for CoTiMA2's Julia engine, or experimental
-#'   \code{"ctsemjulia"} for ctsem's native Julia/Laplace engine.
+#'   \code{"ctsemjulia"} for ctsem's native Julia engine. It uses direct ML
+#'   without random effects and Laplace ML when random effects are present.
 #' @param estimation Estimation method. For
 #'   \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
 #'   \code{"none"} returns the common Julia evaluation controls.
@@ -55,7 +56,7 @@ ctmaBackendDefaults <- function(
     if (is.null(estimation)) estimation <- "ml"
     estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
     if (!identical(estimation, "ml")) stop(
-      "The experimental ctsemjulia backend currently supports ML/Laplace ",
+      "The experimental ctsemjulia backend currently supports ML ",
       "estimation only (use optimize = TRUE).",
       call. = FALSE
     )

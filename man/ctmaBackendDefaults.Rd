@@ -14,8 +14,9 @@ ctmaBackendDefaults(
 \arguments{
 \item{backend}{Estimation backend. \code{"stan"} is the default,
 \code{"julia"} selects CoTiMA2's Julia backend, and
-\code{"ctsemjulia"} selects the experimental native ctsem Julia/Laplace
-backend. The latter currently supports \code{workflow = "ctmaFit"} with
+\code{"ctsemjulia"} selects the experimental native ctsem Julia backend.
+It uses direct ML without random effects and Laplace ML when random effects
+are present. It currently supports \code{workflow = "ctmaFit"} with
 maximum-likelihood estimation only.}
 
 \item{estimation}{Estimation method. For

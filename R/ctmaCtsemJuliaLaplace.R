@@ -65,6 +65,32 @@
   invisible(status)
 }
 
+.ctmaCtsemJuliaRandomEffectsRequested <- function(setup, backend_args) {
+  selectors <- c(
+    "study_random_effects", "subject_random_effects",
+    "study_parameters", "subject_parameters"
+  )
+  explicit <- any(vapply(selectors, function(name) {
+    value <- backend_args[[name]]
+    !is.null(value) && length(value) && any(nzchar(as.character(value)))
+  }, logical(1L)))
+  masks <- c("reDRIFT", "reDIFFUSION", "reT0VAR")
+  explicit <- explicit || any(vapply(masks, function(name) {
+    value <- backend_args[[name]]
+    !is.null(value) && length(value) && any(value %in% TRUE, na.rm = TRUE)
+  }, logical(1L)))
+  if (explicit) return(TRUE)
+
+  pars <- setup$ctModel$pars
+  if (!is.data.frame(pars)) return(FALSE)
+  varying <- grep(
+    "^indvarying($|_)", names(pars), value = TRUE
+  )
+  any(vapply(varying, function(name) {
+    any(pars[[name]] %in% TRUE, na.rm = TRUE)
+  }, logical(1L)))
+}
+
 .ctmaLaplaceStudyMembership <- function(setup, study_id = NULL,
     study_id_ti = NULL, study_dummy_ti = NULL, verbose = TRUE) {
   if (!is.null(study_id)) {
@@ -272,12 +298,6 @@
     "study_random_effects", "subject_parameters", "study_parameters",
     "remove_study_fixed_effects", "sdscale_study"
   )
-  prepare_args <- backend_args[intersect(prepare_names, names(backend_args))]
-  prepared <- do.call(
-    .ctmaPrepareCtsemJuliaLaplace,
-    c(list(object = setup), prepare_args)
-  )
-
   fit_args <- list()
   fit_args$inits <- if (!is.null(backend_args$inits)) {
     backend_args$inits
@@ -297,12 +317,31 @@
   }
   fit_args <- fit_args[!vapply(fit_args, is.null, logical(1L))]
 
-  result <- do.call(
-    .ctmaFitCtsemJuliaLaplace,
-    c(list(prepared = prepared, cores = cores), fit_args)
+  use_laplace <- .ctmaCtsemJuliaRandomEffectsRequested(
+    setup, backend_args
   )
+  if (use_laplace) {
+    prepare_args <- backend_args[
+      intersect(prepare_names, names(backend_args))
+    ]
+    prepared <- do.call(
+      .ctmaPrepareCtsemJuliaLaplace,
+      c(list(object = setup), prepare_args)
+    )
+    result <- do.call(
+      .ctmaFitCtsemJuliaLaplace,
+      c(list(prepared = prepared, cores = cores), fit_args)
+    )
+  } else {
+    prepared <- NULL
+    result <- do.call(
+      .ctmaFitCtsemJuliaDirect,
+      c(list(setup = setup, cores = cores), fit_args)
+    )
+  }
   result$source_object <- setup
   result$ctsemjulia_prepared <- prepared
+  result$ctsemjulia_mode <- if (use_laplace) "laplace" else "direct"
   result$cotima_call <- cotima_call
   result$backend <- "ctsemjulia"
   result$argumentList <- setup$argumentList
@@ -310,6 +349,22 @@
   result$argumentList$backendArgs <- backend_args
   result$argumentList$fit <- TRUE
   result
+}
+
+.ctmaFitCtsemJuliaDirect <- function(setup, cores = 1L, ...) {
+  .ctmaRequireCtsemJuliaLaplace()
+  if (!.ctma_is_unfitted_cotima(setup)) stop(
+    "setup must be returned by ctmaFit(..., fit = FALSE).",
+    call. = FALSE
+  )
+  cores <- as.integer(cores)[1L]
+  if (is.na(cores) || cores < 1L) stop(
+    "cores must be one positive integer.", call. = FALSE
+  )
+  ctsem::ctFit(
+    datalong = setup$data, model = setup$ctModel, backend = "julia",
+    intoverpop = "auto", cores = cores, ...
+  )
 }
 
 .ctmaFitCtsemJuliaLaplace <- function(prepared, cores = 1L, ...) {

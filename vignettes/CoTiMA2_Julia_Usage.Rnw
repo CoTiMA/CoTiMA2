@@ -810,15 +810,36 @@ other random-effect types.  The \code{backendArgs} list contains Julia-specific
 overrides; the top-level \code{chains}, \code{seed}, and \code{init\_jitter}
 remain ordinary \code{ctmaReFit()} arguments.
 
-\subsection{Experimental native ctsem Julia/Laplace route}
+\subsection{Experimental native ctsem Julia route}
 
 CoTiMA2 also provides an experimental, feature-gated route to ctsem's native
 multilevel Julia implementation.  It is selected with
 \code{backend="ctsemjulia"}.  This is distinct from both CoTiMA2's own
 \code{backend="julia"} and the \code{ctmaRePrep()}--\code{ctmaReFit()}
-workflow described above.  The native route integrates subject- and
-study-level Gaussian random effects using Laplace approximation and currently
-supports maximum-likelihood estimation only.
+workflow described above.  Without random effects, it performs ordinary
+native ctsem Julia ML and lets \code{intoverpop="auto"} resolve to the direct
+path.  When subject- or study-level Gaussian random effects are present, it
+uses Laplace approximation.  The backend currently supports
+maximum-likelihood estimation only.
+
+A model without random effects needs no special backend controls:
+
+<<ctsem-native-direct, purl=FALSE>>=
+nativeDirect <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  optimize = TRUE,
+  coresToUse = -1,
+  scaleTime = 1/12,
+  backendArgs = list(
+    optimcontrol = list(
+      uncertainty = "hessian"
+    )
+  )
+)
+
+nativeDirect$ctsemjulia_mode  # "direct"
+@
 
 Random effects may be selected conveniently by ctsem matrix family.  For
 example, the following model gives CINT a random effect at both the subject and
@@ -841,6 +862,7 @@ nativeLaplace <- ctmaFit(
 
 summary(nativeLaplace)
 ctsem::ctLaplaceCheck(nativeLaplace)
+nativeLaplace$ctsemjulia_mode  # "laplace"
 @
 
 Exact raw parameter labels can be supplied through

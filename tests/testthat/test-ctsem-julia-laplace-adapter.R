@@ -128,6 +128,45 @@ test_that("the public ctsemjulia wrapper retains CoTiMA provenance", {
     .package = "CoTiMA2"
   )
 
+  backend_args <- ctmaBackendDefaults("ctsemjulia")
+  backend_args$study_random_effects <- "CINT"
+  result <- .ctmaFitCtsemJuliaBackend(
+    setup = setup,
+    backend_args = backend_args,
+    cores = 2L,
+    cotima_call = quote(ctmaFit(backend = "ctsemjulia"))
+  )
+
+  expect_identical(result$backend, "ctsemjulia")
+  expect_identical(result$source_object, setup)
+  expect_identical(result$ctsemjulia_prepared, prepared)
+  expect_identical(result$ctsemjulia_mode, "laplace")
+  expect_identical(result$argumentList$backend, "ctsemjulia")
+  expect_true(result$argumentList$fit)
+})
+
+test_that("ctsemjulia uses direct native ML when no random effects exist", {
+  setup <- structure(list(
+    data = data.frame(id = rep(1:2, each = 2), y = 1:4),
+    ctModel = list(
+      pars = data.frame(
+        param = "drift_eta1", indvarying = FALSE,
+        stringsAsFactors = FALSE
+      )
+    ),
+    argumentList = list(fit = FALSE)
+  ), class = "CoTiMAFit")
+
+  local_mocked_bindings(
+    .ctmaFitCtsemJuliaDirect = function(...) list(
+      estimate = list(loglik = -9, converged = TRUE)
+    ),
+    .ctmaPrepareCtsemJuliaLaplace = function(...) {
+      stop("Laplace preparation must not run")
+    },
+    .package = "CoTiMA2"
+  )
+
   result <- .ctmaFitCtsemJuliaBackend(
     setup = setup,
     backend_args = ctmaBackendDefaults("ctsemjulia"),
@@ -136,10 +175,30 @@ test_that("the public ctsemjulia wrapper retains CoTiMA provenance", {
   )
 
   expect_identical(result$backend, "ctsemjulia")
-  expect_identical(result$source_object, setup)
-  expect_identical(result$ctsemjulia_prepared, prepared)
-  expect_identical(result$argumentList$backend, "ctsemjulia")
-  expect_true(result$argumentList$fit)
+  expect_identical(result$ctsemjulia_mode, "direct")
+  expect_null(result$ctsemjulia_prepared)
+  expect_identical(result$estimate$loglik, -9)
+})
+
+test_that("ctsemjulia detects explicit and existing random effects", {
+  setup <- structure(list(ctModel = list(pars = data.frame(
+    param = "drift_eta1", indvarying = FALSE,
+    stringsAsFactors = FALSE
+  ))), class = "CoTiMAFit")
+  defaults <- ctmaBackendDefaults("ctsemjulia")
+
+  expect_false(.ctmaCtsemJuliaRandomEffectsRequested(setup, defaults))
+  defaults$study_parameters <- "drift_eta1"
+  expect_true(.ctmaCtsemJuliaRandomEffectsRequested(setup, defaults))
+  defaults$study_parameters <- NULL
+  defaults$reDRIFT <- matrix(FALSE, 1L, 1L)
+  expect_false(.ctmaCtsemJuliaRandomEffectsRequested(setup, defaults))
+  defaults$reDRIFT[1L, 1L] <- TRUE
+  expect_true(.ctmaCtsemJuliaRandomEffectsRequested(setup, defaults))
+
+  setup$ctModel$pars$indvarying <- TRUE
+  defaults$reDRIFT <- NULL
+  expect_true(.ctmaCtsemJuliaRandomEffectsRequested(setup, defaults))
 })
 
 test_that("ctmaFit advertises and dispatches the ctsemjulia backend", {

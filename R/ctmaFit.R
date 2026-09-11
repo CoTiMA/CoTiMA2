@@ -69,10 +69,11 @@
 #' @param backend estimation backend. \code{"stan"} remains the default;
 #'   \code{"julia"} prepares the same ctsem model and data and then calls the
 #'   validated CoTiMA2 Julia ML or Bayesian engine. Experimental
-#'   \code{"ctsemjulia"} instead uses ctsem's native Julia backend with
-#'   \code{intoverpop = "laplace"} for hierarchical random effects. It
-#'   currently supports ML estimation only and requires the development ctsem
-#'   API detected by CoTiMA2 at run time.
+#'   \code{"ctsemjulia"} instead uses ctsem's native Julia backend. Models
+#'   without random effects use direct ML with \code{intoverpop = "auto"};
+#'   hierarchical random effects activate \code{intoverpop = "laplace"}.
+#'   This backend currently supports ML estimation only and requires the
+#'   development ctsem API detected by CoTiMA2 at run time.
 #' @param backendArgs named backend-specific controls. With the default Stan
 #'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 #'   completed from \code{ctmaBackendDefaults("stan")}. With the Julia

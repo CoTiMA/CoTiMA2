@@ -467,6 +467,17 @@ initial-state standard-deviation factor, not the variance itself. The full suite
 tests CINT, DRIFT, DIFFUSION, and T0VAR and follows each fit with adaptive
 quadrature through \code{ctLaplaceCheck()}.
 
+The same backend can also fit models without random effects.  In that case,
+\code{fit$ctsemjulia_mode} is \code{"direct"} and Laplace diagnostics are
+neither required nor meaningful.  A controlled Ryzen smoke test with 800
+persons and 9,600 rows gave the same log likelihood (rounded to $-13000.3$)
+for CoTiMA2's Julia engine and native ctsem Julia; both converged.  With
+post-fit Hessian work disabled in both paths, the end-to-end times were about
+32.6 and 17.9 seconds, respectively.  This small test includes different
+startup and safety-check overhead and must not be generalized as a universal
+speed ratio.  Benchmark the intended model shape and inspect both estimates
+and convergence, not elapsed time alone.
+
 The single-run suite defaults to fixed standardized normal quantiles for the
 study effects. This deterministic design is useful as a regression test. The
 Monte Carlo controller instead defaults to independently sampled study

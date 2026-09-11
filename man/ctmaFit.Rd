@@ -180,10 +180,12 @@ studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}. Add
 
 \item{backend}{Estimation backend. \code{"stan"} is the default;
 \code{"julia"} uses CoTiMA2's Julia implementation, whereas
-\code{"ctsemjulia"} uses ctsem's experimental native Julia/Laplace
-implementation. The native route currently supports maximum-likelihood
-estimation through \code{ctmaFit()} only and requires a compatible ctsem
-development version.}
+\code{"ctsemjulia"} uses ctsem's experimental native Julia implementation.
+Models without random effects use direct ML with
+\code{intoverpop = "auto"}; hierarchical random effects activate
+\code{intoverpop = "laplace"}. The native route currently supports
+maximum-likelihood estimation through \code{ctmaFit()} only and requires a
+compatible ctsem development version.}
 
 \item{backendArgs}{Named list of controls for the selected backend. For
 \code{backend = "ctsemjulia"}, this includes study and subject identifiers,
