@@ -274,11 +274,6 @@
     parameters_in_matrices(study_random_effects, "study")
   ))
   selected <- unique(selected[nzchar(selected) & !is.na(selected)])
-  if (!length(selected)) stop(
-    "Select at least one study-level random effect through reDRIFT, ",
-    "reDIFFUSION, reT0VAR, study_random_effects, or study_parameters.",
-    call. = FALSE
-  )
   unknown <- setdiff(selected, unique(stats::na.omit(model$pars$param)))
   if (length(unknown)) stop(
     "Unknown study-level raw parameter(s): ",
@@ -307,6 +302,20 @@
     model$pars$indvarying[subject_rows] <- TRUE
   }
 
+  has_subject_effects <- any(model$pars$indvarying %in% TRUE, na.rm = TRUE)
+  has_study_effects <- any(
+    model$pars$indvarying_study %in% TRUE, na.rm = TRUE
+  )
+  if (!has_subject_effects && !has_study_effects) stop(
+    "Select at least one subject- or study-level random effect.",
+    call. = FALSE
+  )
+  selected_subject_rows <- model$pars$indvarying %in% TRUE &
+    !is.na(model$pars$param)
+  selected_subject_parameters <- unique(as.character(
+    model$pars$param[selected_subject_rows]
+  ))
+
   if (isTRUE(remove_study_fixed_effects) && length(membership$dummy_names)) {
     columns <- paste0(membership$dummy_names, "_effect")
     columns <- intersect(columns, names(model$pars))
@@ -317,6 +326,7 @@
     data = datalong,
     model = model,
     selected_parameters = selected,
+    selected_subject_parameters = selected_subject_parameters,
     study_labels = membership$labels,
     study_dummy_names = membership$dummy_names,
     ctsem_status = status,

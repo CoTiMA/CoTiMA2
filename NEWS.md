@@ -2,6 +2,11 @@
 
 ## CoTiMA2 0.14.16
 
+- `ctmaFit(backend = "ctsemjulia")` now accepts pooled models containing
+  subject-level random effects without requiring an additional study-level
+  random effect. Thus, for example, `indVarying = "MANIFEST"` can use native
+  Laplace integration while ordinary study-indicator effects remain fixed.
+
 - `ctmaInit(backend = "ctsemjulia")` now supports native ctsem Julia
   maximum-likelihood fits of individual primary studies. Models without
   person-level random effects use direct ML; ctsem's `intoverpop = "auto"`

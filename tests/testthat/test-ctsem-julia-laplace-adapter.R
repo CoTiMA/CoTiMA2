@@ -175,6 +175,43 @@ test_that("matrix names select study and subject random effects", {
   )
 })
 
+test_that("native Laplace preparation accepts subject-only random effects", {
+  model <- list(
+    subjectIDname = "id",
+    groupIDnames = character(),
+    TIpredNames = character(),
+    pars = data.frame(
+      matrix = c("CINT", "DRIFT", "DIFFUSION"),
+      param = c("cint_eta1", "drift_eta1", "diff_eta1"),
+      indvarying = c(TRUE, FALSE, FALSE),
+      sdscale = c(1, 1, 1),
+      stringsAsFactors = FALSE
+    )
+  )
+  setup <- structure(list(
+    data = data.frame(id = rep(1:2, each = 2), y = 1:4),
+    ctModel = model
+  ), class = "CoTiMAFit")
+
+  local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .ctma_is_unfitted_cotima = function(object) TRUE,
+    .ctmaLaplaceStudyMembership = function(...) list(
+      row_id = c(1L, 1L, 2L, 2L), labels = c("A", "B"),
+      dummy_names = character()
+    ),
+    .ctma_generate_ctsem_setup = function(...) list(),
+    .package = "CoTiMA2"
+  )
+
+  prepared <- .ctmaPrepareCtsemJuliaLaplace(setup, verbose = FALSE)
+
+  expect_length(prepared$selected_parameters, 0L)
+  expect_identical(prepared$selected_subject_parameters, "cint_eta1")
+  expect_false(any(prepared$model$pars$indvarying_study))
+  expect_true(prepared$model$pars$indvarying[[1L]])
+})
+
 test_that("the public ctsemjulia wrapper retains CoTiMA provenance", {
   setup <- structure(list(
     argumentList = list(fit = FALSE),
