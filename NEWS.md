@@ -6,6 +6,8 @@
   subject-level random effects without requiring an additional study-level
   random effect. Thus, for example, `indVarying = "MANIFEST"` can use native
   Laplace integration while ordinary study-indicator effects remain fixed.
+  Such subject-only models no longer construct an unused outer study-grouping
+  level or print the corresponding study-membership message.
 
 ## CoTiMA2 0.14.16
 

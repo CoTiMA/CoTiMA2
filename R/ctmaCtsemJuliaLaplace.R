@@ -206,18 +206,16 @@
     "sdscale_study must be one finite positive number.", call. = FALSE
   )
 
-  membership <- .ctmaLaplaceStudyMembership(
-    object, study_id = study_id, study_id_ti = study_id_ti,
-    study_dummy_ti = study_dummy_ti, verbose = verbose
-  )
   datalong <- object$data
-  datalong$study <- membership$row_id
+  membership <- list(
+    row_id = NULL, labels = character(), dummy_names = character()
+  )
 
   model <- object$ctModel
   subject_name <- model$subjectIDname
   if (is.null(subject_name) || !nzchar(subject_name)) subject_name <- "id"
   model$subjectIDname <- subject_name
-  model$groupIDnames <- "study"
+  model$groupIDnames <- character()
 
   if (!"indvarying" %in% names(model$pars)) model$pars$indvarying <- FALSE
   if (!"sdscale" %in% names(model$pars)) model$pars$sdscale <- 1
@@ -315,6 +313,15 @@
   selected_subject_parameters <- unique(as.character(
     model$pars$param[selected_subject_rows]
   ))
+
+  if (has_study_effects) {
+    membership <- .ctmaLaplaceStudyMembership(
+      object, study_id = study_id, study_id_ti = study_id_ti,
+      study_dummy_ti = study_dummy_ti, verbose = verbose
+    )
+    datalong$study <- membership$row_id
+    model$groupIDnames <- "study"
+  }
 
   if (isTRUE(remove_study_fixed_effects) && length(membership$dummy_names)) {
     columns <- paste0(membership$dummy_names, "_effect")

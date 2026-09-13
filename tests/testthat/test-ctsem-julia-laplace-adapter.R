@@ -196,9 +196,8 @@ test_that("native Laplace preparation accepts subject-only random effects", {
   local_mocked_bindings(
     .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
     .ctma_is_unfitted_cotima = function(object) TRUE,
-    .ctmaLaplaceStudyMembership = function(...) list(
-      row_id = c(1L, 1L, 2L, 2L), labels = c("A", "B"),
-      dummy_names = character()
+    .ctmaLaplaceStudyMembership = function(...) stop(
+      "Study membership should not be constructed"
     ),
     .ctma_generate_ctsem_setup = function(...) list(),
     .package = "CoTiMA2"
@@ -210,6 +209,9 @@ test_that("native Laplace preparation accepts subject-only random effects", {
   expect_identical(prepared$selected_subject_parameters, "cint_eta1")
   expect_false(any(prepared$model$pars$indvarying_study))
   expect_true(prepared$model$pars$indvarying[[1L]])
+  expect_length(prepared$model$groupIDnames, 0L)
+  expect_false("study" %in% names(prepared$data))
+  expect_length(prepared$study_labels, 0L)
 })
 
 test_that("the public ctsemjulia wrapper retains CoTiMA provenance", {
