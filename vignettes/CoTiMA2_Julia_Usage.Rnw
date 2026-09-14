@@ -954,6 +954,16 @@ optimizer convergence, run \code{ctLaplaceCheck()}, and retain the fitted
 ctsem object.  Do not interpret a fit from an older branch that silently drops
 an outer grouping level.
 
+For a bounded optimisation diagnostic that deliberately omits Hessian and
+posterior calculations, set
+\code{backendArgs=list(optimcontrol=list(estonly=TRUE))}.  This is useful when
+checking whether the outer optimiser takes effective iterations and whether
+all inner random-effect modes converge.  A report of zero iterations together
+with a nonzero gradient is a failed fit, not immediate convergence.  In
+particular, do not calculate or interpret a Hessian when the fit reports
+\code{estimate\$stalled=TRUE} or
+\code{laplace\$inner\_converged=FALSE}.
+
 The current native route estimates a full covariance among all random effects
 selected at a grouping level.  The arguments \code{covariance},
 \code{covarianceBlocks}, \code{reBlocks}, and \code{blockStructures} configure
