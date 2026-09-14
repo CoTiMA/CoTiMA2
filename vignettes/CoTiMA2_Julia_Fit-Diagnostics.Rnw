@@ -478,6 +478,71 @@ startup and safety-check overhead and must not be generalized as a universal
 speed ratio.  Benchmark the intended model shape and inspect both estimates
 and convergence, not elapsed time alone.
 
+Current ctsem development versions store optimizer diagnostics in
+\code{fit\$optim} and parameter estimates and uncertainty in
+\code{fit\$estimate}. CoTiMA2 preserves these native components and adds a
+stable compact view in \code{fit\$ctsemjulia\_diagnostics}. In particular,
+\code{fit\$laplace\$inner\_converged} is a single overall flag; it is not the
+number of groups. The final and expected counts are available as
+\code{fit\$ctsemjulia\_diagnostics\$inner\_modes\$converged} and
+\code{expected}.
+
+For study-level Laplace models, the native \code{subject\_loglik} vector is
+not necessarily a personwise decomposition of the marginal likelihood. It
+must not be supplied to LOO or WAIC when
+\code{fit\$ctsemjulia\_diagnostics\$casewise\_loglik\$usable\_for\_loo} is
+false. CoTiMA2 retains the original vector but prints a note and records the
+reason in the diagnostic component.
+
+After a successful fit, save an immutable reference result before conducting
+sensitivity analyses:
+
+<<native-reference-fit, purl=FALSE>>=
+saveRDS(fit_random_drift, "fit_random_drift_reference.rds")
+
+fit_random_drift$ctsemjulia_diagnostics
+fit_random_drift$identifiability
+fit_random_drift$intervalcheck
+@
+
+An inner-mode tolerance sensitivity fit should reuse the converged raw
+estimates, change only the inner solver controls, and then compare the
+substantive estimates and marginal log likelihood. For example:
+
+<<native-inner-sensitivity, purl=FALSE>>=
+sensitivity_args <- CoTiMA2::ctmaBackendDefaults("ctsemjulia")
+sensitivity_args$study_random_effects <- "DRIFT"
+sensitivity_args$inits <- fit_random_drift$estimate$raw
+sensitivity_args$optimcontrol <- list(
+  laplace_inner_maxiter = 500L,
+  laplace_inner_tol = 1e-5,
+  uncertainty = "hessian"
+)
+
+fit_random_drift_sensitivity <- CoTiMA2::ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  coresToUse = 4L,
+  backendArgs = sensitivity_args
+)
+
+c(
+  reference_loglik = fit_random_drift$estimate$loglik,
+  sensitivity_loglik = fit_random_drift_sensitivity$estimate$loglik,
+  maximum_raw_change = max(abs(
+    fit_random_drift$estimate$raw -
+      fit_random_drift_sensitivity$estimate$raw
+  ))
+)
+@
+
+The sensitivity fit supports the reference result when both fits converge,
+all inner modes converge, and the log likelihood and transformed substantive
+estimates remain practically unchanged. A stricter inner tolerance that fails
+to converge is not evidence against the reference fit; it indicates that the
+inner solver needs more iterations or that the requested tolerance is too
+strict for the current parameterization.
+
 The single-run suite defaults to fixed standardized normal quantiles for the
 study effects. This deterministic design is useful as a regression test. The
 Monte Carlo controller instead defaults to independently sampled study

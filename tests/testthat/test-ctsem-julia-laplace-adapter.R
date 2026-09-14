@@ -247,6 +247,71 @@ test_that("the public ctsemjulia wrapper retains CoTiMA provenance", {
   expect_true(result$argumentList$fit)
 })
 
+test_that("ctsem 3.12 optimizer diagnostics are normalized", {
+  prepared <- structure(list(
+    selected_parameters = "V1toV1",
+    selected_subject_parameters = character()
+  ), class = "ctmaCtsemJuliaLaplacePrep")
+  result <- list(
+    optim = list(
+      converged = TRUE, gradient_norm = 2.3e-5, iterations = 24L,
+      trace = data.frame(
+        iteration = 0:2,
+        inner_converged = c(25L, 25L, 25L)
+      )
+    ),
+    estimate = list(subject_loglik = rep(-2.802063, 100L)),
+    laplace = list(inner_converged = TRUE)
+  )
+
+  expect_message(
+    annotated <- .ctmaAnnotateCtsemJuliaResult(
+      result, prepared = prepared, use_laplace = TRUE
+    ),
+    "not a valid personwise decomposition"
+  )
+  diagnostic <- annotated$ctsemjulia_diagnostics
+  expect_true(diagnostic$converged)
+  expect_equal(diagnostic$gradient_norm, 2.3e-5)
+  expect_identical(diagnostic$iterations, 24L)
+  expect_identical(diagnostic$inner_modes$expected, 25L)
+  expect_identical(diagnostic$inner_modes$converged, 25L)
+  expect_true(diagnostic$inner_modes$all_converged)
+  expect_false(diagnostic$casewise_loglik$usable_for_loo)
+  expect_identical(
+    diagnostic$casewise_loglik$scope, "study-marginal, not personwise"
+  )
+  expect_length(annotated$estimate$subject_loglik, 100L)
+})
+
+test_that("nonconstant personwise likelihood contributions remain usable", {
+  result <- list(
+    optim = list(converged = TRUE),
+    estimate = list(subject_loglik = c(-1, -2, -3))
+  )
+  annotated <- .ctmaAnnotateCtsemJuliaResult(
+    result, prepared = NULL, use_laplace = FALSE
+  )
+  expect_true(
+    annotated$ctsemjulia_diagnostics$casewise_loglik$usable_for_loo
+  )
+})
+
+test_that("an explicit failed native inner-mode flag is respected", {
+  result <- list(
+    optim = list(trace = data.frame(inner_converged = c(24L, 24L))),
+    estimate = list(),
+    laplace = list(inner_converged = FALSE)
+  )
+  annotated <- .ctmaAnnotateCtsemJuliaResult(
+    result, prepared = NULL, use_laplace = TRUE
+  )
+  expect_false(annotated$ctsemjulia_diagnostics$inner_modes$all_converged)
+  expect_false(
+    annotated$ctsemjulia_diagnostics$casewise_loglik$usable_for_loo
+  )
+})
+
 test_that("ctsemjulia uses direct native ML when no random effects exist", {
   setup <- structure(list(
     data = data.frame(id = rep(1:2, each = 2), y = 1:4),

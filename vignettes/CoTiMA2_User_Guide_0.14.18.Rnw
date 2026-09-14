@@ -64,7 +64,7 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.17\par}
+\vspace{1.0cm}{Version 0.14.18\par}
 
 \vspace{1.0cm}{Christian Dormann\par}
 
@@ -88,7 +88,7 @@ A critical assumption is the validity of the underlying causal model that descri
 
 \begin{lstlisting}[language=R]
 
-install.packages("CoTiMA2_0.14.17.tar.gz", repos = NULL, type = "source")
+install.packages("CoTiMA2_0.14.18.tar.gz", repos = NULL, type = "source")
 library(CoTiMA2)
 \end{lstlisting}
 

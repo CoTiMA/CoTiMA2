@@ -129,6 +129,90 @@
   }, logical(1L)))
 }
 
+.ctmaAnnotateCtsemJuliaResult <- function(result, prepared = NULL,
+                                          use_laplace = FALSE) {
+  optim <- result$optim
+  estimate <- result$estimate
+  first_non_null <- function(...) {
+    values <- list(...)
+    for (value in values) if (!is.null(value)) return(value)
+    NULL
+  }
+
+  # ctsem 3.12.0 separates optimizer diagnostics (`optim`) from estimates and
+  # uncertainty (`estimate`).  Retain both native components, but also expose a
+  # stable, compact CoTiMA2 view so downstream diagnostics need not depend on
+  # the exact ctsem development-branch layout.
+  inner_trace <- if (!is.null(optim$trace) &&
+      "inner_converged" %in% names(optim$trace)) {
+    as.integer(optim$trace$inner_converged)
+  } else integer()
+  native_inner_flag <- result$laplace$inner_converged
+  result$ctsemjulia_diagnostics <- list(
+    converged = isTRUE(first_non_null(optim$converged, estimate$converged)),
+    gradient_norm = as.numeric(
+      first_non_null(optim$gradient_norm, estimate$gradient_norm, NA_real_)
+    )[1L],
+    iterations = as.integer(
+      first_non_null(optim$iterations, estimate$iterations, NA_integer_)
+    )[1L],
+    inner_modes = list(
+      expected = if (isTRUE(use_laplace) && length(inner_trace)) {
+        max(inner_trace, na.rm = TRUE)
+      } else NA_integer_,
+      converged = if (isTRUE(use_laplace) && length(inner_trace)) {
+        as.integer(utils::tail(inner_trace, 1L))
+      } else NA_integer_,
+      all_converged = if (isTRUE(use_laplace)) {
+        if (!is.null(native_inner_flag)) {
+          isTRUE(native_inner_flag)
+        } else {
+          length(inner_trace) > 0L &&
+            all(inner_trace == max(inner_trace, na.rm = TRUE))
+        }
+      } else NA
+    )
+  )
+
+  subject_loglik <- estimate$subject_loglik
+  study_only <- isTRUE(use_laplace) &&
+    !is.null(prepared) &&
+    !length(prepared$selected_subject_parameters) &&
+    length(prepared$selected_parameters)
+  repeated <- length(subject_loglik) > 1L &&
+    length(unique(as.numeric(subject_loglik))) == 1L
+  usable <- length(subject_loglik) > 0L && !(study_only || repeated)
+  result$ctsemjulia_diagnostics$casewise_loglik <- list(
+    available = length(subject_loglik) > 0L,
+    usable_for_loo = usable,
+    scope = if (!length(subject_loglik)) {
+      "unavailable"
+    } else if (study_only) {
+      "study-marginal, not personwise"
+    } else "personwise",
+    repeated_constant = repeated,
+    reason = if (study_only) {
+      paste0(
+        "The model integrates study-level random effects. The native ",
+        "subject_loglik vector is not a valid personwise decomposition of ",
+        "the marginal likelihood and must not be used for LOO or WAIC."
+      )
+    } else if (repeated) {
+      paste0(
+        "All native subject_loglik entries are identical. Treat them as a ",
+        "backend reporting placeholder until independently verified; do not ",
+        "use them for LOO or WAIC."
+      )
+    } else NULL
+  )
+  if (!isTRUE(usable) && length(subject_loglik)) message(
+    "Note: ctsemjulia returned subject_loglik values that are not a valid ",
+    "personwise decomposition for this fit. Do not use them for LOO or WAIC; ",
+    "see fit$ctsemjulia_diagnostics$casewise_loglik."
+  )
+  result
+}
+
 .ctmaLaplaceStudyMembership <- function(setup, study_id = NULL,
     study_id_ti = NULL, study_dummy_ti = NULL, verbose = TRUE) {
   if (!is.null(study_id)) {
@@ -403,7 +487,9 @@
   result$argumentList$backend <- "ctsemjulia"
   result$argumentList$backendArgs <- backend_args
   result$argumentList$fit <- TRUE
-  result
+  .ctmaAnnotateCtsemJuliaResult(
+    result, prepared = prepared, use_laplace = use_laplace
+  )
 }
 
 .ctmaFitCtsemJuliaDirect <- function(setup, cores = 1L, ...) {

@@ -1,5 +1,19 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.18
+
+- Normalizes optimizer diagnostics returned by the current ctsem 3.12.0
+  `juliaFit` API under `$ctsemjulia_diagnostics`, while retaining the native
+  `$optim` and `$estimate` components unchanged. The normalized view records
+  convergence, gradient norm, iterations, and the number of converged inner
+  Laplace modes.
+- Marks native `subject_loglik` output as unsuitable for personwise LOO or
+  WAIC when study-level random effects are integrated, or when the backend
+  returns a constant placeholder vector. The original values remain available
+  for reproducibility.
+- Documents a reproducible native-Laplace reference-fit and inner-tolerance
+  sensitivity workflow.
+
 ## CoTiMA2 0.14.17
 
 - `ctmaFit(backend = "ctsemjulia")` now accepts pooled models containing
