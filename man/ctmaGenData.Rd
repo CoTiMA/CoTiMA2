@@ -81,6 +81,11 @@ ctmaGenData(
 
 \item{randomIntercepts}{list of (co-)variances matrices of TIpreds (traits). By default all are = 0.}
 
+\item{resultName}{optional character name assigned by the user to the value
+returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
+is inserted into the printed follow-up command. R functions cannot discover
+the left-hand side of an assignment automatically.}
+
 \item{T0means}{list of Time 0 mean levels. By default all are = 0.}
 
 \item{T0var}{list of Time 0 (co-)variance matrices. No default (all = NULL).}
@@ -92,8 +97,6 @@ ctmaGenData(
 \item{tpointTargets}{list of vectors of tpoints to be selectd (default = burnin:tpoints).}
 
 \item{useRawData}{if TRUE (or FALSE) and ctmaExtract is also TRUE, creates rawData (or empcov) objects required for CoTiMA into the environment specified using the argument envir.}
-
-\item{resultName}{optional character name assigned by the user to the returned value.}
 }
 \value{
 ctmaGenData returns a list containing ...

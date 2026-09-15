@@ -26,9 +26,12 @@ In most cases probably a model in which (only) two effects were specified with i
 
 \item{coresToUse}{If neg., the value is subtracted from available cores, else value = cores to use}
 
-\item{backend}{estimation backend, \code{"stan"} (default) or \code{"julia"}.}
+\item{backend}{estimation backend, \code{"stan"} (default) or
+\code{"julia"}.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{named list of controls for the selected backend. Calling
+\code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+specify the backend and workflow to inspect another supported list.}
 }
 \value{
 returns a model where two or more parameters were set equal across primary studies and a log-likelihood difference test

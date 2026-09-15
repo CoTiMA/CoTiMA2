@@ -64,7 +64,15 @@
 #'   Julia controls follow \code{\link{ctmaJuliaFit}}. For
 #'   \code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
 #'   \code{priors}, and \code{verbose}. Primary studies are currently processed
-#'   sequentially with either Julia backend.
+#'   sequentially with either Julia backend. Calling
+#'   \code{ctmaBackendDefaults()} without arguments displays Stan defaults;
+#'   use \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")} for this
+#'   workflow. It explicitly returns
+#'   \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
+#'   ML default and providing standard errors and intervals. Fast development
+#'   diagnostics can skip this post-fit work with
+#'   \code{backendArgs = list(optimcontrol = list(estonly = TRUE))}. Stan has
+#'   no separate \code{uncertainty} entry in its backend-default list.
 
 #'
 #' @importFrom RPushbullet pbPost

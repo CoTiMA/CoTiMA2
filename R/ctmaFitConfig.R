@@ -12,7 +12,8 @@
 #'   `fit`; configuration always uses `fit=FALSE`.
 #' @param backend Estimation backend, `"julia"` or `"stan"`.
 #' @param backendArgs Named backend controls. Explicit values are retained as
-#'   constraints and the recommended values are merged into this list.
+#'   constraints and the recommended values are merged into this list. Calling
+#'   [ctmaBackendDefaults()] without arguments returns Stan defaults only.
 #' @param time_limit Approximate pilot budget in seconds. An individual Julia
 #'   likelihood or gradient evaluation cannot be interrupted midway.
 #' @param candidate_subject_threads Optional positive integer candidates.

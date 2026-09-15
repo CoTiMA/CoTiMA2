@@ -47,6 +47,7 @@ test_that("ctsemjulia defaults expose the experimental native interface", {
   ))
   expect_true(defaults$remove_study_fixed_effects)
   expect_identical(defaults$sdscale_study, 1)
+  expect_identical(defaults$optimcontrol$uncertainty, "hessian")
   expect_error(
     ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit"),
     "supports ML"
@@ -56,6 +57,7 @@ test_that("ctsemjulia defaults expose the experimental native interface", {
     init_defaults,
     c("inits", "optimcontrol", "priors", "verbose")
   )
+  expect_identical(init_defaults$optimcontrol$uncertainty, "hessian")
 })
 
 test_that("ctsemjulia resolves separately from the CoTiMA2 Julia backend", {
@@ -73,6 +75,22 @@ test_that("ctsemjulia resolves separately from the CoTiMA2 Julia backend", {
     "Julia"
   )
   expect_identical(resolved$backend, "ctsemjulia")
+  expect_identical(
+    resolved$backend_args$optimcontrol$uncertainty, "hessian"
+  )
+
+  resolved_partial <- CoTiMA2:::.ctmaResolveFitBackend(
+    backend = "ctsemjulia",
+    backendArgs = list(optimcontrol = list(laplace_inner_maxiter = 500L)),
+    estimation = "ML",
+    workflow = "ctmaFit"
+  )
+  expect_identical(
+    resolved_partial$backend_args$optimcontrol$uncertainty, "hessian"
+  )
+  expect_identical(
+    resolved_partial$backend_args$optimcontrol$laplace_inner_maxiter, 500L
+  )
   expect_identical(resolved$backend_args$study_random_effects, "CINT")
   expect_null(resolved$stan_args)
   expect_error(
@@ -196,10 +214,10 @@ test_that("legacy Stan argument use is deprecated", {
   )
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.18")
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.19")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.18\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.19\\)."
   )
 
   major_functions <- c(

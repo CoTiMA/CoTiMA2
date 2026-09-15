@@ -69,9 +69,7 @@ ctmaFit(
 
 \item{allInvModel}{estimates a model with all parameters invariant (DRIFT, DIFFUSION, T0VAR) if set TRUE (defautl = FALSE)}
 
-\item{binaries}{Indicator vector identifying binary manifest variables.
-Their response location must be estimated through a freely estimated
-connected CINT (recommended) or MANIFESTMEANS parameter.}
+\item{binaries}{which manifest is a binary. Still experimental}
 
 \item{catsToCompare}{when performing contrasts for categorical moderators, the categories (values, not positions) for which effects are set equal}
 
@@ -83,7 +81,8 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{coresToUse}{if negative, the value is subtracted from available cores, else value = cores to use}
 
-\item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
+\item{CoTiMAStanctArgs}{legacy named list of Stan/ctsem controls. Retained
+for compatibility; use \code{backendArgs} in new code. Do not supply both.}
 
 \item{ctmaInitFit}{object to which all single ctsem fits of primary studies has been assigned to (i.e., what has been returned by \code{\link{ctmaInit}})}
 
@@ -163,37 +162,55 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit – for debugging}
 
-\item{WEC}{Deprecated compatibility argument. \code{WEC=TRUE} is translated
-to \code{studyCoding="weighted"} and
-\code{studyVarying=c("CINT", "DIFFUSION", "T0VAR")} and produces a warning.}
+\item{WEC}{(default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
 
 \item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
 
 \item{studyCoding}{Coding of the primary-study indicators. The default,
 \code{"dummy"}, uses one reference study. \code{"weighted"} uses
-sample-size weighted effect coding and defines the population coefficient as
-a weighted study average. This applies to both Stan and Julia.}
+sample-size weighted effect coding and defines the population coefficient
+as a weighted study average. This affects both Stan- and Julia-based fits.}
 
-\item{studyVarying}{Parameter-matrix families allowed to vary between primary
-studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}. Add
-\code{"DRIFT"} only when study-specific drift parameters are intended.}
+\item{studyVarying}{Parameter-matrix families allowed to vary between
+primary studies. The default is \code{c("CINT", "DIFFUSION", "T0VAR")}.
+Add \code{"DRIFT"} only when study-specific drift parameters are intended.}
 
-\item{backend}{Estimation backend. \code{"stan"} is the default;
-\code{"julia"} uses CoTiMA2's Julia implementation, whereas
-\code{"ctsemjulia"} uses ctsem's experimental native Julia implementation.
-Models without random effects use direct ML with
-\code{intoverpop = "auto"}; hierarchical random effects activate
-\code{intoverpop = "laplace"}. The native route currently supports
-maximum-likelihood estimation through \code{ctmaFit()} only and requires a
-compatible ctsem development version.}
+\item{backend}{estimation backend. \code{"stan"} remains the default;
+\code{"julia"} prepares the same ctsem model and data and then calls the
+validated CoTiMA2 Julia ML or Bayesian engine. Experimental
+\code{"ctsemjulia"} instead uses ctsem's native Julia backend. Models
+without random effects use direct ML with \code{intoverpop = "auto"};
+hierarchical random effects activate \code{intoverpop = "laplace"}.
+This backend currently supports ML estimation only and requires the
+development ctsem API detected by CoTiMA2 at run time.}
 
-\item{backendArgs}{Named list of controls for the selected backend. For
-\code{backend = "ctsemjulia"}, this includes study and subject identifiers,
-the parameter matrices receiving random effects, optional explicit
-\code{reDRIFT}, \code{reDIFFUSION}, and \code{reT0VAR} selections, priors,
-initial values, and optimizer controls. See
-\code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} for the complete
-list.}
+\item{backendArgs}{named backend-specific controls. With the default Stan
+backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
+completed from \code{ctmaBackendDefaults("stan")}. With the Julia
+backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
+"ctmaFit")}. For Julia, \code{optimize = TRUE} selects ML and
+\code{optimize = FALSE} selects Bayesian NUTS. A supplied \code{iter}
+becomes \code{maxiters} for ML and is split equally between warmup and
+retained draws for Bayesian estimation; explicit \code{chains} is passed
+to Bayesian estimation. Julia-specific controls in \code{backendArgs}
+remain the preferred way to configure the engine. For
+\code{backend = "ctsemjulia"}, select study-level random effects with
+\code{study_random_effects} (matrix names such as \code{"CINT"} or
+\code{"DRIFT"}) or exact raw \code{study_parameters}. Optional
+\code{subject_random_effects} and \code{subject_parameters} add
+subject-level effects; existing subject-level settings in the generated
+model are retained. Native ctsem optimizer controls are supplied as
+\code{backendArgs$optimcontrol}. Calling \code{ctmaBackendDefaults()}
+without arguments returns Stan defaults only. Use
+\code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} to inspect the
+native-backend interface. It explicitly returns
+\code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
+ML default and providing standard errors and intervals for ordinary ML
+fits. Fast development diagnostics can skip post-fit uncertainty with
+\code{backendArgs = list(optimcontrol = list(estonly = TRUE))}. By
+contrast, Stan does not use a
+separate \code{uncertainty} entry here: Bayesian uncertainty is based on
+posterior draws, and optimized fits use ctsem's Stan fitting machinery.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,

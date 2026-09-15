@@ -1,5 +1,15 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.19
+
+- Clarifies in every help page exposing backend controls that
+  `ctmaBackendDefaults()` without arguments returns the Stan list rather than
+  defaults for every backend.
+- Makes the effective `ctsemjulia` ML default visible as
+  `optimcontrol$uncertainty = "hessian"`, matching ctsem and providing standard
+  errors and intervals for ordinary fits. Development diagnostics can still
+  skip post-fit uncertainty explicitly with `estonly = TRUE`.
+
 ## CoTiMA2 0.14.18
 
 - Normalizes optimizer diagnostics returned by the current ctsem 3.12.0

@@ -10,6 +10,20 @@
 #' remain top-level CoTiMA arguments. \code{backendArgs} is intended only for
 #' controls of the selected estimation engine.
 #'
+#' Calling \code{ctmaBackendDefaults()} without arguments returns the
+#' \code{"stan"} defaults; it does not display defaults for every backend.
+#' Request another backend explicitly, for example
+#' \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")}. Stan has no
+#' separate \code{uncertainty} entry in this list: Bayesian uncertainty comes
+#' from posterior draws, while optimized Stan fits use ctsem's corresponding
+#' estimation machinery. CoTiMA2's own \code{"julia"} backend exposes
+#' \code{uncertainty} directly. For \code{"ctsemjulia"}, CoTiMA2 explicitly
+#' returns \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native
+#' Julia ML default. This makes the effective default visible and gives regular
+#' ML fits standard errors and intervals. Fast development diagnostics can
+#' deliberately skip post-fit uncertainty with
+#' \code{backendArgs = list(optimcontrol = list(estonly = TRUE))}.
+#'
 #' @param backend Estimation backend: \code{"stan"} (the default),
 #'   \code{"julia"} for CoTiMA2's Julia engine, or experimental
 #'   \code{"ctsemjulia"} for ctsem's native Julia engine. It uses direct ML
@@ -64,7 +78,7 @@ ctmaBackendDefaults <- function(
     )
     common <- list(
       inits = NULL,
-      optimcontrol = NULL,
+      optimcontrol = list(uncertainty = "hessian"),
       priors = NULL,
       verbose = NULL
     )

@@ -1514,6 +1514,9 @@ ctmaRePrep <- function(
 #'   \code{threads_per_chain}. Set \code{nuts_progress = TRUE} to report
 #'   aggregate progress across chains and \code{progress_every} to control
 #'   the number of NUTS iterations between worker updates (default 25).
+#'   Calling \code{ctmaBackendDefaults()} without arguments returns Stan
+#'   defaults; request \code{backend = "julia"}, Bayesian estimation, and the
+#'   \code{"ctmaReFit"} workflow to inspect this function's Julia defaults.
 #'
 #' @return A \code{"CoTiMAFit"} object with subtype
 #'   \code{"CoTiMAStudyREFit"}. Apply \code{summary()} for population,

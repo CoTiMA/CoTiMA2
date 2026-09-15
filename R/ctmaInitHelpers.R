@@ -426,14 +426,35 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
       "estimation only (use optimize = TRUE).",
       call. = FALSE
     )
-    native_args <- .ctmaMergeBackendArgs(
-      ctmaBackendDefaults(
-        backend = "ctsemjulia", estimation = estimation,
-        workflow = workflow
-      ),
-      backendArgs,
-      path = "backendArgs"
+    native_defaults <- ctmaBackendDefaults(
+      backend = "ctsemjulia", estimation = estimation,
+      workflow = workflow
     )
+    # ctsem's optimcontrol is an extensible native interface. Validate CoTiMA2's
+    # outer argument names strictly, but do not reject a newly added ctsem
+    # optimizer control merely because it is absent from this package's visible
+    # defaults. Merge the explicit Hessian default recursively so partial user
+    # controls retain it.
+    optim_overrides <- backendArgs$optimcontrol
+    outer_overrides <- backendArgs
+    outer_overrides$optimcontrol <- NULL
+    outer_defaults <- native_defaults
+    outer_defaults$optimcontrol <- NULL
+    native_args <- .ctmaMergeBackendArgs(
+      outer_defaults, outer_overrides, path = "backendArgs"
+    )
+    if (!is.null(optim_overrides) && (!is.list(optim_overrides) ||
+        (length(optim_overrides) && (is.null(names(optim_overrides)) ||
+          anyNA(names(optim_overrides)) || any(names(optim_overrides) == ""))))) {
+      stop("backendArgs$optimcontrol must be a fully named list.", call. = FALSE)
+    }
+    native_args$optimcontrol <- if (is.null(optim_overrides)) {
+      native_defaults$optimcontrol
+    } else {
+      utils::modifyList(
+        native_defaults$optimcontrol, optim_overrides, keep.null = TRUE
+      )
+    }
     return(list(
       backend = backend,
       estimation = estimation,

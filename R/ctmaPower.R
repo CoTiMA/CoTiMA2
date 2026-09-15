@@ -32,7 +32,9 @@
 #'   controls. Partial and nested lists are supported.
 #' @param backend estimation backend used for internal invariant models,
 #'   \code{"stan"} (default) or \code{"julia"}.
-#' @param backendArgs named list of controls for the selected backend.
+#' @param backendArgs named list of controls for the selected backend. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
 
 #'
 #' @importFrom RPushbullet pbPost

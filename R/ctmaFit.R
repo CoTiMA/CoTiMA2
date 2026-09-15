@@ -90,7 +90,17 @@
 #'   \code{subject_random_effects} and \code{subject_parameters} add
 #'   subject-level effects; existing subject-level settings in the generated
 #'   model are retained. Native ctsem optimizer controls are supplied as
-#'   \code{backendArgs$optimcontrol}.
+#'   \code{backendArgs$optimcontrol}. Calling \code{ctmaBackendDefaults()}
+#'   without arguments returns Stan defaults only. Use
+#'   \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} to inspect the
+#'   native-backend interface. It explicitly returns
+#'   \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
+#'   ML default and providing standard errors and intervals for ordinary ML
+#'   fits. Fast development diagnostics can skip post-fit uncertainty with
+#'   \code{backendArgs = list(optimcontrol = list(estonly = TRUE))}. By
+#'   contrast, Stan does not use a
+#'   separate \code{uncertainty} entry here: Bayesian uncertainty is based on
+#'   posterior draws, and optimized fits use ctsem's Stan fitting machinery.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores

@@ -13,7 +13,9 @@
 #' @param coresToUse If neg., the value is subtracted from available cores, else value = cores to use
 #' @param backend estimation backend, \code{"stan"} (default) or
 #'   \code{"julia"}.
-#' @param backendArgs named list of controls for the selected backend.
+#' @param backendArgs named list of controls for the selected backend. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
 #'
 #' @importFrom  RPushbullet pbPost
 #' @importFrom  parallel detectCores

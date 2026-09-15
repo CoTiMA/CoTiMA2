@@ -201,12 +201,12 @@ backend for maximum-likelihood estimation.}
 subject likelihoods and gradients. This must be set when Julia starts;
 consequently, use `initialize=TRUE` when changing it.}
 
-\item{subject_threads}{Maximum number of concurrent subject tasks used by this
-fit. Unlike \code{julia_threads}, this can be changed between fits in the same
-R session. \code{"auto"} uses the complete Julia thread pool. Numeric
+\item{subject_threads}{Maximum number of concurrent subject tasks used by
+this fit. Unlike `julia_threads`, this can be changed between fits in the
+same R session. `"auto"` uses the complete Julia thread pool. Numeric
 likelihoods use these tasks directly; gradients use them only after an
-automatic serial-versus-parallel AD consistency check passes. Hessians use the
-serial-safe path.}
+automatic serial-versus-parallel AD consistency check passes. Hessians use
+the serial-safe path.}
 
 \item{blas_threads}{Number of BLAS threads. One avoids competing with other
 jobs and is generally appropriate for the small ctsem matrices here.}

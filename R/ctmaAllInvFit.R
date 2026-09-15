@@ -26,7 +26,9 @@
 #' @param manifestMeans Default 0 (assuming standardized variables). Can be assigned labels to estimate them freely.
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctStanFit}} Function
 #' @param backend estimation backend, \code{"stan"} (default) or \code{"julia"}.
-#' @param backendArgs named list of controls for the selected backend.
+#' @param backendArgs named list of controls for the selected backend. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
 #' @param manifestVars define the error variances of the manifests with a single time point using R-type lower triangular matrix with nrow=n.manifest & ncol=n.manifest.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.

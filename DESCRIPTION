@@ -1,8 +1,8 @@
 Package: CoTiMA2
 Type: Package
 Title: Experimental Continuous Time Meta-Analysis 2.0 ('CoTiMA2')
-Version: 0.14.18
-Date: 2026-09-14
+Version: 0.14.19
+Date: 2026-09-15
 Authors@R: c(person("Christian", "Dormann", role = c("aut","cph")),
             person("Markus", "Homberg", email = "cotima@uni-mainz.de", role = c("aut", "com", "cre")),
             person("Olga", "Diener", role = c("ctb")),
@@ -60,5 +60,4 @@ Suggests:
 VignetteBuilder: knitr
 SystemRequirements: Julia (>= 1.10) for the optional Julia estimation backend
 Config/testthat/edition: 3
-Config/roxygen2/version: 8.0.0
-RoxygenNote: 7.3.3
+Config/roxygen2/version: 8.1.0

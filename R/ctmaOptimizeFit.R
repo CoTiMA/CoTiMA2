@@ -44,7 +44,9 @@
 #'   the default. Julia is currently available for the \code{ctmaFitFit}
 #'   branch and ML estimation only.
 #' @param backendArgs Named list of controls for the selected backend. Do not
-#'   supply this together with \code{CoTiMAStanctArgs}.
+#'   supply this together with \code{CoTiMAStanctArgs}. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
 #'
 #' @importFrom foreach %dopar%
 #' @importFrom RPushbullet pbPost

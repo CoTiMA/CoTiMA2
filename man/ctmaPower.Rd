@@ -89,12 +89,15 @@ ctmaPower(
 
 \item{scaleTime}{scale time (interval) - sometimes desirable to improve fitting}
 
-\item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting controls.}
+\item{CoTiMAStanctArgs}{optional named list overriding Stan/ctsem fitting
+controls. Partial and nested lists are supported.}
 
 \item{backend}{estimation backend used for internal invariant models,
 \code{"stan"} (default) or \code{"julia"}.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{named list of controls for the selected backend. Calling
+\code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+specify the backend and workflow to inspect another supported list.}
 }
 \value{
 ctmaPower returns a list containing some arguments supplied, a fitted model with all (!) parameters invariant across primary

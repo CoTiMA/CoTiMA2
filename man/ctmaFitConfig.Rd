@@ -26,7 +26,8 @@ ctmaFitConfig(
 configuration function always uses \code{fit=FALSE}.}
 \item{backend}{Estimation backend, \code{"julia"} or \code{"stan"}.}
 \item{backendArgs}{Named backend controls. Explicit values are retained as
-constraints and recommendations are merged into this list.}
+constraints and recommendations are merged into this list. Calling
+\code{ctmaBackendDefaults()} without arguments returns Stan defaults only.}
 \item{time_limit}{Approximate pilot budget in seconds. An individual backend
 evaluation cannot be interrupted midway.}
 \item{candidate_subject_threads}{Optional positive integer Julia concurrency
