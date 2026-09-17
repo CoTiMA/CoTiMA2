@@ -40,15 +40,15 @@ library(CoTiMA2)
 @
 
 \begin{abstract}
-CoTiMA ordinarily delegates continuous-time model estimation to ctsem and its
-compiled Stan implementation.  CoTiMA's optional Julia backend evaluates the
+CoTiMA2 ordinarily delegates continuous-time model estimation to ctsem and its
+compiled Stan implementation.  CoTiMA2's optional Julia backend evaluates the
 same ctsem model and data representation through Julia and offers maximum
 likelihood estimation and Bayesian NUTS sampling.  Its purpose is to provide a
 potentially faster route for models in which repeated subject-level likelihood
 and gradient calculations dominate computation, while retaining ctsem's model
 parameterization and transformations.  This document explains why the backend
-exists, how it fits into the usual CoTiMA workflow, how fitted and unfitted
-CoTiMA objects differ, and how to obtain estimates, uncertainty, transformed
+exists, how it fits into the usual CoTiMA2 workflow, how fitted and unfitted
+CoTiMA2 objects differ, and how to obtain estimates, uncertainty, transformed
 ctsem summaries, and study-specific results.  The Julia study-level
 random-effects route is introduced only briefly because it is documented in
 the separate CoTiMA-RE guide.
@@ -56,9 +56,9 @@ the separate CoTiMA-RE guide.
 
 \tableofcontents
 
-\section{Why add Julia to CoTiMA?}
+\section{Why add Julia to CoTiMA2?}
 
-CoTiMA combines participant-level longitudinal data from several primary
+CoTiMA2 combines participant-level longitudinal data from several primary
 studies and constructs continuous-time structural equation models through
 ctsem.  These models can be computationally demanding.  The same likelihood
 must be evaluated for many persons, observation intervals, and parameter
@@ -108,7 +108,7 @@ not be dismissed as an optimizer difference.
 
 The current development version uses two principal files:
 \begin{description}
-  \item[\code{ctmaJuliaFit.R}] The R-facing interface.  It recognizes CoTiMA or
+  \item[\code{ctmaJuliaFit.R}] The R-facing interface.  It recognizes CoTiMA2 or
     ctsem objects, creates a ctsem setup when necessary, starts Julia through
     JuliaCall, validates and controls estimation, and converts results into an
     R object with familiar \code{print()}, \code{summary()}, \code{coef()}, and
@@ -121,7 +121,7 @@ The current development version uses two principal files:
 \end{description}
 
 During package development, \code{julia\_file} identifies the local
-\code{CtsemJulia.jl}.  In an installed CoTiMA package, the file should reside
+\code{CtsemJulia.jl}.  In an installed CoTiMA2 package, the file resides
 under \code{inst/julia/CtsemJulia.jl}; \code{system.file()} can then find it and
 ordinary users should not need to supply \code{julia\_file}.
 
@@ -160,11 +160,40 @@ in a message, so user work cannot be deleted inadvertently.  Both functions
 accept an \code{envir} argument when a dedicated environment is preferable to
 the global environment.
 
-\section{The usual CoTiMA workflow}
+\section{The current CoTiMA2 workflow}
 
-The workflow still begins in CoTiMA.  Julia replaces only the estimation
-engine at the pooled-model stage; it does not replace data preparation or
-model specification.
+The workflow begins with CoTiMA2 data preparation and model specification.
+The estimation backend can now be selected independently when fitting the
+primary studies with \code{ctmaInit()} and when fitting the pooled model with
+\code{ctmaFit()}.  Thus Julia is no longer restricted to the pooled-model
+stage.  It changes the numerical estimation engine, not the substantive model
+or data-preparation steps.
+
+\subsection{Three backend names}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.16\linewidth}
+                  >{\raggedright\arraybackslash}p{0.27\linewidth}
+                  >{\raggedright\arraybackslash}p{0.48\linewidth}}
+\toprule
+Backend & Implementation & Current role\\
+\midrule
+\code{"stan"} & Regular ctsem/Stan backend & Default route for established
+  ctsem maximum-likelihood and Bayesian workflows.\\
+\code{"julia"} & CoTiMA2's own Julia backend & Available directly in
+  \code{ctmaInit()} and \code{ctmaFit()}; supports ML and Bayesian NUTS and
+  exposes the low-level \code{ctmaJuliaFit()} interface.\\
+\code{"ctsemjulia"} & Charles Driver's experimental native ctsem Julia
+  backend & Available in \code{ctmaInit()} and \code{ctmaFit()} for ML;
+  ordinary models use the direct route and Gaussian random-effects models use
+  Laplace integration.  It requires the compatible experimental ctsem branch.\\
+\bottomrule
+\end{longtable}
+
+The two Julia names are not interchangeable.  In a direct experimental
+\code{ctsem::ctFit()} call, Charles Driver's backend is named
+\code{backend="julia"}; from CoTiMA2 it is deliberately named
+\code{backend="ctsemjulia"} to distinguish it from CoTiMA2's own Julia
+implementation.
 
 \begin{center}
 \begin{tikzpicture}[
@@ -177,26 +206,26 @@ model specification.
   note/.style={font=\footnotesize,align=center,text width=34mm}
 ]
   \node[box] (data) {Primary-study longitudinal data};
-  \node[box,below=of data] (init) {\code{ctmaInit()}\\fit and inspect each study};
-  \node[choice,below=of init] (choice) {Pooled ctsem fit now?};
-  \node[box,below left=13mm and 21mm of choice] (true)
-    {\code{ctmaFit(..., fit=TRUE)}\\Stan/ctsem fit available};
-  \node[box,below right=13mm and 21mm of choice] (false)
-    {\code{ctmaFit(..., fit=FALSE)}\\model and data only};
-  \node[box,below=25mm of choice] (julia)
-    {\code{ctmaJuliaFit()}\\validate, ML, or Bayes};
-  \node[box,below=of julia] (post)
+  \node[choice,below=of data] (initchoice) {Primary-study backend?};
+  \node[box,below=of initchoice] (init)
+    {\code{ctmaInit()}\\Stan, Julia, or ctsem Julia};
+  \node[choice,below=of init] (fitchoice) {Pooled-model backend?};
+  \node[box,below=of fitchoice] (fit)
+    {\code{ctmaFit()}\\Stan, Julia, or ctsem Julia};
+  \node[box,below left=of fit] (low)
+    {optional low-level\\\code{ctmaJuliaFit()}};
+  \node[box,below=17mm of fit] (post)
     {\code{summary()}, \code{coef()}, \code{vcov()}\\or \code{ctAddJuliaSamples()}};
   \node[box,right=19mm of post] (re)
     {optional CoTiMA-RE\\\code{ctmaRePrep()} then \code{ctmaReFit()}};
 
-  \draw[arrow] (data) -- (init);
-  \draw[arrow] (init) -- (choice);
-  \draw[arrow] (choice) -- node[above left,font=\footnotesize]{yes} (true);
-  \draw[arrow] (choice) -- node[above right,font=\footnotesize]{no} (false);
-  \draw[arrow] (true) |- (julia);
-  \draw[arrow] (false) |- (julia);
-  \draw[arrow] (julia) -- (post);
+  \draw[arrow] (data) -- (initchoice);
+  \draw[arrow] (initchoice) -- (init);
+  \draw[arrow] (init) -- (fitchoice);
+  \draw[arrow] (fitchoice) -- (fit);
+  \draw[arrow] (fit) -- (post);
+  \draw[arrow] (fit) -- (low);
+  \draw[arrow] (low) -- (post);
   \draw[arrow] (post) -- (re);
 \end{tikzpicture}
 \end{center}
@@ -205,16 +234,56 @@ model specification.
 
 \code{ctmaInit()} fits the primary studies separately.  This step checks data
 quality and model plausibility and supplies information used to construct the
-pooled model.  The exact arguments depend on the substantive model; a typical
-skeleton is:
+pooled model.  CoTiMA2's Julia backend can perform these primary-study fits
+directly.  With \code{optimize=TRUE} (the default) it uses ML; with
+\code{optimize=FALSE} it uses Bayesian NUTS.  The exact arguments depend on the
+substantive model; a typical Julia ML call is:
 
 <<ctma-init, purl=FALSE>>=
 initFit <- ctmaInit(
   primaryStudies = primaryStudies,
   activeDirectory = activeDirectory,
-  coresToUse = 4
+  n.latent = 2,
+  backend = "julia",
+  coresToUse = -1,
+  doPar = 1
 )
 @
+
+Primary studies are currently processed sequentially with either Julia
+backend, so \code{doPar} must equal 1.  Within each study,
+\code{coresToUse} is translated into a Julia thread allocation unless
+\code{julia\_threads} or \code{subject\_threads} is supplied explicitly in
+\code{backendArgs}.  ML primary-study fits calculate Hessian uncertainty and
+ctsem-transformed results because \code{ctmaInit()} requires study-specific
+standard errors and summaries.  Its \code{finishsamples} argument supplies
+the default number of transformed draws; an explicit
+\code{backendArgs$transformed\_draws} takes precedence.
+
+For example, the controls can be made explicit as follows:
+
+<<ctma-init-julia-controls, purl=FALSE>>=
+initFit <- ctmaInit(
+  primaryStudies = primaryStudies,
+  activeDirectory = activeDirectory,
+  n.latent = 2,
+  backend = "julia",
+  coresToUse = -1,
+  doPar = 1,
+  backendArgs = list(
+    julia_threads = "auto",
+    subject_threads = "auto",
+    blas_threads = 1L,
+    uncertainty = TRUE,
+    transformed = TRUE
+  )
+)
+@
+
+The last two controls are shown for clarity; they are already true for an ML
+\code{ctmaInit()} fit.  Setting \code{optimize=FALSE} requests Bayesian
+estimation and activates the corresponding chain, warmup, and sampling
+controls returned by \code{ctmaBackendDefaults()}.
 
 Inspect warnings, convergence, study-specific drift estimates, and implausible
 standard errors before pooling.  A fast pooled backend cannot repair a poorly
@@ -222,24 +291,40 @@ identified primary-study model.
 
 \subsection[Step 2: construct the pooled model with ctmaFit()]{Step 2: construct the pooled model with \code{ctmaFit()}}
 
-The pooled CoTiMA model may be created in either fitted or unfitted form.
+The pooled CoTiMA2 model can be estimated directly with the selected backend.
+For most users, this high-level interface is preferable to calling
+\code{ctmaJuliaFit()} manually.
 
 <<ctma-fit-branches, purl=FALSE>>=
-# Option A: estimate through the ordinary ctsem/Stan route first
+# Option A: estimate directly with CoTiMA2's Julia backend
+pooledJuliaFit <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "julia",
+  coresToUse = -1
+)
+
+# Option B: estimate through the ordinary ctsem/Stan route
 pooledStanFit <- ctmaFit(
   ctmaInitFit = initFit,
   fit = TRUE,
   coresToUse = 4
 )
 
-# Option B: create only the pooled model and data for the Julia route
+# Option C: create only the pooled model and data for advanced low-level work
 pooledSetup <- ctmaFit(
   ctmaInitFit = initFit,
   fit = FALSE
 )
 @
 
-\subsubsection[Implications of fit = TRUE]{Implications of \code{fit = TRUE}}
+\subsubsection{Recommended high-level Julia route}
+
+\code{ctmaFit(backend="julia")} constructs the pooled setup, invokes
+\code{ctmaJuliaFit()} internally, and returns the completed Julia fit.  Model
+arguments remain top-level \code{ctmaFit()} arguments; numerical controls
+belong in \code{backendArgs}.  This is the ordinary user interface.
+
+\subsubsection[Advanced fitted and unfitted routes]{Advanced \code{fit=TRUE} and \code{fit=FALSE} routes}
 
 \begin{itemize}
   \item ctsem/Stan performs the pooled estimation before Julia is called.
@@ -254,7 +339,7 @@ pooledSetup <- ctmaFit(
 \subsubsection[Implications of fit = FALSE]{Implications of \code{fit = FALSE}}
 
 \begin{itemize}
-  \item CoTiMA returns the original data and ctsem base model without fitting
+  \item CoTiMA2 returns the original data and ctsem base model without fitting
     the pooled model.
   \item \code{ctmaJuliaFit()} internally asks ctsem to generate the required
     setup data and code; Stan optimization or sampling is not performed.
@@ -267,12 +352,14 @@ pooledSetup <- ctmaFit(
     should first be established on a smaller representative model.
   \item Transformed summaries need a ctsem setup.  They may be requested during
     fitting or added later with \code{ctAddJuliaSamples()} using the matching
-    fitted or \code{fit=FALSE} CoTiMA object.
+    fitted or \code{fit=FALSE} CoTiMA2 object.
 \end{itemize}
 
-Use \code{fit=FALSE} when avoiding the original pooled fit is the goal.  Use
-\code{fit=TRUE} during backend validation, when reliable starting values are
-important, or when the ordinary fit is already available.
+Use \code{fit=FALSE} when a reusable setup or explicit low-level
+\code{ctmaJuliaFit()} call is required.  Use a completed Stan fit during
+backend validation, when retained starting values are important, or when the
+ordinary fit is already available.  Otherwise prefer the direct
+\code{ctmaFit(backend="julia")} route.
 
 \section{Binary manifest variables}
 
@@ -374,7 +461,42 @@ ctsem measurement Jacobian and Bernoulli variance in the extended Kalman
 update.  Mixed continuous/binary models are supported; ordinal manifest types
 other than binary zero/one responses are not yet supported.
 
-\section[Fitting with ctmaJuliaFit()]{Fitting with \code{ctmaJuliaFit()}}
+\section{Selecting backend controls}
+
+Model-defining arguments remain ordinary \code{ctmaInit()} or
+\code{ctmaFit()} arguments.  Backend-specific numerical controls belong in a
+named \code{backendArgs} list.  Inspect the applicable defaults explicitly:
+
+<<backend-defaults, purl=FALSE>>=
+initJuliaDefaults <- ctmaBackendDefaults(
+  backend = "julia", estimation = "ML", workflow = "ctmaInit"
+)
+
+fitJuliaDefaults <- ctmaBackendDefaults(
+  backend = "julia", estimation = "ML", workflow = "ctmaFit"
+)
+
+fitCtsemJuliaDefaults <- ctmaBackendDefaults(
+  backend = "ctsemjulia", estimation = "ML", workflow = "ctmaFit"
+)
+@
+
+Calling \code{ctmaBackendDefaults()} without arguments returns only the Stan
+defaults; it does not combine defaults from all backends.  CoTiMA2's Julia ML
+defaults expose \code{uncertainty=TRUE}.  The native ctsem Julia defaults
+expose \code{optimcontrol$uncertainty="hessian"}.  Both therefore request
+uncertainty for regular ML fits, although the route and returned fit objects
+differ.  Expensive post-fit calculations can be omitted deliberately during
+development diagnostics, but reported inference should be based on a
+converged fit with usable curvature.
+
+\section[Advanced fitting with ctmaJuliaFit()]{Advanced fitting with \code{ctmaJuliaFit()}}
+
+Ordinary analyses should select \code{backend="julia"} in
+\code{ctmaInit()} or \code{ctmaFit()}.  The exported
+\code{ctmaJuliaFit()} function remains useful as a lower-level interface for
+same-vector likelihood validation, setup-only objects, custom Hessian
+recalculation, and advanced diagnostics.
 
 \subsection{Maximum likelihood}
 
@@ -384,7 +506,6 @@ brief reminders; the complete explanations follow.
 <<julia-ml, purl=FALSE>>=
 mlFit <- ctmaJuliaFit(
   object = pooledSetup,               # fitted object, fit=FALSE object, or RDS path
-  julia_file = "path/to/CtsemJulia.jl", # unnecessary after package integration
   initialize = TRUE,                  # start JuliaCall if necessary
   estimation = "ML",                 # maximum-likelihood estimation
   inits = NULL,                       # retained estimates, or zero for fit=FALSE
@@ -412,7 +533,6 @@ mlFit <- ctmaJuliaFit(
 <<julia-bayes, purl=FALSE>>=
 bayesFit <- ctmaJuliaFit(
   object = pooledSetup,
-  julia_file = "path/to/CtsemJulia.jl",
   estimation = "Bayes",
   inits = coef(mlFit, type = "raw"),  # a converged ML point is often useful
   chains = 2,
@@ -440,12 +560,13 @@ warmup than a diagonal metric, especially when there are many parameters.
 \subsection[Arguments to ctmaJuliaFit()]{Arguments to \code{ctmaJuliaFit()}}
 
 \begin{description}
-  \item[\code{object}] A fitted ctsem object, fitted CoTiMA object, unfitted
+  \item[\code{object}] A fitted ctsem object, fitted CoTiMA2 object, unfitted
     \code{ctmaFit(fit=FALSE)} object, or path to an RDS file containing one.
   \item[\code{study}] Selects an element when \code{studyFitList} contains
     several fits.  It is otherwise ignored.
-  \item[\code{julia\_file}] Path to \code{CtsemJulia.jl}.  The installed package
-    will locate this file automatically; it is explicit in development code.
+  \item[\code{julia\_file}] Optional development override for the path to
+    \code{CtsemJulia.jl}.  Installed-package users should leave it at
+    \code{NULL}; CoTiMA2 locates its packaged source automatically.
   \item[\code{initialize}] If \code{TRUE}, initialize JuliaCall when Julia is
     not active.  Julia cannot be restarted with a different thread count in
     the same R process.
@@ -702,7 +823,7 @@ later as described above:
 <<add-samples, purl=FALSE>>=
 mlFit <- ctAddJuliaSamples(
   fit = mlFit,                # completed Julia ML or Bayesian fit
-  setup = pooledSetup,        # matching fitted or fit=FALSE CoTiMA object
+  setup = pooledSetup,        # matching fitted or fit=FALSE CoTiMA2 object
   nsamples = 1000,
   cores = 2,
   seed = 123,
@@ -716,7 +837,7 @@ studyEstimates <- coef(mlFit, type = "study")
 Its arguments are:
 \begin{description}
   \item[\code{fit}] Completed \code{ctmaJuliaFit} object.
-  \item[\code{setup}] Matching fitted or unfitted CoTiMA/ctsem setup.  It must
+  \item[\code{setup}] Matching fitted or unfitted CoTiMA2/ctsem setup.  It must
     describe exactly the same raw parameterization.
   \item[\code{nsamples}] Number of transformed draws.  ML draws come from the
     Hessian-normal approximation.  Bayesian input uses at most this many actual
@@ -785,7 +906,6 @@ reJulia <- ctmaReFit(
   chains = 2,
   init_jitter = 0.01,
   backendArgs = list(
-    julia_file = "path/to/CtsemJulia.jl",
     julia_threads = 6,
     blas_threads = 1,
     warmup = 500,
@@ -941,7 +1061,7 @@ provide \code{study\_id}, \code{study\_id\_ti}, or
 \code{study\_dummy\_ti} explicitly.
 
 The generated ctsem model retains any subject-level random effects already
-requested by the CoTiMA specification.  The
+requested by the CoTiMA2 specification.  The
 \code{subject\_random\_effects} and \code{subject\_parameters} controls add
 to them; they do not silently remove existing effects.  Conversely, a model
 may contain study-level random effects without any subject-level random
@@ -988,7 +1108,7 @@ rather than as automatic evidence that all marginal SD estimates are invalid.
 \section{Moderator-associated reduction in random-effect heterogeneity}
 
 Study-level moderators may account for part of the between-study variation in
-a selected DRIFT, DIFFUSION, or T0VAR parameter.  CoTiMA compares this
+a selected DRIFT, DIFFUSION, or T0VAR parameter.  CoTiMA2 compares this
 variation with \code{ctmaReRedHet()}.  Fit one otherwise comparable model
 without the focal moderators and one with them:
 
@@ -1321,7 +1441,7 @@ The most portable installation strategy uses \emph{Juliaup}, Julia's official
 version manager, on Windows, macOS, and Linux.  Installation commands differ
 slightly by operating system, so users should follow the current instructions
 at \url{https://julialang.org/install/}.  Julia itself is not included in the
-CoTiMA R package.  After installing or updating Julia, fully restart RStudio so
+CoTiMA2 R package.  After installing or updating Julia, fully restart RStudio so
 that it can inherit the changed executable search path.
 
 For most users, the recommended one-time R command is simply:
@@ -1381,7 +1501,7 @@ juliaSystem2("--version")
 @
 
 JuliaCall's setup code needs the Julia packages \code{Suppressor} and
-\code{RCall} in Julia's default environment, before CoTiMA activates its own
+\code{RCall} in Julia's default environment, before CoTiMA2 activates its own
 project.  The following one-time bootstrap keeps precompilation to one worker,
 which is safer on high-core-count machines and in memory-limited sessions.
 
@@ -1401,7 +1521,7 @@ juliaSystem2(
 )
 @
 
-Next instantiate the Julia project installed with CoTiMA.  Instantiation and
+Next instantiate the Julia project installed with CoTiMA2.  Instantiation and
 precompilation are deliberately separated: this produces clearer errors and
 avoids excessive parallel precompilation.
 
@@ -1442,7 +1562,7 @@ the embedded Julia runtime cannot be repaired or replaced reliably inside
 that R process.
 If \code{Suppressor} and \code{RCall} were already installed successfully,
 \code{ctmaJuliaSetup(bootstrap\_juliacall=FALSE)} skips the default-environment
-bootstrap and proceeds directly to the isolated CoTiMA project.  This is also
+bootstrap and proceeds directly to the isolated CoTiMA2 project.  This is also
 the appropriate recovery when an unrelated package such as Conda fails while
 the default Julia environment is being processed.
 
@@ -1467,7 +1587,7 @@ For a new class of model:
 
 \begin{description}
   \item[\code{Cannot find CtsemJulia.jl}] Supply the development path through
-    \code{julia\_file}.  Installed-package users should verify that CoTiMA was
+    \code{julia\_file}.  Installed-package users should verify that CoTiMA2 was
     installed with its \code{inst/julia} directory.
   \item[Julia thread mismatch] Restart R and make the first Julia call with the
     intended \code{julia\_threads}.  Closing only an object does not unload the
@@ -1497,58 +1617,51 @@ For a new class of model:
 \section{A compact end-to-end template}
 
 <<complete-template, purl=FALSE>>=
-# 1. Primary-study fits
+# 1. Fit and inspect every primary study with CoTiMA2's Julia backend
 initFit <- ctmaInit(
   primaryStudies = primaryStudies,
   activeDirectory = activeDirectory,
-  coresToUse = 4
+  n.latent = 2,
+  backend = "julia",
+  coresToUse = -1,
+  doPar = 1
 )
 
-# 2. Pooled model and data, without a pooled Stan fit
-pooledSetup <- ctmaFit(
+# 2. Optionally determine a suitable pooled-fit resource configuration
+fitConfig <- ctmaFitConfig(
   ctmaInitFit = initFit,
-  fit = FALSE
+  backend = "julia",
+  time_limit = 600
 )
 
-# 3. Julia maximum likelihood
-mlFit <- ctmaJuliaFit(
-  pooledSetup,
-  julia_file = "path/to/CtsemJulia.jl",
-  estimation = "ML",
-  carefulFit = TRUE,
-  maxiters = 5000,
-  gradient_tolerance = 0.005,
-  uncertainty = TRUE,
-  transformed = FALSE,
-  julia_threads = 6,
-  blas_threads = 1
+# 3. Fit the pooled model directly with CoTiMA2's Julia backend
+mlFit <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "julia",
+  backendArgs = fitConfig$recommended
 )
 
-# 4. Add ctsem-transformed draws without re-estimating
-mlFit <- ctAddJuliaSamples(
-  fit = mlFit,
-  setup = pooledSetup,
-  nsamples = 1000,
-  cores = 2,
-  seed = 123,
-  digits = 4
-)
-
-# 5. Inspect
+# 4. Inspect convergence, estimates, and uncertainty
 print(mlFit)
 summary(mlFit, digits = 4, study_specific = TRUE)
 coef(mlFit, type = "study")
 vcov(mlFit)
 @
 
+For a quick analysis without the configuration pilot, omit step 2 and use
+\code{ctmaFit(ctmaInitFit=initFit, backend="julia")} directly.  The
+low-level \code{ctmaJuliaFit()} and \code{ctAddJuliaSamples()} workflow
+described earlier remains available when optimization and post-processing
+must be separated deliberately.
+
 \section{Current scope and future package integration}
 
 The Julia source and its pinned environment are installed as CoTiMA2 package
-resources.  The backend can be selected through \code{backend="julia"} in the
-supported CoTiMA workflow, while \code{ctmaJuliaFit()} remains available as the
+resources.  The backend can be selected through \code{backend="julia"} in
+\code{ctmaInit()} and \code{ctmaFit()}, while \code{ctmaJuliaFit()} remains available as the
 explicit low-level entry point.  Backend-specific controls belong in the named
 \code{backendArgs} list; this keeps Julia settings separate from the common
-CoTiMA model specification.
+CoTiMA2 model specification.
 
 The package checks the translated ctsem model before estimation and reports
 branches that CtsemJulia does not yet support.  Current work should therefore

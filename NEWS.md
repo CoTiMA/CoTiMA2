@@ -1,5 +1,19 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.20
+
+- Revises the Julia usage guide around the current high-level workflow:
+  CoTiMA2's `backend = "julia"` can now fit both primary-study models in
+  `ctmaInit()` and the pooled model in `ctmaFit()`.
+- Adds a comparison of the `"stan"`, `"julia"`, and `"ctsemjulia"`
+  backends, documents `ctmaInit()` thread allocation and uncertainty behavior,
+  and adds workflow-specific `ctmaBackendDefaults()` examples.
+- Retains `ctmaJuliaFit()` as the documented low-level validation and
+  diagnostic interface, while removing obsolete `julia_file` placeholders
+  from ordinary installed-package examples.
+- Updates the workflow diagram and end-to-end template to use direct backend
+  selection and `ctmaFitConfig()`.
+
 ## CoTiMA2 0.14.19
 
 - Clarifies in every help page exposing backend controls that
