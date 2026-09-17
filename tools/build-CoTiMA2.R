@@ -65,6 +65,16 @@ if (length(vignette_sources)) {
   }
   doc_dir <- file.path(package_dir, "inst", "doc")
   dir.create(doc_dir, recursive = TRUE, showWarnings = FALSE)
+  expected_user_guide_pdf <- sub("\\.[Rr]nw$", ".pdf", expected_user_guide)
+  stale_user_guide_pdfs <- list.files(
+    doc_dir,
+    pattern = "^(CoTiMA2?|CoTiMA)_User_Guide_.*\\.pdf$",
+    full.names = TRUE
+  )
+  stale_user_guide_pdfs <- stale_user_guide_pdfs[
+    basename(stale_user_guide_pdfs) != expected_user_guide_pdf
+  ]
+  if (length(stale_user_guide_pdfs)) unlink(stale_user_guide_pdfs)
   build_dir <- tempfile("cotima2-vignettes-")
   dir.create(build_dir)
   on.exit(unlink(build_dir, recursive = TRUE, force = TRUE), add = TRUE)

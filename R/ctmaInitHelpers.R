@@ -1,5 +1,41 @@
 # Internal helpers used by ctmaInit().
 
+.ctmaInitStudyWarningLabel <- function(index, total, study = NULL) {
+  clean_text <- function(x) {
+    if (is.null(x) || length(x) == 0L || all(is.na(x))) return(NULL)
+    x <- trimws(paste(x, collapse = ", "))
+    if (!nzchar(x) || identical(x, "Reference not provided")) return(NULL)
+    x
+  }
+
+  details <- character()
+  study_number <- clean_text(study$originalStudyNo)
+  study_source <- clean_text(study$source)
+  if (!is.null(study_number)) details <- c(details, paste0("Study: ", study_number))
+  if (!is.null(study_source)) details <- c(details, paste0("Source: ", study_source))
+
+  label <- paste0("ctmaInit primary study ", index, " of ", total)
+  if (length(details)) label <- paste(label, paste(details, collapse = "; "), sep = "; ")
+  paste0("[", label, "] ")
+}
+
+.ctmaWithInitStudyWarnings <- function(expr, index, total, study = NULL) {
+  captured <- list()
+  value <- withCallingHandlers(
+    force(expr),
+    warning = function(w) {
+      captured[[length(captured) + 1L]] <<- w
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  prefix <- .ctmaInitStudyWarningLabel(index, total, study)
+  for (w in captured) {
+    warning(paste0(prefix, conditionMessage(w)), call. = FALSE)
+  }
+  value
+}
+
 .ctmaInitJuliaIndividualVariation <- function(
     indVarying, randomIntercepts, backend, backendArgs,
     resolved_backend_args, announce = TRUE) {

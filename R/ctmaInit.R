@@ -1241,7 +1241,7 @@ ctmaInit <- function(
             hessianWarning[[i]] <- FALSE
 
             if (identical(backend, "julia")) {
-              results <- .ctmaInitJuliaStudyFit(
+              results <- .ctmaWithInitStudyWarnings(.ctmaInitJuliaStudyFit(
                 datalong = emprawLong[[i]],
                 model = currentModel,
                 same_initial_times = sameInitialTimes,
@@ -1250,10 +1250,10 @@ ctmaInit <- function(
                 estimation = requested_estimation,
                 start_values = inits,
                 digits = digits
-              )
+              ), i, n.studies, studyList[[i]])
               results_summary <- results$resultsSummary
             } else if (identical(backend, "ctsemjulia")) {
-              results <- .ctmaInitCtsemJuliaStudyFit(
+              results <- .ctmaWithInitStudyWarnings(.ctmaInitCtsemJuliaStudyFit(
                 datalong = emprawLong[[i]],
                 model = currentModel,
                 same_initial_times = sameInitialTimes,
@@ -1264,11 +1264,11 @@ ctmaInit <- function(
                 cores = coresToUse,
                 verbose = verbose,
                 digits = digits
-              )
+              ), i, n.studies, studyList[[i]])
               results_summary <- results$resultsSummary
             } else {
             #results <- suppressMessages(ctsem::ctStanFit(
-            results <- ctsem::ctFit(
+            results <- .ctmaWithInitStudyWarnings(ctsem::ctFit(
               datalong = emprawLong[[i]],
               model = currentModel,
               fit=fit,
@@ -1297,7 +1297,7 @@ ctmaInit <- function(
               vb = CoTiMAStanctArgs$vb,
               #warmup=CoTiMAStanctArgs$warmup,
               verbose=verbose,
-              cores=coresToUse)
+              cores=coresToUse), i, n.studies, studyList[[i]])
 
             #hessianWarning[[i]] <- list(warn_hessinv = results$warn_hessinv,
             #                            warnings = results$warnings,
@@ -1306,7 +1306,10 @@ ctmaInit <- function(
             #if (is.na(results$error)) { # CHD 20.7.2026
             #if (is.null(results$error)) {
               #results <- results$fit # to match former fitting results w/o error handling # CHD 20.7.2026
-              results_summary <- summary(results, digits=2*digits, parmatrices=TRUE, residualcov=FALSE)
+              results_summary <- .ctmaWithInitStudyWarnings(
+                summary(results, digits=2*digits, parmatrices=TRUE, residualcov=FALSE),
+                i, n.studies, studyList[[i]]
+              )
             }
             #if (!is.null(results$error)) { # CHD 20.7.2026
               #fit <- FALSE
@@ -1405,7 +1408,9 @@ ctmaInit <- function(
           # Replacing it with summary(fit) here would drop `parmatrices` for
           # this backend.
           if (!identical(backend, "ctsemjulia")) {
-            studyFit[[i]]$resultsSummary <- summary(studyFit[[i]])
+            studyFit[[i]]$resultsSummary <- .ctmaWithInitStudyWarnings(
+              summary(studyFit[[i]]), i, n.studies, studyList[[i]]
+            )
           }
 
           df <- "deprecated"

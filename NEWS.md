@@ -1,5 +1,12 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.21
+
+- Prefixes warnings generated while fitting or summarizing primary-study
+  models in `ctmaInit()` with the study's position and, when available, its
+  study number and source. Deferred warnings therefore remain attributable to
+  the correct primary study.
+
 ## CoTiMA2 0.14.20
 
 - Revises the Julia usage guide around the current high-level workflow:

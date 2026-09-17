@@ -888,3 +888,37 @@ test_that("ctmaInit maps finishsamples to Julia transformed draws", {
     "integer of at least 2"
   )
 })
+
+test_that("ctmaInit warnings identify their primary study", {
+  messages <- character()
+  value <- withCallingHandlers(
+    CoTiMA2:::.ctmaWithInitStudyWarnings(
+      {
+        warning("Hessian repaired", call. = FALSE)
+        warning("wide uncertainty intervals", call. = FALSE)
+        42L
+      },
+      index = 2L,
+      total = 3L,
+      study = list(originalStudyNo = "B7", source = "Smith et al. (2024)")
+    ),
+    warning = function(w) {
+      messages <<- c(messages, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_identical(value, 42L)
+  expect_length(messages, 2L)
+  expect_match(
+    messages[[1L]],
+    "^\\[ctmaInit primary study 2 of 3; Study: B7; Source: Smith et al\\. \\(2024\\)\\] Hessian repaired$"
+  )
+  expect_match(messages[[2L]], "wide uncertainty intervals$")
+
+  no_reference <- CoTiMA2:::.ctmaInitStudyWarningLabel(
+    1L, 3L,
+    list(originalStudyNo = 1L, source = "Reference not provided")
+  )
+  expect_identical(no_reference, "[ctmaInit primary study 1 of 3; Study: 1] ")
+})
