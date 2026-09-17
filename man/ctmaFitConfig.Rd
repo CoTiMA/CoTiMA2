@@ -6,7 +6,7 @@
 ctmaFitConfig(
   ctmaInitFit = NULL,
   ...,
-  backend = c("julia", "stan"),
+  backend = c("julia", "stan", "ctsemjulia"),
   backendArgs = list(),
   time_limit = 600,
   candidate_subject_threads = NULL,
@@ -24,7 +24,10 @@ ctmaFitConfig(
 \item{ctmaInitFit}{Object accepted by \code{ctmaFit(ctmaInitFit=...)}.}
 \item{...}{Model-building arguments accepted by \code{ctmaFit()}. The
 configuration function always uses \code{fit=FALSE}.}
-\item{backend}{Estimation backend, \code{"julia"} or \code{"stan"}.}
+\item{backend}{Estimation backend: \code{"julia"}, \code{"stan"}, or
+experimental \code{"ctsemjulia"}. The latter requires Charles Driver's
+compatible ctsem \code{juliaFit} development version and currently supports
+ML only.}
 \item{backendArgs}{Named backend controls. Explicit values are retained as
 constraints and recommendations are merged into this list. Calling
 \code{ctmaBackendDefaults()} without arguments returns Stan defaults only.}
@@ -60,10 +63,9 @@ subject concurrency and ForwardDiff chunk size at a common raw starting
 vector. Unsafe parallel components are excluded from thread comparisons.
 Short optimizer pilots compare \code{carefulFit=FALSE} and
 \code{carefulFit=TRUE} using both objective improvement per elapsed second and
-raw-gradient reduction. For Stan,
-supplied controls are validated and retained and setup cost is reported;
-pooled ctsem/Stan optimization does not expose the equivalent subject/chunk
-tuning grid.
+raw-gradient reduction. For Stan and ctsem's native Julia backend
+(\code{"ctsemjulia"}), supplied controls are validated and retained and setup
+cost is reported; neither path exposes CoTiMA2's subject/chunk tuning grid.
 }
 \examples{
 \dontrun{
@@ -73,5 +75,12 @@ config <- ctmaFitConfig(
   time_limit = 600
 )
 config$recommended
+
+native_config <- ctmaFitConfig(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  backendArgs = list(optimcontrol = list(uncertainty = "hessian"))
+)
+native_config$recommended
 }
 }

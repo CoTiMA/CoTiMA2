@@ -1,5 +1,13 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.22
+
+- Adds `backend = "ctsemjulia"` support to `ctmaFitConfig()`. The function
+  validates the matching unfitted model and native ctsem Julia/Laplace
+  controls, retains them in `$recommended`, and reports setup time. It does
+  not run CoTiMA2-specific subject-thread or ForwardDiff-chunk benchmarks,
+  which are unavailable through the native ctsem interface.
+
 ## CoTiMA2 0.14.21
 
 - Prefixes warnings generated while fitting or summarizing primary-study

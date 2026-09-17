@@ -55,6 +55,10 @@ test_that("ctsemjulia requests are checked centrally for every workflow", {
     "ctsemjulia", "ctmaInit", supported = TRUE
   ))
   expect_identical(calls, 2L)
+  expect_silent(.ctmaCheckCtsemJuliaRequest(
+    "ctsemjulia", "ctmaFitConfig", supported = TRUE
+  ))
+  expect_identical(calls, 3L)
 })
 
 test_that("all backend entry points intercept unsupported ctsemjulia requests", {
@@ -67,8 +71,7 @@ test_that("all backend entry points intercept unsupported ctsemjulia requests", 
     ctmaEqual = ctmaEqual,
     ctmaPower = ctmaPower,
     ctmaOptimizeFit = ctmaOptimizeFit,
-    ctmaReFit = ctmaReFit,
-    ctmaFitConfig = ctmaFitConfig
+    ctmaReFit = ctmaReFit
   )
   for (name in names(entry_points)) {
     expect_error(

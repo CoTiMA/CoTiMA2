@@ -1435,6 +1435,43 @@ validates and returns the Stan controls and reports setup cost; pooled
 ctsem/Stan fitting does not expose Julia's subject-task or ForwardDiff chunk
 controls.
 
+The experimental native ctsem backend can be checked in the same way:
+
+<<ctsemjulia-fit-config, purl=FALSE>>=
+nativeConfig <- ctmaFitConfig(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  scaleTime = 1/12,
+  cint = "auto",
+  binaries = c(1, 0),
+  backendArgs = list(
+    optimcontrol = list(uncertainty = "hessian")
+  )
+)
+
+nativeBackendArgs <- nativeConfig$recommended
+
+nativeFit <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  scaleTime = 1/12,
+  cint = "auto",
+  binaries = c(1, 0),
+  coresToUse = 4,
+  backendArgs = nativeBackendArgs
+)
+@
+
+For \code{backend="ctsemjulia"}, \code{ctmaFitConfig()} validates the
+unfitted setup and native backend controls and returns the resolved controls
+in \code{recommended}. It deliberately does not report
+\code{subject\_threads} or \code{chunksize} benchmarks: those controls and
+the reusable microbenchmark interface belong to CoTiMA2's own
+\code{backend="julia"}. Use the top-level \code{coresToUse} argument in the
+subsequent \code{ctmaFit()} call to control worker capacity. The compatible
+experimental ctsem \code{juliaFit} branch and \code{JuliaConnectoR} must be
+active before running this configuration check.
+
 \section{Portable Julia installation and first-time setup}
 
 The most portable installation strategy uses \emph{Juliaup}, Julia's official
