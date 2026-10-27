@@ -183,9 +183,10 @@ Backend & Implementation & Current role\\
   \code{ctmaInit()} and \code{ctmaFit()}; supports ML and Bayesian NUTS and
   exposes the low-level \code{ctmaJuliaFit()} interface.\\
 \code{"ctsemjulia"} & Charles Driver's experimental native ctsem Julia
-  backend & Available in \code{ctmaInit()} and \code{ctmaFit()} for ML;
-  ordinary models use the direct route and Gaussian random-effects models use
-  Laplace integration.  It requires the compatible experimental ctsem branch.\\
+  backend & Available in \code{ctmaInit()} and \code{ctmaFit()} for ML and
+  Bayesian NUTS or SAEM; ordinary models use the direct route, while
+  random-effects models use Laplace integration or joint SAEM. It requires a
+  compatible experimental ctsem version.\\
 \bottomrule
 \end{longtable}
 
@@ -315,6 +316,12 @@ pooledSetup <- ctmaFit(
   ctmaInitFit = initFit,
   fit = FALSE
 )
+
+# Inspect or save the executable model specification
+cat(pooledSetup$ctModelText)
+
+# Reconstruct the generated ctsem model as an object named ctModel
+eval(parse(text = pooledSetup$ctModelText))
 @
 
 \subsubsection{Recommended high-level Julia route}
@@ -340,7 +347,13 @@ belong in \code{backendArgs}.  This is the ordinary user interface.
 
 \begin{itemize}
   \item CoTiMA2 returns the original data and ctsem base model without fitting
-    the pooled model.
+    the pooled model. It additionally returns \code{ctModelText}, an executable
+    textual representation of the final model specification.
+  \item The generated model can be inspected with
+    \code{cat(result\$ctModelText)} and reconstructed with
+    \code{eval(parse(text = result\$ctModelText))}. The reconstructed object is
+    named \code{ctModel}; it includes CoTiMA2's final parameter table and
+    post-construction constraints.
   \item \code{ctmaJuliaFit()} internally asks ctsem to generate the required
     setup data and code; Stan optimization or sampling is not performed.
   \item With no supplied \code{inits}, the initial raw vector is zero.  Zero is
@@ -936,11 +949,12 @@ CoTiMA2 also provides an experimental, feature-gated route to ctsem's native
 multilevel Julia implementation.  It is selected with
 \code{backend="ctsemjulia"}.  This is distinct from both CoTiMA2's own
 \code{backend="julia"} and the \code{ctmaRePrep()}--\code{ctmaReFit()}
-workflow described above.  Without random effects, it performs ordinary
-native ctsem Julia ML and lets \code{intoverpop="auto"} resolve to the direct
-path.  When subject- or study-level Gaussian random effects are present, it
-uses Laplace approximation.  The backend currently supports
-maximum-likelihood estimation only.
+workflow described above. Without random effects, it performs ordinary native
+ctsem Julia estimation and lets \code{intoverpop="auto"} resolve to the direct
+path. With \code{optimize=TRUE}, subject- or study-level Gaussian random
+effects use Laplace ML. With \code{optimize=FALSE}, the native ctsem sampler
+can use native automatic sampling, or an explicit NUTS, SAEM, learned-map
+NUTS, or tempered SMC kernel. The integration target is chosen separately.
 
 Every CoTiMA2 function that exposes a \code{backend} argument checks an
 explicit \code{backend="ctsemjulia"} request before doing substantive work.
@@ -1050,6 +1064,151 @@ summary(nativeLaplace)
 ctsem::ctLaplaceCheck(nativeLaplace)
 nativeLaplace$ctsemjulia_mode  # "laplace"
 @
+
+Bayesian estimation is requested with \code{optimize=FALSE} and proper priors.
+The nested \code{backendArgs\$sampleControl} list follows ctsem's native API.
+\code{sampler="nuts"}, \code{"saem"}, \code{"map"}, and \code{"smc"} are supported. Common
+controls are \code{chains}, \code{warmup}, \code{draws}, \code{maxDraws},
+\code{processes}, and \code{seed}. NUTS also reads, among others,
+\code{target\_accept}, \code{maxdepth}, \code{minESS}, and
+\code{rhatTarget}. Since CoTiMA2 0.14.33, sampler, placement, chain counts,
+warmup, draw budgets and process allocation default to NULL and are delegated
+to ctsem. Set \code{backendArgs\$intoverpop="none"} for joint sampling or
+\code{"laplace"}/\code{"augmented"} for a marginal; \code{"auto"} delegates
+the target to ctsem. NUTS supports joint or marginal sampling, SAEM and map
+require a joint random-effects target, and SMC requires a marginal target.
+The returned mode is \code{"joint"}, \code{"laplace"}, \code{"augmented"},
+or \code{"direct"}, according to the resolved route. The map sampler is NUTS
+through a learned transformation, not maximum-a-posteriori optimization.
+
+<<ctsem-native-bayes-saem, purl=FALSE>>=
+nativeBayesSAEM <- ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  optimize = FALSE,
+  priors = TRUE,
+  indVarying = "CINT",
+  coresToUse = 8,
+  backendArgs = list(
+    intoverpop = "none",
+    sampleControl = list(
+      sampler = "saem",
+      chains = 4L,
+      warmup = 1000L,
+      draws = 1000L,
+      maxDraws = 8000L,
+      processes = TRUE,
+      seed = 20261016L
+    )
+  )
+)
+
+nativeBayesSAEM$ctsemjulia_mode  # "joint"
+@
+
+For a Laplace-marginal NUTS fit, specify that target explicitly. This is a
+different target from joint SAEM when the random-effect integral is not Gaussian:
+
+<<ctsem-native-bayes-nuts, purl=FALSE>>=
+nutsArgs <- list(
+  intoverpop = "laplace",
+  sampleControl = list(
+    sampler = "nuts",
+    chains = 4L,
+    warmup = 1000L,
+    draws = 1000L,
+    maxDraws = 8000L,
+    processes = TRUE,
+    seed = 20261016L,
+    target_accept = 0.9,
+    maxdepth = 10L,
+    minESS = 200,
+    rhatTarget = 1.01
+  )
+)
+@
+
+\paragraph{Interpreting the native sampling controls.}
+Automatic selection requires no \code{sampleControl} list. The learned-map
+and SMC routes need a recent compatible ctsem revision (the adapter was
+checked against source revision \code{57a9758d}, 27 October 2026); the
+version number 4.0.0 alone does not identify these features.
+
+<<ctsem-native-map-smc, purl=FALSE>>=
+# Joint posterior with random effects already specified in the model:
+mapArgs <- list(
+  intoverpop = "none",
+  sampleControl = list(sampler = "map", seed = 20261027L)
+)
+
+# Marginal posterior; SMC uses particles, not NUTS chain/warmup controls:
+smcArgs <- list(
+  intoverpop = "laplace",
+  sampleControl = list(
+    sampler = "smc", particles = 200L, coreset = TRUE,
+    seed = 20261027L
+  )
+)
+@
+
+\code{warmup} is the number of discarded adaptation iterations per chain;
+\code{draws} is the requested retained count per chain, not the total across
+chains. The native sampler may extend a run to meet its effective-sample-size
+and convergence targets; \code{maxDraws} limits that extension. Thus a request
+for 1,000 draws with \code{maxDraws=8000} can take substantially longer than
+a fixed 1,000-draw run. \code{minESS} and \code{rhatTarget} govern the native
+stopping diagnostics; inspect the reported diagnostics even when the run
+finishes normally. For NUTS, \code{target\_accept} controls adaptation and
+\code{maxdepth} caps tree depth. These native names differ from the bundled
+CoTiMA2 Julia backend's \code{max\_depth} and \code{samples} arguments.
+
+\code{processes=TRUE} allows chains to run in separate R worker processes.
+\code{coresToUse} is the total concurrent CPU budget passed to native ctsem;
+it is shared by chains and their Julia threads. It does not allocate that many
+cores independently to every chain. Primary studies in \code{ctmaInit()} are
+still processed sequentially; parallel chains can run within each study.
+
+The same control list works for initial primary-study fitting:
+
+<<ctsem-native-init-bayes, purl=FALSE>>=
+initBayesNative <- ctmaInit(
+  primaryStudies = CoTiMAstudyList_3,
+  activeDirectory = activeDirectory,
+  n.latent = 2,
+  backend = "ctsemjulia",
+  optimize = FALSE,
+  priors = TRUE,
+  indVarying = "CINT",
+  coresToUse = 8L,
+  doPar = 1,
+  backendArgs = list(intoverpop = "none", sampleControl = list(
+    sampler = "saem",
+    placement = "saem",
+    chains = 4L,
+    warmup = 1000L,
+    draws = 1000L,
+    maxDraws = 8000L,
+    processes = TRUE,
+    seed = 20261016L
+  ))
+)
+@
+
+Use \code{indVarying} only if person-level random effects are part of the
+intended model; choosing a sampler does not itself require adding heterogeneity.
+SAEM is particularly relevant to joint random-effects sampling. A speed
+comparison should account for the different joint versus Laplace-marginal
+targets, and compare effective sample size per unit time rather than raw draws.
+
+\paragraph{Compatibility after updating ctsem.}
+ctsem 4.0 integrates Laplace correction into \code{ctLaplaceCheck()}; a
+separate exported \code{ctLaplaceCorrect()} is no longer required. CoTiMA2
+0.14.28 and later recognize both API generations. Native Bayesian NUTS and
+SAEM through CoTiMA2 require version 0.14.29 or later and a compatible ctsem
+development version. Activate the isolated experimental library before loading
+either package in a fresh R session. If Julia reports that precompiled
+dependencies differ from those already loaded, restart R and initialize Julia
+again before fitting.
 
 Exact raw parameter labels can be supplied through
 \code{subject\_parameters} and \code{study\_parameters} when only selected
@@ -1704,5 +1863,37 @@ The package checks the translated ctsem model before estimation and reports
 branches that CtsemJulia does not yet support.  Current work should therefore
 focus on automated parity tests against ctsem/Stan and on extending explicitly
 reported unsupported branches, rather than silently approximating them.
+
+\section{Ryzen native-backend validation, 27 October 2026}
+
+CoTiMA2 0.14.33 was exercised against ctsem revision \code{57a9758d} in an
+isolated Ubuntu/R library on the Ryzen, with a four-core budget. All 18 real
+dispatcher tests completed: five ML fits without priors, five MAP fits with
+priors, and eight sampling runs. Models covered no random effects, person
+intercepts, study intercepts, both grouping levels, and a mixed continuous and
+binary measurement model. The tests called the native dispatchers used by
+\code{ctmaInit()} and \code{ctmaFit()}; they did not exercise an entire
+user-data preparation script.
+
+Learned-map NUTS sampled the joint posterior in the person, study-only and
+combined cases. SAEM sampled the person-effects joint model; SMC sampled a
+study-effects marginal model; ordinary NUTS handled the mixed binary model.
+Automatic sampling selected NUTS for the tested no-effects and Gaussian
+person-intercept cases. It need not select map merely because random effects
+are present: Gaussian effects can be integrated exactly.
+
+All optimization runs reported convergence, and no sampling run reported a
+divergent transition. These were deliberately short smoke tests (typically
+two chains, 50 warmup iterations and 62 retained draws per chain), using an
+exploratory R-hat target of 1.2. Observed worst finite R-hat values were about
+1.023--1.065; these do not establish publication-ready posterior convergence.
+SMC has its own particle diagnostics rather than a conventional R-hat.
+
+Two prior-free ML fits warned about unidentified directions: the study-level
+intercept SD in the small study-only design and a binary-process drift in the
+mixed design. Their affected SEs must not be treated as usable merely because
+the optimizer converged. The fit/summary calls took approximately 4--16 seconds
+after \code{ctJuliaSetup()}; installation and one-time Julia precompilation
+are excluded. These timings are not a general backend or sampler speed ranking.
 
 \end{document}

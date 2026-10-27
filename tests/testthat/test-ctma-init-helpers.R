@@ -38,6 +38,18 @@ test_that("Stan control overrides reject unnamed and unknown values", {
   )
 })
 
+test_that("removed ctsem variational-Bayes controls are handled explicitly", {
+  sanitized <- CoTiMA2:::.ctmaSanitizeCtFitArgs(list(
+    optimize = TRUE,
+    vb = FALSE
+  ))
+  expect_identical(sanitized, list(optimize = TRUE))
+  expect_error(
+    CoTiMA2:::.ctmaSanitizeCtFitArgs(list(vb = TRUE)),
+    "Variational Bayes is no longer supported by ctsem"
+  )
+})
+
 test_that("ctmaInit resolves legacy Stan controls recursively by name", {
   result <- CoTiMA2:::.ctmaResolveInitStanArgs(
     overrides = list(
@@ -339,6 +351,42 @@ test_that("ctmaInit converts native Julia random-effect summaries", {
   )
   expect_equal(result$popcov_mean["b", "a"], .6)
   expect_true(all(is.na(result$popcov_sd)))
+})
+
+test_that("ctModelText reconstructs the exact generated ctsem model", {
+  model <- ctsem::ctModel(
+    type = "ct",
+    n.latent = 2L,
+    n.manifest = 2L,
+    manifestNames = c("binary", "continuous"),
+    latentNames = c("eta1", "eta2"),
+    manifesttype = c(1L, 0L),
+    LAMBDA = diag(2),
+    DRIFT = matrix(c("a11", "a21", "a12", "a22"), 2L, 2L),
+    DIFFUSION = matrix(c("d1", "d21", 0, "d2"), 2L, 2L),
+    T0VAR = matrix(c("t1", "t21", 0, "t2"), 2L, 2L),
+    CINT = matrix(c("c1", "c2"), 2L, 1L),
+    n.TIpred = 1L,
+    TIpredNames = "study"
+  )
+  model$pars[model$pars$matrix == "CINT", "indvarying"] <- TRUE
+  model$pars[model$pars$matrix == "DRIFT", "study_effect"] <- c(
+    TRUE, FALSE, FALSE, TRUE
+  )
+
+  code <- CoTiMA2:::.ctmaModelText(model, object_name = "recreated")
+  expect_type(code, "character")
+  expect_length(code, 1L)
+  expect_match(code, "ctsem::ctModel")
+
+  target <- new.env(parent = globalenv())
+  eval(parse(text = code), envir = target)
+  recreated <- target$recreated
+
+  expect_equal(recreated$matrices, model$matrices)
+  expect_equal(recreated$pars, model$pars)
+  expect_equal(recreated$manifesttype, model$manifesttype)
+  expect_identical(recreated$TIpredNames, model$TIpredNames)
 })
 
 test_that("ctmaFit Julia dispatcher forwards the prepared setup", {

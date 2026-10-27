@@ -207,6 +207,12 @@ ctmaJuliaFit <- function(
   }
   optimize <- identical(estimation, "ml")
 
+  if (identical(estimation, "ml")) {
+    message("Maximum likelihood estimation requested.")
+  } else if (identical(estimation, "bayes")) {
+    message("Bayesian NUTS estimation requested.")
+  }
+
   if (!requireNamespace("JuliaCall", quietly = TRUE)) {
     stop("Package 'JuliaCall' is required.", call. = FALSE)
   }
@@ -1876,6 +1882,18 @@ print.summary.ctmaJuliaFitStudy <- function(
     (is.null(object$studyFitList) || !length(object$studyFitList))
 }
 
+.ctmaJuliaSuppressSetupMessage <- function(message) {
+  message <- as.character(message)[1L]
+  any(vapply(
+    c(
+      "Maximum likelihood estimation requested",
+      "Binary indicators use a linearised (moment-matched Gaussian) measurement update on the stan backend"
+    ),
+    function(pattern) grepl(pattern, message, fixed = TRUE),
+    logical(1)
+  ))
+}
+
 .ctmaJuliaGenerateSetup <- function(object) {
   if (!requireNamespace("ctsem", quietly = TRUE)) {
     stop("Package 'ctsem' is required for unfitted CoTiMA input.", call. = FALSE)
@@ -1897,19 +1915,26 @@ print.summary.ctmaJuliaFitStudy <- function(
   message(
     "Generating ctsem setup data."
   )
-  ctsem::ctFit(
-    datalong = object$data,
-    model = object$ctModel,
-    fit = FALSE,
-    optimize = TRUE,
-    priors = FALSE,
-    intoverstates = argument("intoverstates", TRUE),
-    binomial = argument("binomial", FALSE),
-    intoverpop = argument("intoverpop", "auto"),
-    stationary = argument("stationary", FALSE),
-    sameInitialTimes = same_initial,
-    savesubjectmatrices = argument("savesubjectmatrices", FALSE),
-    verbose = 0
+  withCallingHandlers(
+    ctsem::ctFit(
+      datalong = object$data,
+      model = object$ctModel,
+      fit = FALSE,
+      optimize = TRUE,
+      priors = FALSE,
+      intoverstates = argument("intoverstates", TRUE),
+      binomial = argument("binomial", FALSE),
+      intoverpop = argument("intoverpop", "auto"),
+      stationary = argument("stationary", FALSE),
+      sameInitialTimes = same_initial,
+      savesubjectmatrices = argument("savesubjectmatrices", FALSE),
+      verbose = 0
+    ),
+    message = function(condition) {
+      if (.ctmaJuliaSuppressSetupMessage(conditionMessage(condition))) {
+        invokeRestart("muffleMessage")
+      }
+    }
   )
 }
 

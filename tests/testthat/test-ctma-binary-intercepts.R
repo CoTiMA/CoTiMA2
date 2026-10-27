@@ -42,6 +42,19 @@ test_that("binary intercept validation uses final free parameters", {
     "exactly one entry")
 })
 
+test_that("augmented random-intercept models retain binary manifest types", {
+  model <- ctsem::ctModel(
+    type = "ct", n.latent = 4, n.manifest = 2,
+    latentNames = c("eta1", "eta2", "eta1_cint", "eta2_cint"),
+    manifestNames = c("binary", "continuous"),
+    LAMBDA = cbind(diag(2), matrix(0, 2, 2))
+  )
+  expect_identical(model$manifesttype, c(0, 0))
+
+  restored <- CoTiMA2:::.ctma_restore_manifesttype(model, c(1, 0))
+  expect_identical(restored$manifesttype, c(1, 0))
+})
+
 test_that("a free binary CINT does not require indVarying", {
   model <- ctsem::ctModel(
     type = "ct", n.latent = 1, n.manifest = 1,

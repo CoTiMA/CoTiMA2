@@ -12,7 +12,36 @@ test_that("native ctsem Julia/Laplace capability detection is structured", {
     )
   )
   expect_identical(status$available, all(status$api) && status$JuliaConnectoR)
+  expect_match(
+    status$laplace_correction,
+    "^(separate|integrated|missing)$"
+  )
   if (!status$available) expect_type(status$reason, "character")
+})
+
+test_that("ctsem 4 integrated Laplace correction satisfies the API check", {
+  integrated <- new.env(parent = emptyenv())
+  integrated$ctLaplaceCheck <- function(
+      fit, correction = TRUE, refine = FALSE) NULL
+  expect_identical(
+    .ctmaCtsemJuliaCorrectionMode(integrated),
+    "integrated"
+  )
+
+  separate <- new.env(parent = emptyenv())
+  separate$ctLaplaceCheck <- function(fit) NULL
+  separate$ctLaplaceCorrect <- function(fit) NULL
+  expect_identical(
+    .ctmaCtsemJuliaCorrectionMode(separate),
+    "separate"
+  )
+
+  incomplete <- new.env(parent = emptyenv())
+  incomplete$ctLaplaceCheck <- function(fit) NULL
+  expect_identical(
+    .ctmaCtsemJuliaCorrectionMode(incomplete),
+    "missing"
+  )
 })
 
 test_that("missing native API reports isolated at-your-own-risk setup code", {
@@ -348,6 +377,51 @@ test_that("ctsemjulia uses direct native ML when no random effects exist", {
   expect_identical(result$ctsemjulia_mode, "direct")
   expect_null(result$ctsemjulia_prepared)
   expect_identical(result$estimate$loglik, -9)
+})
+
+test_that("ctsemjulia forwards NUTS and SAEM controls to native ctsem", {
+  setup <- structure(list(
+    data = data.frame(id = rep(1:2, each = 2), y = 1:4),
+    ctModel = list(pars = data.frame(
+      param = "drift_eta1", indvarying = TRUE,
+      stringsAsFactors = FALSE
+    )),
+    argumentList = list(fit = FALSE)
+  ), class = "CoTiMAFit")
+  captured <- NULL
+  local_mocked_bindings(
+    .ctmaFitCtsemJuliaLaplace = function(...) {
+      captured <<- list(...)
+      list(estimate = list(loglik = -9, converged = TRUE))
+    },
+    .ctmaPrepareCtsemJuliaLaplace = function(object, ...) structure(list(
+      data = object$data, model = object$ctModel
+    ), class = "ctmaCtsemJuliaLaplacePrep"),
+    .ctmaAnnotateCtsemJuliaResult = function(result, ...) result,
+    .package = "CoTiMA2"
+  )
+
+  controls <- ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
+  controls$sampleControl$sampler <- "nuts"
+  controls$intoverpop <- "laplace"
+  result <- .ctmaFitCtsemJuliaBackend(
+    setup, controls, cores = 4L, estimation = "Bayes", priors = TRUE
+  )
+  expect_false(captured$optimize)
+  expect_identical(captured$intoverpop, "laplace")
+  expect_identical(captured$sampleControl$sampler, "nuts")
+  expect_identical(result$ctsemjulia_mode, "laplace")
+
+  controls$sampleControl$sampler <- "saem"
+  controls$intoverpop <- "none"
+  controls$sampleControl$placement <- "saem"
+  result <- .ctmaFitCtsemJuliaBackend(
+    setup, controls, cores = 4L, estimation = "Bayes", priors = TRUE
+  )
+  expect_false(captured$optimize)
+  expect_identical(captured$intoverpop, "none")
+  expect_identical(captured$sampleControl$sampler, "saem")
+  expect_identical(result$ctsemjulia_mode, "joint")
 })
 
 test_that("ctsemjulia detects explicit and existing random effects", {

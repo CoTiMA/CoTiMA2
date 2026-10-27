@@ -1,5 +1,112 @@
 # CoTiMA2 development
 
+## CoTiMA2 0.14.33
+
+- Updates the ctsemjulia adapter for upstream revision 57a9758d: supports
+  automatic sampling plus explicit nuts, saem, map and smc kernels, particles
+  and coreset controls. NULL defaults delegate tuning and process allocation
+  to ctsem, avoiding implicit NUTS controls that would invalidate SMC.
+- Exposes backendArgs$intoverpop independently of the sampler in ctmaInit()
+  and ctmaFit(). Rejects contradictory targets and SAEM placement without
+  random effects early. Reports the native resolved route; joint sampling
+  now has ctsemjulia_mode='joint', independent of its sampler.
+
+## CoTiMA2 0.14.32
+
+- Restricts `ctmaBiG()` SE validation to the DRIFT parameters used in its
+  analysis. Zero SEs for fixed DIFFUSION/T0VAR cells no longer stop the fit.
+  Invalid drift SEs are reported with study, matrix and parameter name;
+  excluded studies are ignored. Empty estimation-problem lists no longer
+  trigger a warning about failed primary-study fits.
+
+## CoTiMA2 0.14.31
+
+- Makes generated `ctModelText` easier to edit: the default model name is
+  `m`, matrices use `matrix(..., nrow = ..., ncol = ...)`, and numeric values
+  have no integer `L` suffix. The parameter table uses `data.frame()` and
+  preserves post-construction constraints.
+
+## CoTiMA2 0.14.30
+
+- Fixes a post-fit `ctmaInit()` crash when a DIFFUSION or T0VAR interval
+  diagnostic occurs without a preceding DRIFT diagnostic. Problems are now
+  recorded independently with study and matrix-family labels; diagnostics
+  cannot index an empty list or append a later study's problem to an earlier
+  study. Missing parameter labels receive matrix-index fallbacks.
+
+## CoTiMA2 0.14.29
+
+- Adds Bayesian sampling to `backend = "ctsemjulia"` for `ctmaFit()` and
+  `ctmaInit()` with compatible ctsem 4.x development versions. Native sampler
+  settings are supplied through `backendArgs$sampleControl`; both `"nuts"`
+  and `"saem"` are supported together with their common and sampler-specific
+  controls. Random-effect NUTS fits retain the Laplace-marginal target, while
+  SAEM uses `placement = "saem"` by default and samples the joint posterior.
+
+## CoTiMA2 0.14.28
+
+- Supports both generations of the experimental ctsem Julia/Laplace API:
+  earlier versions exporting a separate `ctLaplaceCorrect()` function and
+  ctsem 4.0.0 or newer versions integrating correction and refinement into
+  `ctLaplaceCheck()`. The `ctsemjulia` availability check now reports the
+  detected interface in `laplace_correction` instead of incorrectly rejecting
+  the integrated API because `ctLaplaceCorrect()` is no longer exported.
+
+- Suppresses ctsem's Stan-specific binary-approximation comparison while
+  generating setup data for `backend = "julia"`. The Julia likelihood remains
+  active, and all genuine setup warnings continue to be shown.
+
+## CoTiMA2 0.14.27
+
+- Preserves the complete fitted DRIFT and DIFFUSION matrices in `ctmaInit()`
+  summaries when users fix selected matrix elements numerically. Fixed elements
+  are no longer removed before assigning the full matrix-element names, and
+  DIFFUSION results are no longer filtered using the free-parameter positions
+  of DRIFT.
+
+## CoTiMA2 0.14.26
+
+- Fixes custom diffusion specifications in `ctmaInit()`. Free labels and fixed
+  numerical values are now transferred correctly instead of referring to the
+  nonexistent `diffParamsParams` object. Custom drift specifications now also
+  preserve fixed nonzero values, and both specifications receive explicit
+  dimension checks.
+- Suppresses ctsem's internal “Maximum likelihood estimation requested” message
+  during setup-only generation. The CoTiMA2 Julia backend now reports ML or
+  Bayesian NUTS explicitly according to the estimator actually requested.
+- Makes Bayesian NUTS robust to invalid intermediate covariance proposals in
+  the CoTiMA2 Julia backend. Non-positive-definite, singular, and related
+  numerical trial points are now rejected normally instead of terminating the
+  complete chain with a `PosDefException` or nested `TaskFailedException`.
+- Clarifies that the OTL printed by `summary()` is calculated from the mean
+  estimated drift matrix. `ctmaOTL(..., CI = TRUE)` now repeats the numerical
+  search across transformed drift draws and reports median OTLs and uncertainty
+  intervals for ML/MAP or Bayesian fits. Lists and three-dimensional arrays of
+  drift matrices are also supported.
+- Preserves the requested binary manifest types when `ctmaInit()` rebuilds a
+  model for process-based `randomIntercepts = "CINT"` or `"MANIFEST"`.
+  Previously, the replacement model reverted to ctsem's all-continuous
+  default even when `binaries` had been supplied.
+- Corrects missing-row detection in `ctmaShapeRawData()`. Observed values or
+  timestamps that sum to zero are no longer mistaken for entirely missing
+  rows, including person-standardized data. The `withinTimeA` T0 check now
+  tests actual completeness rather than numeric sums.
+- Uses exact time-point suffixes in `ctmaShapeRawData()`, so matching `T1` no
+  longer unintentionally includes `T10`, `T11`, and later waves. Long-to-wide
+  wave counting now also uses the distinct numeric time suffixes.
+- Restores the Stan path with the current ctsem development version. The
+  removed historical `vb = FALSE` control is now discarded before calling
+  `ctsem::ctFit()`, while a genuine `vb = TRUE` request produces an explicit
+  CoTiMA2 error recommending ML/MAP optimization or Bayesian sampling.
+
+## CoTiMA2 0.14.23
+
+- `ctmaInit(..., fit = FALSE)` and `ctmaFit(..., fit = FALSE)` now return an
+  executable `ctModelText` representation of the generated ctsem model. The
+  returned summary explains that `eval(parse(text = result$ctModelText))` can
+  be used to reconstruct the model, including CoTiMA2's final parameter table
+  and post-construction constraints.
+
 ## CoTiMA2 0.14.22
 
 - Adds `backend = "ctsemjulia"` support to `ctmaFitConfig()`. The function

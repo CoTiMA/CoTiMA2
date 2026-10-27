@@ -456,6 +456,36 @@ parameter-selective specification above. This coding is constructed by
 
 \section{Reproducible validation of the native ctsem Julia backend}
 
+\subsection{Bayesian NUTS and SAEM diagnostics}
+
+From CoTiMA2 0.14.29, \code{ctmaInit()} and \code{ctmaFit()} accept native
+Bayesian sampling with \code{backend="ctsemjulia"},
+\code{optimize=FALSE}, and \code{priors=TRUE}. Since 0.14.33, omit sampler
+and placement for native automatic selection, or select \code{"nuts"},
+\code{"saem"}, \code{"map"} or \code{"smc"} through
+\code{backendArgs\$sampleControl\$sampler}. Set the integration target
+separately through \code{backendArgs\$intoverpop}. The mode records the
+resolved target (\code{"joint"}, \code{"laplace"}, \code{"augmented"},
+or \code{"direct"}). Inspect divergences and other kernel diagnostics where
+the native sampler reports them; SAEM can itself use NUTS updates, so its
+name does not imply the absence of Hamiltonian sampling diagnostics.
+
+For either sampler, inspect chain agreement, effective sample sizes, trace
+plots, and Monte Carlo error for the substantive parameters and random-effect
+standard deviations. Use the native \code{summary(fit)} and available plot
+methods. Record \code{chains}, \code{warmup}, \code{draws},
+\code{maxDraws}, the seed, and the actual number of retained draws.
+\code{maxDraws} allows extension towards diagnostic targets, so completing
+the requested initial draw count need not end sampling. Reaching the maximum
+budget also does not establish convergence.
+
+For NUTS, additionally inspect divergences and maximum-tree-depth events.
+The ML validation suite below checks optimizer convergence and Laplace
+accuracy; it does not establish posterior convergence for a Bayesian run.
+For SAEM joint sampling, a Laplace correction check is not the primary
+sampling diagnostic. Compare runtime using effective samples per second,
+and state explicitly when the compared fits use different integration targets.
+
 The package source contains a separate engineering validation suite for the
 experimental \code{backend="ctsemjulia"}.  It simulates known subject- and
 study-level heterogeneity. Random-effect distributions are generated on
@@ -749,5 +779,47 @@ When reporting a practically stable but formally non-converged solution,
 retain the warning, document the tolerance and termination code, report the
 refinement comparison, and avoid presenting Hessian-based uncertainty as
 routine inferential output.
+
+\section{Observed native validation outcomes, 27 October 2026}
+
+Eighteen small real-fit tests of CoTiMA2 0.14.33 with ctsem revision
+\code{57a9758d} completed on Ubuntu/Ryzen: five ML, five MAP and eight Bayesian
+runs. Every optimizer reported convergence, but the study-only ML case warned
+that \code{popsd\_c.study} was unidentified, and the mixed binary/continuous
+ML case warned that a binary-process drift was unidentified. This demonstrates
+why convergence, identification and posterior diagnostics must be separate
+decisions. The warnings were preserved; no artificial SE was substituted.
+
+The Bayesian smoke tests reported no divergences. Their short two-chain runs
+used relaxed diagnostic targets; finite worst R-hat values around
+1.023--1.065 are not sufficient for a final analysis. Inspect all substantive
+parameters with longer sampling and appropriate diagnostics. SMC uses particle
+diagnostics, so an absent conventional R-hat is not evidence of a failure.
+
+Study-level fits also retained the adapter's warning that a personwise
+\code{subject\_loglik} decomposition may not be valid for shared study
+effects. Do not use such values for personwise LOO or WAIC; inspect
+\code{ctsemjulia\_diagnostics\$casewise\_loglik}. These tests validate the
+real native dispatcher, including summary generation and joint/marginal route
+selection; they are not a parameter-recovery study or an end-to-end test of
+every public model-construction option.
+
+\section{Drift-scaled coordinates: a limited comparison}
+
+An additional Ryzen test of ctsem revision \code{57a9758d} compared standard
+coordinates, drift-scaled DIFFUSION, and drift-scaled DIFFUSION plus CINT.
+Eighteen ML/MAP fits used 96 people with six dense, coarse or irregular
+observations, explicitly disabling individual random effects. Matched initial
+likelihoods agreed within $1.3\times10^{-6}$.
+Dense and irregular ML fits reached the same likelihood in ten reported
+iterations with every parameterization. Coarse ML fits retained identification
+warnings despite reported convergence. No consistent numerical benefit was
+demonstrated, and subsecond timings do not establish a general speedup.
+
+\code{driftScaled} is a reparameterization, not a constraint imposing
+stationarity or unit variance. For MAP or Bayesian estimation, changing the
+coordinates without consistently transforming the priors changes the physical
+prior. These tests do not justify automatically enabling this option and do
+not validate binary or random-effects models.
 
 \end{document}

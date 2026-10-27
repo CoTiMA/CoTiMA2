@@ -116,6 +116,10 @@ status <- system2(
     paste0("--library=", verify_lib),
     shQuote(basename(archive))
   ),
+  env = paste0(
+    "R_LIBS=",
+    paste(.libPaths(), collapse = .Platform$path.sep)
+  ),
   stdout = "",
   stderr = ""
 )

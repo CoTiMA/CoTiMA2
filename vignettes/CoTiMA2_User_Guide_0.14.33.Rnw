@@ -64,11 +64,11 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.22\par}
+\vspace{1.0cm}{Version 0.14.33\par}
 
 \vspace{1.0cm}{Christian Dormann\par}
 
-{September 17, 2026\par}
+{September 22, 2026\par}
 
 \vfill{Chair of Business Education \& Management, Johannes Gutenberg University\par}
 
@@ -88,7 +88,7 @@ A critical assumption is the validity of the underlying causal model that descri
 
 \begin{lstlisting}[language=R]
 
-install.packages("CoTiMA2_0.14.22.tar.gz", repos = NULL, type = "source")
+install.packages("CoTiMA2_0.14.33.tar.gz", repos = NULL, type = "source")
 library(CoTiMA2)
 \end{lstlisting}
 
@@ -220,6 +220,29 @@ summary(CoTiMAFullFit_3)
 
 \noindent \emph{Figure }\emph{7}\emph{.} Conducting a Full CoTiMA (\code{ctmaFit})
 
+For advanced inspection or modification, both \code{ctmaInit()} and
+\code{ctmaFit()} accept \code{fit = FALSE}. In this case, no model is
+estimated; the returned object contains the prepared data, the generated
+\code{ctModel}, and an executable textual model specification in
+\code{ctModelText}. The latter can be printed, copied, saved, or evaluated:
+
+\begin{lstlisting}[language=R]
+CoTiMASetup <- ctmaFit(
+    ctmaInitFit = CoTiMAInitFit_3,
+    fit = FALSE)
+
+# Inspect the generated R code
+cat(CoTiMASetup$ctModelText)
+
+# Reconstruct the model as an object named ctModel
+eval(parse(text = CoTiMASetup$ctModelText))
+\end{lstlisting}
+
+The reconstructed model includes CoTiMA2's final parameter table and all
+post-construction constraints. Because \code{eval(parse(...))} executes R
+code, it should only be used with model text generated locally or obtained
+from a trusted source.
+
 We reduced the \code{\$estimates} section in Figure 8 compared to the actual output displayed on screen. Reason is that among the whole lot of estimates presented, only the four drift effects are of major interest. These are the meta-analytically aggregated effects as indicated by the additional label \emph{invariant}. Invariant means that an effect does not vary among primary studies and only a single overall effect is estimated. This is similar to traditional fixed effect analysis, where it is also assumed that a single overall (true) effect exists. This is what one usually wants from CoTiMA. We are done. All drift effects are significant by means of the T-values as well as by virtue of their credible intervals.
 
 \begin{lstlisting}[language=R]
@@ -256,7 +279,7 @@ $max.effects
 
 \noindent \emph{Figure }\emph{9}\emph{.} Second Part of \code{summary}(\code{CoTiMAFullFit\_3}\code{)}
 
-The previous output in Figure 8 informed us that the effect of V1toV2 is located in Row 2 and Column 1 and, conversely, the effect of V2toV1 is located in Row 1 and Column 2. In this case, the optimal lag is two quarters for both effects, where the effects (see \code{\$max.effects}) become .1468 for V2toV1 and .3036 for V1toV2. The former seems to be much smaller than the latter, and we explain later how to test if the difference between the two effects is statistically significant.
+The previous output in Figure 8 informed us that the effect of V1toV2 is located in Row 2 and Column 1 and, conversely, the effect of V2toV1 is located in Row 1 and Column 2. In this case, the optimal lag is two quarters for both effects, where the effects (see \code{\$max.effects}) become .1468 for V2toV1 and .3036 for V1toV2. The former seems to be much smaller than the latter, and we explain later how to test if the difference between the two effects is statistically significant. The OTL reported by \code{summary()} is a numerical point estimate based on the mean estimated drift matrix only. To incorporate parameter uncertainty, use \code{ctmaOTL(CoTiMAFullFit\_3, CI = TRUE)}. This repeats the numerical search for every available transformed drift draw and returns the median OTL and its uncertainty interval. For ML or MAP estimation this is an approximate, normally Hessian-based interval; for Bayesian estimation it is a posterior credible interval. The resolution and range of the result depend on the \code{timeRange} grid.
 
 Effects in continuous time are difficult to interpret. Therefore, they are usually translated into discrete time effects. More specifically, they are usually translated into the cross-lagged regression coefficients that can be expected across a range of different time intervals. This is achieved when plotting a CoTiMA fit-object (or several of the CoTiMA fit-objects in the same plot). Figure 10 shows how to plot both the effects of the three separately fitted primary studies and the aggregated effect into single figures. Actually, since there are four effects (auto effect V1toV1\emph{,} auto effect V2toV2\emph{,} cross effect V1toV2\emph{,} and cross effect V2toV1), four figures will be created.
 
@@ -793,6 +816,109 @@ saveRDS(CoTiMAInitFit_6_NUTS, paste0(activeDirectory, "CoTiMAInitFit_6_NUTS.rds"
 \end{lstlisting}
 
 \noindent \emph{Figure }\emph{28}\emph{.} Using Bayesian Estimation via Stan's NUTS Sampler (\code{ctmaInit})
+
+Users of the experimental ctsem 4.x Julia backend may alternatively request
+native Bayesian NUTS or SAEM sampling. This route is selected with
+\code{backend="ctsemjulia"}, \code{optimize=FALSE}, and \code{priors=TRUE}.
+Sampler settings belong in \code{backendArgs\$sampleControl}. Common settings
+include \code{chains}, \code{warmup}, \code{draws}, \code{maxDraws},
+\code{processes}, and \code{seed}. NUTS-specific controls include
+\code{target\_accept}, \code{maxdepth}, \code{minESS}, and
+\code{rhatTarget}. Since 0.14.33, sampler and placement default to native
+automatic selection. Set \code{backendArgs\$intoverpop="none"} for joint
+sampling or \code{"laplace"}/\code{"augmented"} for a marginal;
+\code{"auto"} delegates the target to ctsem. NUTS can sample either target,
+SAEM and \code{sampler="map"} require joint random effects, and
+\code{sampler="smc"} requires a marginal. The map sampler is NUTS through
+a learned transformation, not maximum-a-posteriori estimation.
+
+\begin{lstlisting}[language=R]
+fit_saem <- ctmaFit(
+  ctmaInitFit = initFit,
+  indVarying = "CINT",
+  backend = "ctsemjulia",
+  optimize = FALSE,
+  priors = TRUE,
+  coresToUse = 8,
+  backendArgs = list(
+    intoverpop = "none",
+    sampleControl = list(
+      sampler = "saem",
+      chains = 4L,
+      warmup = 1000L,
+      draws = 1000L,
+      maxDraws = 8000L,
+      processes = TRUE,
+      seed = 20261016L
+    )
+  )
+)
+\end{lstlisting}
+
+\noindent \emph{Figure }\emph{28a}\emph{.} Bayesian Estimation via ctsem's Experimental Native Julia SAEM Sampler
+
+For bias and heterogeneity analyses, \code{ctmaBiG()} requires finite,
+strictly positive standard errors for the DRIFT effects being analyzed.
+Zero standard errors for fixed DIFFUSION or T0VAR entries do not prevent
+that analysis. A validation error identifies the study, matrix and parameter
+name rather than an ambiguous column number. Inspect a reported drift
+problem before considering study exclusion; do not replace zero SEs by
+arbitrarily small values. Existing initial-fit objects can be reused after
+updating the package.
+
+Generated \code{ctModelText} now creates a model named \code{m}. Matrix
+specifications use \code{matrix(..., nrow=2, ncol=2)} rather than
+\code{structure()}, and numeric constants have no integer suffix. Use
+\code{cat(result\$ctModelText)} to display editable code and
+\code{eval(parse(text=result\$ctModelText))} to create \code{m}. The appended
+parameter table preserves model constraints applied after construction.
+
+From version 0.14.30, initial-fit interval diagnostics record each study and
+matrix family independently. A DIFFUSION or T0VAR interval warning no longer
+requires an earlier DRIFT warning and cannot abort processing through an empty
+diagnostic list. These zero-bound or zero-width interval checks are screening
+heuristics: inspect fixed model constraints before interpreting them as
+identification problems. They do not replace sampler convergence diagnostics.
+
+The same \code{backendArgs\$sampleControl} list can be supplied to
+\code{ctmaInit()}. Use \code{doPar=1}; primary studies run sequentially,
+while \code{processes=TRUE} permits parallel chains within a study.
+\code{coresToUse} specifies the total concurrent CPU budget shared by chains
+and Julia threads. \code{draws} and \code{warmup} are per-chain counts.
+\code{maxDraws} caps extensions towards the native diagnostic targets, so
+sampling may continue beyond the initially requested retained count.
+Inspect chain agreement and effective sample sizes before interpreting the
+posterior; reaching a draw limit does not establish convergence.
+
+For native NUTS, replace the sampler controls as follows:
+
+\begin{lstlisting}[language=R]
+nuts_backend_args <- list(sampleControl = list(
+  sampler = "nuts",
+  chains = 4L,
+  warmup = 1000L,
+  draws = 1000L,
+  maxDraws = 8000L,
+  processes = TRUE,
+  seed = 20261016L,
+  target_accept = 0.90,
+  maxdepth = 10L,
+  minESS = 200,
+  rhatTarget = 1.01
+))
+
+ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
+ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaInit")
+\end{lstlisting}
+
+These controls apply to the native \code{"ctsemjulia"} route. CoTiMA2's
+separate \code{"julia"} backend continues to use its own NUTS controls,
+including \code{samples} and \code{max\_depth}. References to NUTS in the
+legacy estimator tables describe the Stan workflow; the native ctsem route
+now also permits SAEM. Use person- or study-level random effects only when
+the intended substantive model requires them, rather than adding them to
+select a sampler. Full examples and the distinction between joint and
+Laplace-marginal targets appear in the Julia Usage and Fit Diagnostics guides.
 
 Part of the results obtained from the code in Figure 28 printed to the console with \code{summary(CoTiMAInitFit\_6\_NUTS)} is shown in Figure 29\footnote{In addition, several warning messages are issued. They are all related to Study 128, for which we introduced missing data. This does not happen if doing the analysis again without Study 128.}. A comparison with the maximum likelihood effects and their standard errors in Figure 24 reveals no substantial differences except for Study 128, for which results are not trustworthy anyway. We should note, further, that Bayesian estimation is sensitive to priors, and default priors are only appropriate if the time scale is appropriately chosen, too. This could require using an appropriately chosen \code{scaleTime} argument.
 
@@ -2961,5 +3087,22 @@ Named List \newline{}Element & Default & Possible \newline{}Values & Explanation
 \bottomrule
 \end{longtable}
 \normalsize
+
+\section*{Native ctsem validation update: 27 October 2026}
+
+CoTiMA2 0.14.33 and experimental ctsem revision \code{57a9758d} completed
+18 small real-fit checks on Ubuntu/Ryzen: five ML fits, five MAP fits and
+eight sampling runs. Models included no random effects, person intercepts,
+study intercepts, both levels, and mixed continuous/binary indicators.
+The native dispatchers and summary generation ran successfully. The checks
+were not full end-to-end user-data preparation or parameter-recovery tests.
+
+All optimization runs reported convergence, and the sampling runs reported
+zero divergences. Two ML designs nevertheless produced identification
+warnings, for a study SD and a binary-process drift. Short sampling runs also
+had R-hat values above the usual final-analysis target. Successful execution
+therefore does not certify estimability or adequate posterior precision.
+The Julia Usage and Fit Diagnostics guides give the detailed interpretation.
+Existing package installations were kept separate from the validation library.
 
 \end{document}

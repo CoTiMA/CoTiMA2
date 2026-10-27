@@ -43,19 +43,23 @@ test_that("ctsemjulia defaults expose the experimental native interface", {
     "study_random_effects", "subject_random_effects",
     "study_parameters", "subject_parameters", "reDRIFT",
     "reDIFFUSION", "reT0VAR", "remove_study_fixed_effects",
-    "sdscale_study", "inits", "optimcontrol", "priors", "verbose"
+    "sdscale_study", "inits", "intoverpop", "optimcontrol", "priors", "verbose"
   ))
   expect_true(defaults$remove_study_fixed_effects)
   expect_identical(defaults$sdscale_study, 1)
   expect_identical(defaults$optimcontrol$uncertainty, "hessian")
-  expect_error(
-    ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit"),
-    "supports ML"
+  bayes_defaults <- ctmaBackendDefaults(
+    "ctsemjulia", "Bayes", "ctmaFit"
   )
+  expect_null(bayes_defaults$sampleControl$sampler)
+  expect_null(bayes_defaults$sampleControl$chains)
+  expect_null(bayes_defaults$sampleControl$warmup)
+  expect_null(bayes_defaults$sampleControl$draws)
+  expect_null(bayes_defaults$sampleControl$processes)
   init_defaults <- ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")
   expect_named(
     init_defaults,
-    c("inits", "optimcontrol", "priors", "verbose")
+    c("inits", "intoverpop", "optimcontrol", "priors", "verbose")
   )
   expect_identical(init_defaults$optimcontrol$uncertainty, "hessian")
 })
@@ -93,11 +97,22 @@ test_that("ctsemjulia resolves separately from the CoTiMA2 Julia backend", {
   )
   expect_identical(resolved$backend_args$study_random_effects, "CINT")
   expect_null(resolved$stan_args)
+  resolved_saem <- CoTiMA2:::.ctmaResolveFitBackend(
+    backend = "ctsemjulia", estimation = "Bayes", workflow = "ctmaFit",
+    backendArgs = list(sampleControl = list(
+      sampler = "saem", chains = 3L, maxDraws = 8000L
+    ))
+  )
+  expect_identical(resolved_saem$backend_args$sampleControl$sampler, "saem")
+  expect_null(resolved_saem$backend_args$sampleControl$placement)
+  expect_identical(resolved_saem$backend_args$sampleControl$chains, 3L)
+  expect_identical(resolved_saem$backend_args$sampleControl$maxDraws, 8000L)
   expect_error(
     CoTiMA2:::.ctmaResolveFitBackend(
-      backend = "ctsemjulia", estimation = "Bayes", workflow = "ctmaFit"
+      backend = "ctsemjulia", estimation = "Bayes", workflow = "ctmaFit",
+      backendArgs = list(sampleControl = list(sampler = "slice"))
     ),
-    "ML/Laplace"
+    "nuts.*saem"
   )
 })
 
@@ -214,10 +229,12 @@ test_that("legacy Stan argument use is deprecated", {
   )
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.22")
+  call_state <- getFromNamespace(".ctma_call_state", "CoTiMA2")
+  call_state$depth <- 0L
+  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.33")
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.22\\)."
+    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.33\\)."
   )
 
   major_functions <- c(

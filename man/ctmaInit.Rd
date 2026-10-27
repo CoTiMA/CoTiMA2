@@ -70,13 +70,21 @@ an explicit Julia thread control is supplied in \code{backendArgs}.}
 
 \item{customPar}{logical. If set TRUE leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)}
 
-\item{diff}{labels for diffusion effects. Have to be either of the character strings of the type "diff_eta1" or "diff_eta2_eta1" (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)}
+\item{diff}{Diffusion-matrix specification with exactly
+\code{n.latent^2} entries. Character entries are freely estimated labels
+(identical labels impose equality constraints); numeric entries are fixed
+values, for example zero to omit a covariance. Entries follow R's
+column-major matrix order; the diffusion matrix is symmetric and only its
+lower triangle is parameterized.}
 
 \item{digits}{number of digits used for rounding (in outputs)}
 
 \item{doPar}{parallel and multiple fitting if single studies. A value > 1 will fit each study doPar times in parallel mode during which no output is generated (screen remains silent). Useful to obtain best fit.}
 
-\item{drift}{labels for drift effects. Have to be either of the character strings of the type V1toV2 (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)}
+\item{drift}{Drift-matrix specification with exactly
+\code{n.latent^2} entries. Character entries are freely estimated labels
+(identical labels impose equality constraints); numeric entries are fixed
+values, such as zero to exclude an effect.}
 
 \item{experimental}{used for debugging puposes (default = FALSE)}
 
@@ -86,7 +94,11 @@ covariance or the posterior distribution) for final results computation
 \code{backendArgs$transformed_draws}, unless that control is supplied
 explicitly in \code{backendArgs}.}
 
-\item{fit}{TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})}
+\item{fit}{TRUE (default) fits the requested model. FALSE returns the generated
+long-format data, the editable ctsem model in \code{ctModel}, and a
+copyable, executable R specification of that model in \code{ctModelText}.
+The model can then be modified and fitted using
+\code{\link[ctsem]{ctFit}}.}
 
 \item{indVarying}{control for unobserved heterogeneity through randomly
 (inter-individually) varying manifest means. With
@@ -145,15 +157,25 @@ to request person-level random effects integrated by Laplace under
 
 \item{backend}{Estimation backend: \code{"stan"} (the default), CoTiMA2's
 experimental \code{"julia"} backend, or ctsem's experimental native
-\code{"ctsemjulia"} backend for maximum-likelihood estimation.}
+\code{"ctsemjulia"} backend for ML or Bayesian estimation.}
 
 \item{backendArgs}{Named list of controls for the selected backend. CoTiMA2
 Julia controls follow \code{\link{ctmaJuliaFit}}. For
 \code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
-\code{priors}, and \code{verbose}. Primary studies are currently processed
+\code{priors}, and \code{verbose}. For Bayesian estimation, use
+\code{backendArgs$sampleControl} and choose \code{sampler="nuts"},
+\code{"saem"}, \code{"map"}, or \code{"smc"}, or omit sampler for
+ctsem's automatic choice. Set \code{backendArgs$intoverpop} explicitly
+to choose joint (\code{"none"}) or marginal (\code{"laplace"} or
+\code{"augmented"}) sampling, or keep \code{"auto"}. Common controls include \code{chains},
+\code{warmup}, \code{draws}, \code{maxDraws}, \code{processes}, and
+\code{seed}. SMC instead uses \code{particles} and \code{coreset}; omit
+chains and warmup. Placement is delegated to ctsem unless explicitly
+supplied. Primary studies are processed
 sequentially with either Julia backend. Calling
 \code{ctmaBackendDefaults()} without arguments displays Stan defaults;
 use \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")} for this
+workflow or replace \code{"ML"} by \code{"Bayes"} for sampler controls.
 workflow. It explicitly returns
 \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
 ML default and providing standard errors and intervals. Fast development
@@ -174,6 +196,11 @@ CINT=model_Cint_Coef), and the paramter names internally used. The summary list,
 returned object, comprises "estimates" (the aggregated effects), possible randomIntercepts,confidenceIntervals, the
 minus2ll value and its n.parameters, and possible warning messages (message). Plot type is plot.type=c("drift") and model.type="stanct"
 ("omx" was deprecated).
+With \code{fit=FALSE}, \code{ctModelText} contains executable R code that
+reconstructs the returned \code{ctModel}, including its exact parameter
+table, binary/ordinal manifest types, individual-variation settings, and TI
+predictor effects. Evaluate it with \code{eval(parse(text = x$ctModelText))}
+or copy it into an R script.
 }
 \description{
 Fits ctsem models to each primary study in the supplied list of primary studies prepared by \code{\link{ctmaPrep}}.

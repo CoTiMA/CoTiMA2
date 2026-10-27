@@ -1,5 +1,21 @@
 # Internal helpers used by ctmaInit().
 
+.ctmaInitRecordIntervalProblem <- function(problems, study, family, indices,
+    parameter_names) {
+  if (!length(indices)) return(problems)
+  labels <- vapply(indices, function(index) {
+    if (index <= length(parameter_names) &&
+        !is.na(parameter_names[index]) && nzchar(parameter_names[index])) {
+      parameter_names[index]
+    } else paste0(family, "[", index, "]")
+  }, character(1))
+  problems[[length(problems) + 1L]] <- paste0(
+    "Possible problems for Study ", study, " in estimating ", family,
+    ": ", paste(unique(labels), collapse = " ")
+  )
+  problems
+}
+
 .ctmaInitStudyWarningLabel <- function(index, total, study = NULL) {
   clean_text <- function(x) {
     if (is.null(x) || length(x) == 0L || all(is.na(x))) return(NULL)
@@ -196,6 +212,28 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   }
 
   utils::modifyList(defaults, overrides, keep.null = TRUE)
+}
+
+.ctmaSanitizeCtFitArgs <- function(args) {
+  if (!is.list(args)) {
+    stop("Internal ctFit arguments must be supplied as a list.", call. = FALSE)
+  }
+  if ("vb" %in% names(args)) {
+    if (isTRUE(args$vb)) {
+      stop(
+        "Variational Bayes is no longer supported by ctsem. Use ",
+        "optimize = TRUE for maximum likelihood/MAP estimation or ",
+        "optimize = FALSE for Bayesian sampling.",
+        call. = FALSE
+      )
+    }
+    args$vb <- NULL
+  }
+  args
+}
+
+.ctmaCtFitCompat <- function(...) {
+  do.call(ctsem::ctFit, .ctmaSanitizeCtFitArgs(list(...)))
 }
 
 # Resolve ctmaInit()'s legacy Stan list through the backend infrastructure.
@@ -395,6 +433,100 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   invisible(required)
 }
 
+.ctmaCtsemJuliaSampleControl <- function(defaults, overrides = NULL) {
+  if (is.null(overrides)) overrides <- list()
+  if (!is.list(overrides) || (length(overrides) &&
+      (is.null(names(overrides)) || anyNA(names(overrides)) ||
+        any(names(overrides) == "")))) {
+    stop("backendArgs$sampleControl must be a fully named list.", call. = FALSE)
+  }
+  accepted <- c(
+    "sampler", "placement", "chains", "warmup", "draws", "maxDraws",
+    "processes", "seed", "saveEffects", "minESS", "meanESS",
+    "rhatTarget", "maxdepth", "max_treedepth", "target_accept",
+    "adapt_delta", "maxdelta", "init_scale", "adapt_metric",
+    "adapt_effects", "settleTol", "stepsize", "callback", "particles", "coreset"
+  )
+  unknown <- setdiff(names(overrides), accepted)
+  if (length(unknown)) stop(
+    "Unknown backendArgs$sampleControl: ", paste(unknown, collapse = ", "),
+    ". Accepted names: ", paste(accepted, collapse = ", "), ".",
+    call. = FALSE
+  )
+  result <- utils::modifyList(defaults, overrides, keep.null = TRUE)
+  if (!is.null(result$sampler)) {
+    result$sampler <- match.arg(
+      tolower(as.character(result$sampler)[1L]), c("nuts", "saem", "map", "smc")
+    )
+  }
+  if (!is.null(result$placement)) {
+    result$placement <- match.arg(
+      tolower(as.character(result$placement)[1L]), c("fit", "saem")
+    )
+  }
+  if (identical(result$sampler, "smc")) {
+    conflicts <- intersect(c("chains", "warmup", "stepsize"),
+      names(result)[!vapply(result, is.null, logical(1))])
+    if (length(conflicts)) stop(
+      "SMC does not use ", paste(conflicts, collapse = ", "),
+      "; remove these controls and use particles instead.", call. = FALSE)
+  }
+  result[!vapply(result, is.null, logical(1))]
+}
+
+# Keep the sampling target independent from the kernel that draws from it.
+.ctmaCtsemJuliaRoute <- function(backend_args, estimation, has_random_effects) {
+  integration <- backend_args$intoverpop
+  if (is.null(integration)) integration <- "auto"
+  if (is.logical(integration) && length(integration) == 1L && !is.na(integration)) {
+    integration <- if (integration) "laplace" else "none"
+  }
+  integration <- match.arg(integration, c("auto", "none", "laplace", "augmented"))
+  sampling <- identical(tolower(estimation), "bayes")
+  if (sampling) .ctmaCtsemJuliaSampleControl(list(), backend_args$sampleControl)
+  sampler <- backend_args$sampleControl$sampler
+  if (is.null(sampler)) sampler <- ""
+  placement <- backend_args$sampleControl$placement
+  if (sampling && sampler %in% c("saem", "map") && !has_random_effects) {
+    stop("sampler = '", sampler, "' requires explicit random effects. ",
+      "Use automatic sampling or sampler = 'nuts' for this model.", call. = FALSE)
+  }
+  if (sampling && sampler %in% c("saem", "map") &&
+      integration %in% c("laplace", "augmented")) {
+    stop("sampler = '", sampler, "' requires intoverpop = 'none' ",
+      "(joint sampling). Choose the target explicitly.", call. = FALSE)
+  }
+  if (sampling && identical(sampler, "smc") && integration == "none") {
+    stop("sampler = 'smc' requires a marginal target: intoverpop = ",
+      "'laplace' or 'augmented'.", call. = FALSE)
+  }
+  if (sampling && identical(placement, "saem") &&
+      (!has_random_effects || integration %in% c("laplace", "augmented"))) {
+    stop("placement = 'saem' requires joint random-effect sampling; ",
+      "use placement = 'fit' or omit placement.", call. = FALSE)
+  }
+  if (sampling && identical(sampler, "map") && identical(placement, "saem")) {
+    stop("sampler = 'map' requires placement = 'fit' or automatic placement.",
+      call. = FALSE)
+  }
+  # Explicit kernels must not turn 'auto' into a different posterior target.
+  if (sampling && identical(integration, "auto") && identical(sampler, "smc") &&
+      has_random_effects) {
+    stop("Set intoverpop = 'laplace' or 'augmented' explicitly for SMC ",
+      "with random effects.", call. = FALSE)
+  }
+  integration
+}
+
+.ctmaCtsemJuliaMode <- function(result, integration, sampling, has_random_effects) {
+  resolved <- result$args$resolved$intoverpop
+  if (!is.null(resolved)) integration <- resolved
+  if (!has_random_effects) return("direct")
+  if (identical(integration, "none")) return("joint")
+  if (identical(integration, "auto")) return(if (sampling) "auto" else "laplace")
+  integration
+}
+
 .ctmaResolveFitBackend <- function(
     backend = c("stan", "julia", "ctsemjulia"),
     backendArgs = list(), legacy_stan_args = NULL,
@@ -457,11 +589,6 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
       "'CoTiMAStanctArgs' cannot be used with backend = 'ctsemjulia'.",
       call. = FALSE
     )
-    if (!identical(estimation, "ml")) stop(
-      "The experimental ctsemjulia backend currently supports ML/Laplace ",
-      "estimation only (use optimize = TRUE).",
-      call. = FALSE
-    )
     native_defaults <- ctmaBackendDefaults(
       backend = "ctsemjulia", estimation = estimation,
       workflow = workflow
@@ -472,10 +599,13 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     # defaults. Merge the explicit Hessian default recursively so partial user
     # controls retain it.
     optim_overrides <- backendArgs$optimcontrol
+    sample_overrides <- backendArgs$sampleControl
     outer_overrides <- backendArgs
     outer_overrides$optimcontrol <- NULL
+    outer_overrides$sampleControl <- NULL
     outer_defaults <- native_defaults
     outer_defaults$optimcontrol <- NULL
+    outer_defaults$sampleControl <- NULL
     native_args <- .ctmaMergeBackendArgs(
       outer_defaults, outer_overrides, path = "backendArgs"
     )
@@ -489,6 +619,19 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     } else {
       utils::modifyList(
         native_defaults$optimcontrol, optim_overrides, keep.null = TRUE
+      )
+    }
+    native_args$intoverpop <- match.arg(
+      native_args$intoverpop, c("auto", "none", "laplace", "augmented")
+    )
+    if (identical(estimation, "bayes")) {
+      native_args$sampleControl <- .ctmaCtsemJuliaSampleControl(
+        native_defaults$sampleControl, sample_overrides
+      )
+    } else if (!is.null(sample_overrides)) {
+      stop(
+        "backendArgs$sampleControl is available only when optimize = FALSE.",
+        call. = FALSE
       )
     }
     return(list(
@@ -528,7 +671,7 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
 .ctmaInitCtsemJuliaStudyFit <- function(
     datalong, model, same_initial_times, backend_args,
     start_values = NULL, priors = FALSE, finishsamples = NULL,
-    cores = 1L, verbose = 0, digits = 4L) {
+    cores = 1L, verbose = 0, digits = 4L, estimation = "ML") {
   .ctmaRequireCtsemJuliaLaplace()
   cores <- as.integer(cores)[1L]
   if (is.na(cores) || cores < 1L) stop(
@@ -541,7 +684,11 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     fit = TRUE,
     sameInitialTimes = same_initial_times,
     backend = "julia",
-    intoverpop = "auto",
+    intoverpop = .ctmaCtsemJuliaRoute(
+      backend_args, estimation,
+      is.data.frame(model$pars) && any(model$pars$indvarying %in% TRUE)
+    ),
+    optimize = identical(tolower(estimation), "ml"),
     cores = cores,
     priors = if (is.null(backend_args$priors)) priors else {
       backend_args$priors
@@ -562,10 +709,14 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
     "backendArgs$optimcontrol must be NULL or a named list.",
     call. = FALSE
   )
-  if (!is.null(finishsamples) && is.null(optimcontrol$finishsamples)) {
+  if (identical(tolower(estimation), "ml") && !is.null(finishsamples) &&
+      is.null(optimcontrol$finishsamples)) {
     optimcontrol$finishsamples <- as.integer(finishsamples)[1L]
   }
   if (length(optimcontrol)) fit_args$optimcontrol <- optimcontrol
+  if (!is.null(backend_args$sampleControl)) {
+    fit_args$sampleControl <- backend_args$sampleControl
+  }
 
   result <- .ctmaNativeCtsemJuliaFit(fit_args)
   result$resultsSummary <- .ctmaNativeCtsemJuliaSummary(result, digits)
@@ -574,10 +725,10 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   # established compatibility alias used by Stan and CoTiMA2's Julia adapter.
   result$ctstanmodelbase <- model
   result$backend <- "ctsemjulia"
-  result$ctsemjulia_mode <- if (
-    is.data.frame(model$pars) && "indvarying" %in% names(model$pars) &&
-      any(model$pars$indvarying %in% TRUE, na.rm = TRUE)
-  ) "laplace" else "direct"
+  result$ctsemjulia_mode <- .ctmaCtsemJuliaMode(
+    result, fit_args$intoverpop, !fit_args$optimize,
+    is.data.frame(model$pars) && any(model$pars$indvarying %in% TRUE)
+  )
   result
 }
 

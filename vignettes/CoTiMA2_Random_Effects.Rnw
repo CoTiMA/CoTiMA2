@@ -861,7 +861,17 @@ used, so \code{scaleTI = TRUE} and \code{WEC = TRUE} are supported.
 \subsection{Store the requested random-effect masks}
 
 With \code{fit = FALSE}, \code{ctmaFit()} returns the data, the ctsem model
-specification, and an \code{argumentList}. The latter retains
+specification, an executable textual representation in \code{ctModelText},
+and an \code{argumentList}. The text can be inspected with
+\code{cat(cotimaSetup\$ctModelText)} or evaluated to recreate the model as an
+object named \code{ctModel}:
+
+<<recreate-ctmodel-text, purl=FALSE, eval=FALSE>>=
+eval(parse(text = cotimaSetup$ctModelText))
+@
+
+The generated code preserves the final CoTiMA2 parameter table and its
+post-construction constraints. The \code{argumentList} retains
 \code{sameInitialTimes} and \code{CoTiMAStanctArgs}, allowing
 \code{ctmaRePrep()} to reproduce relevant ctsem setup options. The user may
 define the random-effect masks before preparation. Each mask must be an
@@ -1488,6 +1498,32 @@ effect already acts on the appropriate freely estimated T0 (co)variance.
 
 \section{Diagnostics and reporting}
 
+\subsection{Native ctsem Julia Bayesian sampling}
+
+CoTiMA2 0.14.29 additionally supports native Bayesian sampling in
+\code{ctmaInit()} and \code{ctmaFit()} with \code{backend="ctsemjulia"}.
+This interface is separate from \code{ctmaRePrep()} and \code{ctmaReFit()}.
+Use \code{optimize=FALSE}, \code{priors=TRUE}, and a nested
+\code{backendArgs\$sampleControl} list. Since 0.14.33, the sampler and
+placement are chosen by ctsem unless explicitly supplied. Select the target
+with \code{backendArgs\$intoverpop}: \code{"none"} for joint random-effects
+sampling, \code{"laplace"} or \code{"augmented"} for a marginal, or
+\code{"auto"}. NUTS can use either target; SAEM and learned-map NUTS
+(\code{sampler="map"}) require the joint target, and tempered SMC
+(\code{sampler="smc"}) requires a marginal target. Existing controls selecting study and subject
+random effects still define the model; selecting SAEM alone does not add any
+random effects.
+
+NUTS, map and SAEM accept \code{chains}, \code{warmup}, \code{draws},
+\code{maxDraws}, \code{processes}, and \code{seed}. NUTS also accepts
+\code{target\_accept} and \code{maxdepth}. For SMC, use \code{particles}
+and optionally \code{coreset}; omit chains, warmup and stepsize.
+The map sampler is not MAP optimization. The Julia Usage guide provides
+complete initial-study and pooled-fitting examples and explains the native
+diagnostic stopping targets. Report the sampler and integration target along
+with posterior convergence diagnostics; the ML recovery tests described
+elsewhere in this guide do not replace those diagnostics.
+
 Centred and non-centred parameterizations should be compared through short
 diagnostic runs before committing to long sampling. The central HMC quantities
 are divergences, the proportion of iterations that reach
@@ -1645,5 +1681,20 @@ Stan Development Team (2026).
 \url{https://mc-stan.org/docs/reference-manual/}.
 
 \end{thebibliography}
+
+\section{Native-engine smoke-test evidence, 27 October 2026}
+
+Real fits with ctsem revision \code{57a9758d} and CoTiMA2 0.14.33 completed
+for person-only, study-only and nested person/study intercepts. ML and MAP
+optimization and joint learned-map sampling were exercised; person-level SAEM
+and study-level marginal SMC also completed. These small tests demonstrate
+that study-only random effects need no artificial person-level effect.
+
+They do not establish random-effect variance recovery or posterior accuracy.
+In particular, the prior-free study-only ML fit warned that its study SD was
+unidentified. The short Bayesian runs had zero reported divergences but were
+not long enough for substantive inference. Automatic sampling retained a
+marginal NUTS route for the tested Gaussian person-intercept model; explicit
+joint sampling remains available with \code{intoverpop="none"}.
 
 \end{document}

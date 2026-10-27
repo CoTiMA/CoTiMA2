@@ -26,7 +26,11 @@
 #' @param experimental Adds main effect of ind. level moderators
 #' @param equalDrift Constrains all listed effects to be equal (e.g., equalDrift = c("V1toV2", "V2toV1")). Note that this is not required for testing the assumption that two effects are equal in the population. Use the invariantDrift argument and then \code{\link{ctmaEqual}})
 #' @param finishsamples number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).
-#' @param fit TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctStanFit}})
+#' @param fit TRUE (default) fits the requested model. FALSE returns the generated
+#'   long-format data, the editable ctsem model in \code{ctModel}, and a
+#'   copyable, executable R specification of that model in \code{ctModelText}.
+#'   The model can then be modified and fitted using
+#'   \code{\link[ctsem]{ctFit}}.
 #' @param ind.mod.names vector of names for individual level (!) moderators used in output
 #' @param ind.mod.number which in the vector of individual level (!) moderator values shall be used (e.g., 2 for a single moderator or 1:3 for 3 moderators simultaneously)
 #' @param ind.mod.type 'cont' or 'cat' of the individual level (!) moderators (mixing them in a single model not yet possible)
@@ -71,9 +75,10 @@
 #'   validated CoTiMA2 Julia ML or Bayesian engine. Experimental
 #'   \code{"ctsemjulia"} instead uses ctsem's native Julia backend. Models
 #'   without random effects use direct ML with \code{intoverpop = "auto"};
-#'   hierarchical random effects activate \code{intoverpop = "laplace"}.
-#'   This backend currently supports ML estimation only and requires the
-#'   development ctsem API detected by CoTiMA2 at run time.
+#'   hierarchical random effects use the requested native integration target.
+#'   Set \code{backendArgs$intoverpop} to \code{"auto"} (default),
+#'   \code{"none"} (joint), \code{"laplace"}, or \code{"augmented"}. This route
+#'   requires the compatible ctsem API detected by CoTiMA2 at run time.
 #' @param backendArgs named backend-specific controls. With the default Stan
 #'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 #'   completed from \code{ctmaBackendDefaults("stan")}. With the Julia
@@ -90,9 +95,24 @@
 #'   \code{subject_random_effects} and \code{subject_parameters} add
 #'   subject-level effects; existing subject-level settings in the generated
 #'   model are retained. Native ctsem optimizer controls are supplied as
-#'   \code{backendArgs$optimcontrol}. Calling \code{ctmaBackendDefaults()}
+#'   \code{backendArgs$optimcontrol}. With \code{optimize=FALSE}, native
+#'   sampler controls are supplied as \code{backendArgs$sampleControl}; set
+#'   \code{sampler="nuts"}, \code{"saem"}, \code{"map"}, or \code{"smc"}.
+#'   Omit sampler and placement to use ctsem's automatic selection. The map
+#'   sampler uses a learned transformation and is not MAP optimization.
+#'   Common controls include
+#'   \code{chains}, \code{warmup}, \code{draws}, \code{maxDraws},
+#'   \code{processes}, and \code{seed}. NUTS additionally uses controls such as
+#'   \code{target_accept}, \code{maxdepth}, \code{minESS}, and
+#'   \code{rhatTarget}. SMC uses \code{particles} and \code{coreset}; do not
+#'   supply \code{chains}, \code{warmup}, or \code{stepsize} for SMC.
+#'   SAEM and map require joint random-effects sampling; SMC requires a
+#'   marginal target. CoTiMA2 never changes the integration target merely
+#'   because a sampler is selected.
+#'   Calling \code{ctmaBackendDefaults()}
 #'   without arguments returns Stan defaults only. Use
-#'   \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} to inspect the
+#'   \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")} or replace
+#'   \code{"ML"} by \code{"Bayes"} to inspect the
 #'   native-backend interface. It explicitly returns
 #'   \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
 #'   ML default and providing standard errors and intervals for ordinary ML
@@ -154,6 +174,11 @@
 #' randomEffects (not yet fully working),  the minus2ll value and its n.parameters, the opt.lag sensu Dormann & Griffin (2015) and the
 #' max.effects that occur at the opt.lag, clus.effects and mod.effects, and possible warning messages (message). Plot type is
 #' plot.type=c("drift") and model.type="ct" ("omx" was deprecated, "stanct" was used until ctsem version 3.10.2).
+#' With \code{fit=FALSE}, \code{ctModelText} contains executable R code that
+#' reconstructs the returned \code{ctModel}, including its exact parameter
+#' table, binary/ordinal manifest types, individual-variation settings, study
+#' indicators, and TI predictor effects. Evaluate it with
+#' \code{eval(parse(text = x$ctModelText))} or copy it into an R script.
 #'
 ctmaFit <- function(
     activateRPB=FALSE,
@@ -240,6 +265,23 @@ ctmaFit <- function(
   backend <- backend_resolution$backend
   CoTiMAStanctArgs <- backend_resolution$stan_args
   resolved_backend_args <- backend_resolution$backend_args
+  if (identical(backend, "ctsemjulia") &&
+      identical(requested_estimation, "Bayes")) {
+    if (!is.null(chains) &&
+        is.null(backendArgs$sampleControl$chains)) {
+      resolved_backend_args$sampleControl$chains <- as.integer(chains)[1L]
+    }
+    if (!is.null(iter)) {
+      if (is.null(backendArgs$sampleControl$warmup)) {
+        resolved_backend_args$sampleControl$warmup <-
+          as.integer(iter %/% 2L)
+      }
+      if (is.null(backendArgs$sampleControl$draws)) {
+        resolved_backend_args$sampleControl$draws <-
+          as.integer(iter - iter %/% 2L)
+      }
+    }
+  }
   julia_fit_requested <- identical(backend, "julia") && requested_fit
   ctsemjulia_fit_requested <- identical(backend, "ctsemjulia") && requested_fit
   backend_fit_requested <- julia_fit_requested || ctsemjulia_fit_requested
@@ -2246,9 +2288,13 @@ ctmaFit <- function(
 
   if (fit == FALSE) {
     #if (hessianWarning[[1]] == FALSE) {
-      results <- list(summary=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),
+      results <- list(summary=c(
+                        "No model was fitted, only data and code were generated. See $data, $ctModel, and $ctModelText.",
+                        "To reconstruct the model from the generated R code, use eval(parse(text = your_result$ctModelText))."
+                      ),
                       data = datalong_all,
                       ctModel = stanctModel,
+                      ctModelText = .ctmaModelText(stanctModel),
                       studyList = ctmaInitFit$studyList,
                       emprawList = ctmaInitFit$emprawList,
                       argumentList = list(
@@ -2463,7 +2509,8 @@ ctmaFit <- function(
       cotima_call = cotima_call,
       inits = inits,
       priors = priors,
-      verbose = verbose
+      verbose = verbose,
+      estimation = requested_estimation
     )
     return(invisible(native_result))
   }

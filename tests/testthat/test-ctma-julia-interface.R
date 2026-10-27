@@ -107,6 +107,10 @@ test_that("the packaged Julia project declares the backend dependencies", {
   expect_true(any(grepl("validate_parallel_subjects", backend, fixed = TRUE)))
   expect_true(any(grepl("ctsem_optimize_warm_start", backend, fixed = TRUE)))
   expect_true(any(grepl("Threads.@threads :static", backend, fixed = TRUE)))
+  expect_true(any(grepl("_nuts_safe_evaluate", backend, fixed = TRUE)))
+  expect_true(any(grepl("_nuts_rejectable_error", backend, fixed = TRUE)))
+  expect_true(any(grepl("CompositeException", backend, fixed = TRUE)))
+  expect_true(any(grepl("return (-Inf, zeros", backend, fixed = TRUE)))
 })
 
 test_that("model-derived Julia starts respect ctsem matrix transforms", {
@@ -127,4 +131,19 @@ test_that("model-derived Julia starts respect ctsem matrix transforms", {
     CoTiMA2:::.ctmaJuliaDefaultRawStart(fit),
     c(0.9, 0, -1.2, -0.75, 0, -1.2, 0)
   )
+})
+test_that("Julia setup suppresses only misleading backend messages", {
+  expect_true(.ctmaJuliaSuppressSetupMessage(
+    "Maximum likelihood estimation requested"
+  ))
+  expect_true(.ctmaJuliaSuppressSetupMessage(paste(
+    "Binary indicators use a linearised (moment-matched Gaussian)",
+    "measurement update on the stan backend, which makes DRIFT unreliable."
+  )))
+  expect_false(.ctmaJuliaSuppressSetupMessage(
+    "Binary likelihood validation failed."
+  ))
+  expect_false(.ctmaJuliaSuppressSetupMessage(
+    "A genuine ctsem setup warning"
+  ))
 })

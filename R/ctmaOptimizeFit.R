@@ -847,8 +847,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                 saveComplexPars = ctStanFitArgs$saveComplexPars,
                                 gendata = ctStanFitArgs$gendata,
                                 control = ctStanFitArgs$control,
-                                verbose = verbose,
-                                vb = ctStanFitArgs$vb
+                                verbose = verbose
         ),
         warning = function(w) {warns[[i]] <<- w}),
         error = function(e) {

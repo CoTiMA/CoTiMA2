@@ -26,8 +26,12 @@
 #'
 #' @param backend Estimation backend: \code{"stan"} (the default),
 #'   \code{"julia"} for CoTiMA2's Julia engine, or experimental
-#'   \code{"ctsemjulia"} for ctsem's native Julia engine. It uses direct ML
-#'   without random effects and Laplace ML when random effects are present.
+#'   \code{"ctsemjulia"} for ctsem's native Julia engine. It supports ML and,
+#'   with a compatible ctsem 4.x development version, Bayesian sampling with
+#'   NUTS, SAEM, learned-map NUTS, or tempered SMC. NULL sampling defaults
+#'   leave selection and tuning to ctsem. \code{intoverpop="auto"} delegates
+#'   integration to ctsem; \code{"none"} requests joint random-effects
+#'   sampling and \code{"laplace"} or \code{"augmented"} requests a marginal.
 #' @param estimation Estimation method. For
 #'   \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
 #'   \code{"none"} returns the common Julia evaluation controls.
@@ -46,6 +50,7 @@
 #' ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
 #' ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
 #' ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")
+#' ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
 ctmaBackendDefaults <- function(
     backend = c("stan", "julia", "ctsemjulia"),
     estimation = NULL,
@@ -71,17 +76,37 @@ ctmaBackendDefaults <- function(
     )
     if (is.null(estimation)) estimation <- "ml"
     estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
-    if (!identical(estimation, "ml")) stop(
-      "The experimental ctsemjulia backend currently supports ML ",
-      "estimation only (use optimize = TRUE).",
-      call. = FALSE
-    )
-    common <- list(
-      inits = NULL,
-      optimcontrol = list(uncertainty = "hessian"),
-      priors = NULL,
-      verbose = NULL
-    )
+    if (identical(estimation, "ml")) {
+      common <- list(
+        inits = NULL,
+        intoverpop = "auto",
+        optimcontrol = list(uncertainty = "hessian"),
+        priors = NULL,
+        verbose = NULL
+      )
+    } else {
+      common <- list(
+        inits = NULL,
+        intoverpop = "auto",
+        optimcontrol = list(),
+        priors = NULL,
+        verbose = NULL,
+        sampleControl = list(
+          sampler = NULL,
+          placement = NULL,
+          chains = NULL,
+          warmup = NULL,
+          draws = NULL,
+          maxDraws = NULL,
+          processes = NULL,
+          seed = NULL,
+          minESS = NULL,
+          meanESS = NULL,
+          rhatTarget = NULL,
+          saveEffects = NULL
+        )
+      )
+    }
     if (identical(workflow, "ctmaInit")) return(common)
     return(c(list(
       study_id = NULL,

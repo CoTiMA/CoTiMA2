@@ -6,6 +6,22 @@
 # public. The implementation follows Charles Driver's ctsem 3.12.0 juliaFit
 # API; feature detection is used because that API is not yet on CRAN.
 
+.ctmaCtsemJuliaCorrectionMode <- function(namespace) {
+  if (is.null(namespace)) return("missing")
+  if (exists("ctLaplaceCorrect", envir = namespace, inherits = FALSE)) {
+    return("separate")
+  }
+  if (!exists("ctLaplaceCheck", envir = namespace, inherits = FALSE)) {
+    return("missing")
+  }
+  check <- get("ctLaplaceCheck", envir = namespace, inherits = FALSE)
+  arguments <- names(formals(check))
+  if (all(c("correction", "refine") %in% arguments)) {
+    return("integrated")
+  }
+  "missing"
+}
+
 .ctmaCtsemJuliaLaplaceStatus <- function() {
   ctsem_available <- requireNamespace("ctsem", quietly = TRUE)
   version <- if (ctsem_available) {
@@ -14,11 +30,13 @@
     NA_character_
   }
   namespace <- if (ctsem_available) asNamespace("ctsem") else NULL
+  correction_mode <- .ctmaCtsemJuliaCorrectionMode(namespace)
   api <- c(
     ctLaplaceCheck = !is.null(namespace) &&
       exists("ctLaplaceCheck", envir = namespace, inherits = FALSE),
-    ctLaplaceCorrect = !is.null(namespace) &&
-      exists("ctLaplaceCorrect", envir = namespace, inherits = FALSE),
+    # ctsem <= 3.12 exported ctLaplaceCorrect(). In ctsem 4.0 its correction
+    # and optional refinement are integrated into ctLaplaceCheck().
+    ctLaplaceCorrect = correction_mode != "missing",
     ctJuliaStatus = !is.null(namespace) &&
       exists("ctJuliaStatus", envir = namespace, inherits = FALSE),
     ctJuliaSetup = !is.null(namespace) &&
@@ -47,6 +65,7 @@
     ctsem_version = version,
     JuliaConnectoR = connector_available,
     api = api,
+    laplace_correction = correction_mode,
     reason = reason
   ), class = "ctmaCtsemJuliaLaplaceStatus")
 }
@@ -430,7 +449,7 @@
 
 .ctmaFitCtsemJuliaBackend <- function(
     setup, backend_args, cores, cotima_call = NULL,
-    inits = NULL, priors = FALSE, verbose = 0) {
+    inits = NULL, priors = FALSE, verbose = 0, estimation = "ML") {
   prepare_names <- c(
     "study_id", "study_id_ti", "study_dummy_ti", "reDRIFT",
     "reDIFFUSION", "reT0VAR", "subject_random_effects",
@@ -447,6 +466,7 @@
   fit_args$verbose <- if (!is.null(backend_args$verbose)) {
     backend_args$verbose
   } else verbose
+  fit_args$optimize <- identical(tolower(estimation), "ml")
   if (!is.null(backend_args$optimcontrol)) {
     if (!is.list(backend_args$optimcontrol)) stop(
       "backendArgs$optimcontrol must be NULL or a named list.",
@@ -454,10 +474,20 @@
     )
     fit_args$optimcontrol <- backend_args$optimcontrol
   }
+  if (!is.null(backend_args$sampleControl)) {
+    if (!is.list(backend_args$sampleControl)) stop(
+      "backendArgs$sampleControl must be NULL or a named list.",
+      call. = FALSE
+    )
+    fit_args$sampleControl <- backend_args$sampleControl
+  }
   fit_args <- fit_args[!vapply(fit_args, is.null, logical(1L))]
 
   use_laplace <- .ctmaCtsemJuliaRandomEffectsRequested(
     setup, backend_args
+  )
+  fit_args$intoverpop <- .ctmaCtsemJuliaRoute(
+    backend_args, estimation, use_laplace
   )
   if (use_laplace) {
     prepare_args <- backend_args[
@@ -480,7 +510,9 @@
   }
   result$source_object <- setup
   result$ctsemjulia_prepared <- prepared
-  result$ctsemjulia_mode <- if (use_laplace) "laplace" else "direct"
+  result$ctsemjulia_mode <- .ctmaCtsemJuliaMode(
+    result, fit_args$intoverpop, !fit_args$optimize, use_laplace
+  )
   result$cotima_call <- cotima_call
   result$backend <- "ctsemjulia"
   result$argumentList <- setup$argumentList
@@ -488,11 +520,13 @@
   result$argumentList$backendArgs <- backend_args
   result$argumentList$fit <- TRUE
   .ctmaAnnotateCtsemJuliaResult(
-    result, prepared = prepared, use_laplace = use_laplace
+    result, prepared = prepared,
+    use_laplace = identical(result$ctsemjulia_mode, "laplace")
   )
 }
 
-.ctmaFitCtsemJuliaDirect <- function(setup, cores = 1L, ...) {
+.ctmaFitCtsemJuliaDirect <- function(
+    setup, cores = 1L, intoverpop = "auto", ...) {
   .ctmaRequireCtsemJuliaLaplace()
   if (!.ctma_is_unfitted_cotima(setup)) stop(
     "setup must be returned by ctmaFit(..., fit = FALSE).",
@@ -504,11 +538,12 @@
   )
   ctsem::ctFit(
     datalong = setup$data, model = setup$ctModel, backend = "julia",
-    intoverpop = "auto", cores = cores, ...
+    intoverpop = intoverpop, cores = cores, ...
   )
 }
 
-.ctmaFitCtsemJuliaLaplace <- function(prepared, cores = 1L, ...) {
+.ctmaFitCtsemJuliaLaplace <- function(
+    prepared, cores = 1L, intoverpop = "laplace", ...) {
   .ctmaRequireCtsemJuliaLaplace()
   if (!inherits(prepared, "ctmaCtsemJuliaLaplacePrep")) stop(
     "prepared must be returned by .ctmaPrepareCtsemJuliaLaplace().",
@@ -522,7 +557,7 @@
     datalong = prepared$data,
     model = prepared$model,
     backend = "julia",
-    intoverpop = "laplace",
+    intoverpop = intoverpop,
     cores = cores,
     ...
   )

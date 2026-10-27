@@ -14,17 +14,29 @@
 #'   an explicit Julia thread control is supplied in \code{backendArgs}.
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function
 #' @param customPar logical. If set TRUE leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)
-#' @param diff labels for diffusion effects. Have to be either of the character strings of the type "diff_eta1" or "diff_eta2_eta1" (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)
+#' @param diff Diffusion-matrix specification with exactly
+#'   \code{n.latent^2} entries. Character entries are freely estimated labels
+#'   (identical labels impose equality constraints); numeric entries are fixed
+#'   values, for example zero to omit a covariance. Entries follow R's
+#'   column-major matrix order; the diffusion matrix is symmetric and only its
+#'   lower triangle is parameterized.
 #' @param digits number of digits used for rounding (in outputs)
 #' @param doPar parallel and multiple fitting if single studies. A value > 1 will fit each study doPar times in parallel mode during which no output is generated (screen remains silent). Useful to obtain best fit.
-#' @param drift labels for drift effects. Have to be either of the character strings of the type V1toV2 (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)
+#' @param drift Drift-matrix specification with exactly
+#'   \code{n.latent^2} entries. Character entries are freely estimated labels
+#'   (identical labels impose equality constraints); numeric entries are fixed
+#'   values, such as zero to exclude an effect.
 #' @param experimental used for debugging puposes (default = FALSE)
 #' @param finishsamples number of samples to draw (either from Hessian-based
 #'   covariance or the posterior distribution) for final results computation
 #'   (default = 1000). With the Julia backend this sets
 #'   \code{backendArgs$transformed_draws}, unless that control is supplied
 #'   explicitly in \code{backendArgs}.
-#' @param fit TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})
+#' @param fit TRUE (default) fits the requested model. FALSE returns the generated
+#'   long-format data, the editable ctsem model in \code{ctModel}, and a
+#'   copyable, executable R specification of that model in \code{ctModelText}.
+#'   The model can then be modified and fitted using
+#'   \code{\link[ctsem]{ctFit}}.
 #' @param indVarying control for unobserved heterogeneity through randomly
 #'   (inter-individually) varying manifest means. With
 #'   \code{backend="ctsemjulia"}, \code{"MANIFEST"} or \code{"CINT"}
@@ -59,14 +71,24 @@
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit - for debugging
 #' @param backend Estimation backend: \code{"stan"} (the default), CoTiMA2's
 #'   experimental \code{"julia"} backend, or ctsem's experimental native
-#'   \code{"ctsemjulia"} backend for maximum-likelihood estimation.
+#'   \code{"ctsemjulia"} backend for ML or Bayesian estimation.
 #' @param backendArgs Named list of controls for the selected backend. CoTiMA2
 #'   Julia controls follow \code{\link{ctmaJuliaFit}}. For
 #'   \code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
-#'   \code{priors}, and \code{verbose}. Primary studies are currently processed
+#'   \code{priors}, and \code{verbose}. For Bayesian estimation, use
+#'   \code{backendArgs$sampleControl} and choose \code{sampler="nuts"},
+#'   \code{"saem"}, \code{"map"}, or \code{"smc"}, or omit sampler for
+#'   ctsem's automatic choice. Set \code{backendArgs$intoverpop} explicitly
+#'   to choose joint (\code{"none"}) or marginal (\code{"laplace"} or
+#'   \code{"augmented"}) sampling, or keep \code{"auto"}. Common controls include \code{chains},
+#'   \code{warmup}, \code{draws}, \code{maxDraws}, \code{processes}, and
+#'   \code{seed}. SMC instead uses \code{particles} and \code{coreset}; omit
+#'   chains and warmup. Placement is delegated to ctsem unless explicitly
+#'   supplied. Primary studies are processed
 #'   sequentially with either Julia backend. Calling
 #'   \code{ctmaBackendDefaults()} without arguments displays Stan defaults;
 #'   use \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")} for this
+#'   workflow or replace \code{"ML"} by \code{"Bayes"} for sampler controls.
 #'   workflow. It explicitly returns
 #'   \code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
 #'   ML default and providing standard errors and intervals. Fast development
@@ -112,6 +134,11 @@
 #' returned object, comprises "estimates" (the aggregated effects), possible randomIntercepts,confidenceIntervals, the
 #' minus2ll value and its n.parameters, and possible warning messages (message). Plot type is plot.type=c("drift") and model.type="stanct"
 #' ("omx" was deprecated).
+#' With \code{fit=FALSE}, \code{ctModelText} contains executable R code that
+#' reconstructs the returned \code{ctModel}, including its exact parameter
+#' table, binary/ordinal manifest types, individual-variation settings, and TI
+#' predictor effects. Evaluate it with \code{eval(parse(text = x$ctModelText))}
+#' or copy it into an R script.
 #'
 ctmaInit <- function(
     activateRPB=FALSE,
@@ -182,6 +209,23 @@ ctmaInit <- function(
   backend <- backend_resolution$backend
   resolved_backend_args <- backend_resolution$backend_args
   CoTiMAStanctArgs <- backend_resolution$stan_args
+  if (identical(backend, "ctsemjulia") &&
+      identical(requested_estimation, "Bayes")) {
+    if (!is.null(chains) &&
+        is.null(backendArgs$sampleControl$chains)) {
+      resolved_backend_args$sampleControl$chains <- as.integer(chains)[1L]
+    }
+    if (!is.null(iter)) {
+      if (is.null(backendArgs$sampleControl$warmup)) {
+        resolved_backend_args$sampleControl$warmup <-
+          as.integer(iter %/% 2L)
+      }
+      if (is.null(backendArgs$sampleControl$draws)) {
+        resolved_backend_args$sampleControl$draws <-
+          as.integer(iter - iter %/% 2L)
+      }
+    }
+  }
   if (identical(backend, "julia")) {
     resolved_backend_args <- .ctmaInitJuliaFinishsamples(
       finishsamples = finishsamples,
@@ -1219,6 +1263,8 @@ ctmaInit <- function(
 
         }
 
+        currentModel <- .ctma_restore_manifesttype(currentModel, binaries)
+
         .ctma_check_binary_intercepts(
           currentModel, binaries,
           process_intercepts = randomIntercepts %in% c("CINT", "MANIFEST") ||
@@ -1263,12 +1309,13 @@ ctmaInit <- function(
                 finishsamples = finishsamples,
                 cores = coresToUse,
                 verbose = verbose,
-                digits = digits
+                digits = digits,
+                estimation = requested_estimation
               ), i, n.studies, studyList[[i]])
               results_summary <- results$resultsSummary
             } else {
             #results <- suppressMessages(ctsem::ctStanFit(
-            results <- .ctmaWithInitStudyWarnings(ctsem::ctFit(
+            results <- .ctmaWithInitStudyWarnings(.ctmaCtFitCompat(
               datalong = emprawLong[[i]],
               model = currentModel,
               fit=fit,
@@ -1484,8 +1531,6 @@ ctmaInit <- function(
           model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", "Mean"], n.latent)); model_Drift_Coef[[i]]
         } else { # new version of ctsem
           model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", "Mean"], n.latent)); model_Drift_Coef[[i]]
-          tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-          model_Drift_Coef[[i]] <- model_Drift_Coef[[i]][tmp8]; model_Drift_Coef[[i]]
         }
         names(model_Drift_Coef[[i]]) <- driftFullNames; model_Drift_Coef[[i]]
 
@@ -1493,8 +1538,6 @@ ctmaInit <- function(
           model_Drift_SE[[i]] <- c(matrix(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", "Sd"], n.latent, byrow=FALSE)); model_Drift_SE[[i]]
         } else { # new version of ctsem
           model_Drift_SE[[i]] <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", "sd"], n.latent, byrow=FALSE)); model_Drift_SE[[i]]
-          tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-          model_Drift_SE[[i]] <- model_Drift_SE[[i]][tmp8]
         }
         names(model_Drift_SE[[i]]) <- c(driftFullNames); model_Drift_SE[[i]]
 
@@ -1504,9 +1547,6 @@ ctmaInit <- function(
         } else {
           tmp1 <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", "2.5%"], n.latent, byrow=FALSE)); tmp1
           tmp2 <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", "97.5%"], n.latent, byrow=FALSE)); tmp2
-          tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-          tmp1 <- tmp1[tmp8]; tmp1
-          tmp2 <- tmp2[tmp8]; tmp2
         }
 
         #tmp1; tmp2
@@ -1517,7 +1557,9 @@ ctmaInit <- function(
         tmp4 <- unique(c(tmp3a, tmp3b, tmp3c)); tmp4
         tmp5 <- grep("toV", rownames(resultsSummary$popmeans)); tmp5
         tmp6 <- rownames(resultsSummary$popmeans)[tmp]; tmp6
-        if (any(tmp4 != 0)) estProb[[length(estProb)+1]] <- paste0("Possible problems for Study ", i, " in estimating: ", paste0(tmp6[tmp4], collapse=" "))
+        estProb <- .ctmaInitRecordIntervalProblem(
+          estProb, i, "DRIFT", tmp4, driftFullNames
+        )
 
         #estProb
         model_Drift_CI[[i]] <- c(rbind(tmp1, tmp2)); model_Drift_CI[[i]]
@@ -1540,8 +1582,6 @@ ctmaInit <- function(
             names(model_Diffusion_Coef[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[grep("diff_", rownames(resultsSummary$popmeans))]))
           } else {
             model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "Mean"])
-            tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-            model_Diffusion_Coef[[i]] <- model_Diffusion_Coef[[i]][tmp8]
             names(model_Diffusion_Coef[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]))
           }
         }
@@ -1559,8 +1599,6 @@ ctmaInit <- function(
             names(model_Diffusion_SE[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[grep("diff_", rownames(resultsSummary$popmeans))]))
           } else {
             model_Diffusion_SE[[i]] <- resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "sd"] #; model_Diffusion_SE[[i]]
-            tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-            model_Diffusion_SE[[i]] <- model_Diffusion_SE[[i]][tmp8]
             names(model_Diffusion_SE[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]))
           }
         }
@@ -1576,9 +1614,6 @@ ctmaInit <- function(
         } else {
           tmp1 <- resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "2.5%"]; tmp1
           tmp2 <- resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "97.5%"]; tmp2
-          tmp8 <- which(!(is.na(currentModel$pars[currentModel$pars$matrix == "DRIFT",]$param))); tmp8
-          tmp1 <- tmp1[tmp8]
-          tmp2 <- tmp2[tmp8]
           model_Diffusion_CI[[i]] <- c(rbind(tmp1, tmp2)); model_Diffusion_CI[[i]]
           tmp3 <- c(rbind(paste0(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]), "LL"),
                           paste0(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]), "UL"))); tmp3
@@ -1593,7 +1628,9 @@ ctmaInit <- function(
         tmp4 <- unique(c(tmp3a, tmp3b, tmp3c)); tmp4
         tmp5 <- grep("diff", rownames(resultsSummary$popmeans)); tmp5
         tmp6 <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp5])); tmp6
-        if (any(tmp4 != 0)) estProb[[length(estProb)+0]] <- paste0(estProb[[length(estProb)+0]], " ", paste0(tmp6[tmp4], collapse=" "))
+        estProb <- .ctmaInitRecordIntervalProblem(
+          estProb, i, "DIFFUSION", tmp4, names(model_Diffusion_Coef[[i]])
+        )
 
         #estProb
         #if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") )  target <- "T0cov_" else target <- "0var"
@@ -1697,7 +1734,9 @@ ctmaInit <- function(
         if (length(tmp5) == 0) tmp5 <- grep("0cov", rownames(resultsSummary$popmeans))
         tmp5
         tmp6 <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp5])); tmp6
-        if (any(tmp4 != 0)) estProb[[length(estProb)+0]] <- paste0(estProb[[length(estProb)+0]], " ", paste0(tmp6[tmp4], collapse=" "))
+        estProb <- .ctmaInitRecordIntervalProblem(
+          estProb, i, "T0VAR", tmp4, names(model_T0var_Coef[[i]])
+        )
 
         #estProb
         if (indVarying %in% c("MANIFEST", "CINT") &&
@@ -2169,9 +2208,13 @@ ctmaInit <- function(
 
   if (fit == FALSE) {
     #if (hessianWarning == FALSE) {
-    results <- list(summary=c("No model was fitted, only data and code were generated. See $data & $ctModel section."),
+    results <- list(summary=c(
+                      "No model was fitted, only data and code were generated. See $data, $ctModel, and $ctModelText.",
+                      "To reconstruct the model from the generated R code, use eval(parse(text = your_result$ctModelText))."
+                    ),
                     data = empraw,
                     ctModel = currentModel,
+                    ctModelText = .ctmaModelText(currentModel),
                     backend = backend,
                     backendArgs = resolved_backend_args)
     #} else {

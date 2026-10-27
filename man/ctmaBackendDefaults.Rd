@@ -14,8 +14,12 @@ ctmaBackendDefaults(
 \arguments{
 \item{backend}{Estimation backend: \code{"stan"} (the default),
 \code{"julia"} for CoTiMA2's Julia engine, or experimental
-\code{"ctsemjulia"} for ctsem's native Julia engine. It uses direct ML
-without random effects and Laplace ML when random effects are present.}
+\code{"ctsemjulia"} for ctsem's native Julia engine. It supports ML and,
+with a compatible ctsem 4.x development version, Bayesian sampling with
+NUTS, SAEM, learned-map NUTS, or tempered SMC. NULL sampling defaults
+leave selection and tuning to ctsem. \code{intoverpop="auto"} delegates
+integration to ctsem; \code{"none"} requests joint random-effects
+sampling and \code{"laplace"} or \code{"augmented"} requests a marginal.}
 
 \item{estimation}{Estimation method. For
 \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
@@ -62,4 +66,5 @@ ctmaBackendDefaults()
 ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
 ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
 ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")
+ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
 }

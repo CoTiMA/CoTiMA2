@@ -1200,6 +1200,39 @@ function ctsem_logposterior_and_gradient(rawest_r, sd; chunksize::Integer=7,
 end
 
 """
+Evaluate a NUTS log density and gradient while converting invalid numerical
+trial points into ordinary rejected proposals. Covariance matrices can lose
+positive definiteness at intermediate leapfrog positions even when the chain
+starts from a valid point; this is a property of the proposal, not a fatal
+sampler error.
+"""
+function _nuts_rejectable_error(err)
+    if err isa PosDefException || err isa SingularException ||
+       err isa DomainError
+        return true
+    end
+    if err isa TaskFailedException
+        return _nuts_rejectable_error(err.task.exception)
+    end
+    if err isa CompositeException
+        return !isempty(err.exceptions) &&
+            all(_nuts_rejectable_error, err.exceptions)
+    end
+    false
+end
+
+function _nuts_safe_evaluate(evaluator, x)
+    try
+        evaluator(x)
+    catch err
+        if _nuts_rejectable_error(err)
+            return (-Inf, zeros(eltype(x), length(x)))
+        end
+        rethrow()
+    end
+end
+
+"""
     ctsem_nuts(rawest, sd; samples=1000, warmup=1000, chains=4, ...)
 
 Run independent AdvancedHMC NUTS chains with Stan-style diagonal or dense
@@ -1243,11 +1276,13 @@ function ctsem_nuts(rawest_r, sd; samples::Integer=1000,
         verbose && println("NUTS chain ", chain, "/", chains)
         rng = Random.MersenneTwister(seed + chain - 1)
         initial = x0 + init_jitter .* randn(rng, D)
-        posterior_and_gradient = study_re ?
+        unsafe_posterior_and_gradient = study_re ?
             (x -> ctsem_re_logposterior_and_gradient(
                 x, sd; chunksize=chunksize, threaded=threaded)) :
             (x -> ctsem_logposterior_and_gradient(
                 x, sd; chunksize=chunksize, threaded=threaded))
+        posterior_and_gradient = x ->
+            _nuts_safe_evaluate(unsafe_posterior_and_gradient, x)
         logdensity = x -> posterior_and_gradient(x)[1]
         logdensity_gradient = posterior_and_gradient
         metric_object = metric === :dense ?

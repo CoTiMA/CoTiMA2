@@ -20,6 +20,19 @@
   list(cint = cint, manifestMeans = manifestMeans)
 }
 
+# Restore the requested observation families after a model-construction branch
+# has replaced the original ctsem model (for example, the augmented-state
+# random-intercept representation).
+.ctma_restore_manifesttype <- function(model, binaries) {
+  if (is.null(binaries)) return(model)
+  nmanifest <- as.integer(model$n.manifest)[1L]
+  if (!is.finite(nmanifest) || nmanifest < 1L || length(binaries) < nmanifest)
+    stop("binaries must contain at least one entry per manifest variable.",
+      call. = FALSE)
+  model$manifesttype <- as.numeric(binaries[seq_len(nmanifest)])
+  model
+}
+
 # Translate ctsem's individually varying intercept branch to CoTiMA's
 # Julia-compatible augmented-state representation. The pooled flag distinguishes
 # the restricted model from randomIntercepts, whose covariance structure may
