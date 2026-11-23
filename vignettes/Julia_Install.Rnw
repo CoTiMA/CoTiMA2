@@ -51,7 +51,7 @@
 \title{Installing Julia and CoTiMA2:\\
   A Copy-and-Paste Guide for Windows, macOS, and Ubuntu/Linux}
 \author{CoTiMA2 development documentation}
-\date{\today}
+\date{CoTiMA2 0.14.59 --- 6 November 2026}
 
 \begin{document}
 \maketitle
@@ -90,7 +90,7 @@ The installation has four distinct parts:
 \end{enumerate}
 
 CoTiMA2 includes its own Julia project description. The command
-\code{ctmaJuliaSetup()} installs and precompiles the Julia packages required by
+\code{ctmaJuliaSetup(agree = TRUE)} installs and precompiles the Julia packages required by
 that project. Colleagues do not need to learn Julia or manually select Julia
 packages.
 
@@ -371,7 +371,7 @@ console, run:
 \rnote
 \begin{lstlisting}[language=R]
 library(CoTiMA2)
-julia_setup <- ctmaJuliaSetup()
+julia_setup <- ctmaJuliaSetup(agree = TRUE)
 \end{lstlisting}
 
 This command performs several tasks in separate Julia processes:
@@ -396,7 +396,7 @@ julia_setup$julia_home
 julia_setup$project
 \end{lstlisting}
 
-\important{After \code{ctmaJuliaSetup()} has completed, restart R before the
+\important{After \code{ctmaJuliaSetup(agree = TRUE)} has completed, restart R before the
 first Julia fit. Also restart R after a failed JuliaCall initialization or
 before changing the requested number of Julia threads.}
 
@@ -509,7 +509,7 @@ The exact Windows location can differ; use the path reported by
 
 Restart R. JuliaCall remains partly initialized after some failures and cannot
 always be repaired inside the same R session. After restarting, run
-\code{ctmaJuliaSetup()} before attempting another fit.
+\code{ctmaJuliaSetup(agree = TRUE)} before attempting another fit.
 
 \subsection{The requested thread count is ignored}
 
@@ -522,7 +522,7 @@ count through \code{backendArgs}, for example
 
 RStudio Server, Java, or an R installation can place incompatible libraries
 in \code{LD\_LIBRARY\_PATH} or \code{LD\_PRELOAD}. CoTiMA2's
-\code{ctmaJuliaSetup()} automatically removes those variables from its Linux
+\code{ctmaJuliaSetup(agree = TRUE)} automatically removes those variables from its Linux
 setup subprocesses. Run setup through CoTiMA2 rather than manually invoking
 Julia package commands from inside RStudio:
 
@@ -576,7 +576,7 @@ following command, and press Enter:
 juliaup update
 \end{lstlisting}
 
-After a Julia update, restart R and rerun \code{ctmaJuliaSetup()} in the R
+After a Julia update, restart R and rerun \code{ctmaJuliaSetup(agree = TRUE)} in the R
 console. Do not update Julia in the middle of a running analysis.
 
 \section{Official resources}
@@ -590,5 +590,35 @@ console. Do not update Julia in the middle of a running analysis.
   \item CoTiMA2 Julia methodology and usage: see the installed vignette
     \emph{Using the Julia Estimation Backend in CoTiMA2}.
 \end{itemize}
+
+
+\section*{CPU budgets and writable Julia projects (0.14.48)}
+\code{coresToUse} is resolved against CPU availability reported by parallelly,
+including affinity and scheduler/check restrictions. Negative values retain
+available cores minus the requested reserve, with a minimum of one. Automatic
+bundled Julia allocation uses this resolved budget; explicit Julia worker,
+thread and BLAS combinations that exceed it fail before initialization.
+The maximum of the main-process and parallel-worker phases is budgeted, because
+these fitting phases run sequentially. Transformation workers are bounded too.
+The native \code{ctsemjulia} backend receives the resolved \code{cores} budget;
+its internal sampler allocation remains ctsem's responsibility.
+
+Owned child processes inherit single-thread BLAS/OpenMP environment limits;
+the caller's environment is restored even after errors. This does not change
+the threading of an R BLAS library already loaded by the caller. External
+processes and computations in other R sessions are outside this budget.
+
+The bundled \code{julia} backend uses a content-keyed project copy under R's
+CoTiMA2 user cache. Installed package files are read-only templates. Project
+instantiation may update the cached manifest, while fitting does not install
+missing dependencies. An explicit custom Julia source/project remains the
+user's responsibility. This policy does not change ctsem's independently
+managed native engine cache.
+
+Inspect \code{ctmaJuliaSetup(dry\_run = TRUE)} without creating project files
+or running Julia. For setup, explicitly run
+\code{ctmaJuliaSetup(agree = TRUE)}; batch sessions otherwise stop and
+interactive sessions ask for consent. JuliaCall bootstrap can also update
+Julia's default user environment. Restart R after bootstrap as instructed.
 
 \end{document}

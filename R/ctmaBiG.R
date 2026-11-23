@@ -10,7 +10,6 @@
 #'   must retain transformed ctsem draws.
 #' @param activeDirectory the directory where to save results (if not specified, it is taken from ctmaInitFit)
 #' @param PETPEESEalpha probability level (condition) below which to switch from PET to PEESE (cf. Stanley, 2017, p. 582, below Eq. 2; default p = .10)
-#' @param activateRPB if TRUE, messages (warning, finished) could be send to smart phone (default = FALSE)
 #' @param digits rounding (default = 4)
 #' @param finishsamples number of samples to draw (either from hessian based covariance or posterior distribution) for dt computations (default = 1000).
 #' @param zcurve performs z-curve analysis. Could fail if too few studies (e.g. around 10) are supplied. default=FALSE
@@ -18,7 +17,6 @@
 #' @param dt A scalar indicating a time interval across which discrete time effects should be estimated and then used for ctmaBiG.
 #' @param excludeStudies vector with studies to be excluded from ctmaBiG.
 #'
-#' @importFrom RPushbullet pbPost
 #' @importFrom stats var lm pnorm
 #' @importFrom zcurve zcurve
 #' @importFrom ctsem ctCollapse ctStanDiscretePars
@@ -57,40 +55,41 @@
 #' "Egger's tests Alt. Version" (constant of the OLS regression of the standard normal deviates of the drift coefficients on their
 #' precision), and "Z-Curve 2.0 Results". Plot type is plot.type=c("funnel", "forest") and model.type="BiG".
 #'
+#' @param ... Reserved. Unknown arguments are rejected with a migration hint where applicable.
 ctmaBiG <- function(
     ctmaInitFit=NULL,
     activeDirectory=NULL,
     PETPEESEalpha=.10,
-    activateRPB=FALSE,
+
     digits=4,
     finishsamples=1000,
     zcurve=FALSE,
     undoTimeScaling=TRUE,
     dt=NULL,   # try BiG with dt effects. Specify the Time for which dT effects should analyzed. Always does it with original time scale
-    excludeStudies=c()
-)
+    excludeStudies=c(), ...)
 
 
 {  # begin function definition (until end of file)
+  .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaBiG")
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaBiG")
   on.exit(.ctma_timer(), add = TRUE)
 
   ### check if fit object is specified
   if (is.null(ctmaInitFit)){
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nA fitted CoTiMA (\"ctmaInitFit\") object has to be supplied to analyse something. \nGood luck for the next try!"
     stop(ErrorMsg)
   }
 
   if (ctmaInitFit$model.type == "mx") {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Your attention is required."))}
+
     Msg <- "I found old OpenMx-fitted Init fits. Will try ctmaBiGOMX! \n"
     message(Msg)
     result <- ctmaBiGOMX(ctmaInitFit=ctmaInitFit,
                          activeDirectory=activeDirectory,
                          PETPEESEalpha=PETPEESEalpha,
-                         activateRPB=activateRPB,
+
                          digits=digits)
 
     class(results) <- "CoTiMAFit"
@@ -99,7 +98,7 @@ ctmaBiG <- function(
     #stop("Please check results carefully")
   }
 
-  if (!is.null(ctmaInitFit$summary$estimationProblems)) {
+  if (length(ctmaInitFit$summary$estimationProblems) > 0L) {
     Msg <- "There were estimation problems while fitting with ctmaInit(), which probably prevent BiG analysis! \n"
     message(Msg)
     message(paste(ctmaInitFit$summary$estimationProblems, "\n"))
@@ -149,14 +148,7 @@ ctmaBiG <- function(
     }
 
     # CHD 24.2.2023
-    if (any(all_SE == 0, na.rm=TRUE)) {
-      tmp <- which(all_SE == 0, arr.ind = TRUE); tmp
-      colnames(tmp) <- c("Study", "Drift Effect"); tmp
-      ErrorMsg <- paste0("\nAt least one SE was zero. Analysis of heterogeneity and bias cannot be performed.
-                         Possible problem in fitting the single studies listed above. \nGood luck for the next try!")
-      print(tmp)
-      stop(ErrorMsg)
-    }
+    .ctmaBiGCheckDriftSE(all_SE, n.latent, excludeStudies)
 
     # CHD 24.2.2023
     if (!(is.null(dt))) {

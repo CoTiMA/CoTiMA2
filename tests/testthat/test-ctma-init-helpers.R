@@ -38,6 +38,18 @@ test_that("Stan control overrides reject unnamed and unknown values", {
   )
 })
 
+test_that("removed ctsem variational-Bayes controls are handled explicitly", {
+  sanitized <- CoTiMA2:::.ctmaSanitizeCtFitArgs(list(
+    optimize = TRUE,
+    vb = FALSE
+  ))
+  expect_identical(sanitized, list(optimize = TRUE))
+  expect_error(
+    CoTiMA2:::.ctmaSanitizeCtFitArgs(list(vb = TRUE)),
+    "Variational Bayes is no longer supported by ctsem"
+  )
+})
+
 test_that("ctmaInit resolves legacy Stan controls recursively by name", {
   result <- CoTiMA2:::.ctmaResolveInitStanArgs(
     overrides = list(
@@ -138,6 +150,22 @@ test_that("ctmaFit direct controls have defined precedence", {
   expect_identical(explicit$verbose, 0)
 })
 
+test_that("Stan warmup defaults to half of iter and can be overridden", {
+  defaults <- CoTiMA2:::.ctmaResolveFitStanArgs(iter = 100L)
+  expect_null(defaults$warmup)
+  expect_identical(CoTiMA2:::.ctmaStanWarmup(defaults), 50L)
+
+  explicit <- CoTiMA2:::.ctmaResolveFitStanArgs(
+    overrides = list(warmup = 30L),
+    iter = 100L
+  )
+  expect_identical(CoTiMA2:::.ctmaStanWarmup(explicit), 30L)
+  expect_error(
+    CoTiMA2:::.ctmaStanWarmup(list(iter = 100L, warmup = 100L)),
+    "0 <= warmup < iter"
+  )
+})
+
 test_that("ctmaFit rejects unknown legacy Stan controls", {
   expect_error(
     CoTiMA2:::.ctmaResolveFitStanArgs(list(not_a_control = TRUE)),
@@ -169,7 +197,10 @@ test_that("ctmaFit applies backend validation before fitting", {
 })
 
 test_that("ctmaFit keeps Stan as its default backend", {
-  expect_identical(eval(formals(ctmaFit)$backend), c("stan", "julia"))
+  expect_identical(
+    eval(formals(ctmaFit)$backend),
+    c("stan", "julia", "ctsemjulia")
+  )
 
   resolved <- CoTiMA2:::.ctmaResolveFitBackend()
   expect_identical(resolved$backend, "stan")
@@ -240,7 +271,10 @@ test_that("Julia backend requests point users to the installation guide", {
 })
 
 test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism", {
-  expect_identical(eval(formals(ctmaInit)$backend), c("stan", "julia"))
+  expect_identical(
+    eval(formals(ctmaInit)$backend),
+    c("stan", "julia", "ctsemjulia")
+  )
   defaults <- ctmaBackendDefaults("julia", "ML", "ctmaInit")
   expect_true(defaults$uncertainty)
   expect_true(defaults$transformed)
@@ -252,6 +286,107 @@ test_that("ctmaInit exposes Julia backend defaults and rejects outer parallelism
     ),
     "currently requires doPar = 1"
   )
+})
+
+test_that("ctmaInit native ctsem Julia dispatcher preserves ctFit compatibility", {
+  captured <- NULL
+  testthat::local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .ctmaNativeCtsemJuliaFit = function(args) {
+      captured <<- args
+      list(
+        pars = data.frame(),
+        standata = list(priors = 0L)
+      )
+    },
+    .ctmaNativeCtsemJuliaSummary = function(fit, digits) {
+      list(loglik = -4, npars = 2L, digits = digits)
+    },
+    .package = "CoTiMA2"
+  )
+
+  model <- list(pars = data.frame(
+    param = "drift_eta1", indvarying = FALSE
+  ))
+  result <- CoTiMA2:::.ctmaInitCtsemJuliaStudyFit(
+    datalong = data.frame(id = 1L, time = 0, V1 = 0),
+    model = model,
+    same_initial_times = FALSE,
+    backend_args = list(
+      inits = NULL, optimcontrol = NULL, priors = NULL, verbose = NULL
+    ),
+    start_values = 0.2,
+    priors = FALSE,
+    finishsamples = 25L,
+    cores = 3L,
+    verbose = 0,
+    digits = 4L
+  )
+
+  expect_identical(captured$backend, "julia")
+  expect_identical(captured$intoverpop, "auto")
+  expect_identical(captured$cores, 3L)
+  expect_identical(captured$inits, 0.2)
+  expect_identical(captured$optimcontrol$finishsamples, 25L)
+  expect_identical(result$backend, "ctsemjulia")
+  expect_identical(result$ctstanmodelbase, model)
+  expect_identical(result$ctsemjulia_mode, "direct")
+  expect_identical(result$resultsSummary$npars, 2L)
+})
+
+test_that("ctmaInit converts native Julia random-effect summaries", {
+  popsd <- data.frame(mean = c(2, 3, 4), sd = NA_real_, check.names = FALSE)
+  rownames(popsd) <- c("a", "b", "c")
+  popcor <- data.frame(mean = c(.1, .2, .3), sd = NA_real_)
+  rownames(popcor) <- c("b__a", "c__a", "c__b")
+
+  result <- CoTiMA2:::.ctmaInitCtsemJuliaRandomEffectSummary(
+    list(popsd = popsd, rawpopcorr = popcor)
+  )
+
+  expect_equal(unname(diag(result$popcov_mean)), c(4, 9, 16))
+  expect_equal(
+    result$popcor_mean[lower.tri(result$popcor_mean)],
+    c(.1, .2, .3)
+  )
+  expect_equal(result$popcov_mean["b", "a"], .6)
+  expect_true(all(is.na(result$popcov_sd)))
+})
+
+test_that("ctModelText reconstructs the exact generated ctsem model", {
+  model <- ctsem::ctModel(
+    type = "ct",
+    n.latent = 2L,
+    n.manifest = 2L,
+    manifestNames = c("binary", "continuous"),
+    latentNames = c("eta1", "eta2"),
+    manifesttype = c(1L, 0L),
+    LAMBDA = diag(2),
+    DRIFT = matrix(c("a11", "a21", "a12", "a22"), 2L, 2L),
+    DIFFUSION = matrix(c("d1", "d21", 0, "d2"), 2L, 2L),
+    T0VAR = matrix(c("t1", "t21", 0, "t2"), 2L, 2L),
+    CINT = matrix(c("c1", "c2"), 2L, 1L),
+    n.TIpred = 1L,
+    TIpredNames = "study"
+  )
+  model$pars[model$pars$matrix == "CINT", "indvarying"] <- TRUE
+  model$pars[model$pars$matrix == "DRIFT", "study_effect"] <- c(
+    TRUE, FALSE, FALSE, TRUE
+  )
+
+  code <- CoTiMA2:::.ctmaModelText(model, object_name = "recreated")
+  expect_type(code, "character")
+  expect_length(code, 1L)
+  expect_match(code, "ctsem::ctModel")
+
+  target <- new.env(parent = globalenv())
+  eval(parse(text = code), envir = target)
+  recreated <- target$recreated
+
+  expect_equal(recreated$matrices, model$matrices)
+  expect_equal(recreated$pars, model$pars)
+  expect_equal(recreated$manifesttype, model$manifesttype)
+  expect_identical(recreated$TIpredNames, model$TIpredNames)
 })
 
 test_that("ctmaFit Julia dispatcher forwards the prepared setup", {
@@ -297,7 +432,7 @@ test_that("ctmaFit-style automatic Julia resources use all resolved cores", {
     workflow = "ctmaFit"
   )
   expect_true(configured$automatic)
-  expected_pool <- CoTiMA2:::.ctmaResolveJuliaThreads("auto")
+  expected_pool <- 9L
   expect_identical(configured$backend_args$julia_threads, expected_pool)
   expect_identical(configured$backend_args$subject_threads, expected_pool)
   expect_identical(configured$backend_args$blas_threads, 1L)
@@ -326,7 +461,7 @@ test_that("automatic Julia resource notes identify their calling workflow", {
       resolved_backend_args = ctmaBackendDefaults("julia", "ML", "ctmaEqual"),
       workflow = "ctmaEqual"
     ),
-    "ctmaEqual automatically selected.*Julia pool thread.*subject task.*1 BLAS"
+    "ctmaEqual automatically translated.*6 Julia subject thread.*1 BLAS"
   )
 })
 
@@ -622,7 +757,8 @@ test_that("stored Julia routing fixture has a CoTiMA-compatible criterion", {
     backend_args = list(maxiters = 25L)
   )
 
-  expect_s3_class(result, "ctmaJuliaFit")
+  expect_s3_class(result, "CoTiMAFit")
+  expect_s3_class(result$studyFitList, "ctmaJuliaFit")
   expect_identical(result$summary$minus2ll, 247)
   expect_identical(result$summary$loglik, -123.5)
   expect_identical(result$summary$n.parameters, 3L)
@@ -800,4 +936,38 @@ test_that("ctmaInit maps finishsamples to Julia transformed draws", {
     ),
     "integer of at least 2"
   )
+})
+
+test_that("ctmaInit warnings identify their primary study", {
+  messages <- character()
+  value <- withCallingHandlers(
+    CoTiMA2:::.ctmaWithInitStudyWarnings(
+      {
+        warning("Hessian repaired", call. = FALSE)
+        warning("wide uncertainty intervals", call. = FALSE)
+        42L
+      },
+      index = 2L,
+      total = 3L,
+      study = list(originalStudyNo = "B7", source = "Smith et al. (2024)")
+    ),
+    warning = function(w) {
+      messages <<- c(messages, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_identical(value, 42L)
+  expect_length(messages, 2L)
+  expect_match(
+    messages[[1L]],
+    "^\\[ctmaInit primary study 2 of 3; Study: B7; Source: Smith et al\\. \\(2024\\)\\] Hessian repaired$"
+  )
+  expect_match(messages[[2L]], "wide uncertainty intervals$")
+
+  no_reference <- CoTiMA2:::.ctmaInitStudyWarningLabel(
+    1L, 3L,
+    list(originalStudyNo = 1L, source = "Reference not provided")
+  )
+  expect_identical(no_reference, "[ctmaInit primary study 1 of 3; Study: 1] ")
 })

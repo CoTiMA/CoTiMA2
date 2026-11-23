@@ -127,3 +127,5 @@ CoTiMAstudyList_3 <- ctmaPrep(selectedStudies = c(2, 3, 313),
                               moderatorValues=moderatorValues)
 
 }
+
+\details{When excluding several studies, study-indexed caches are subset by the original study layout. Preparation objects already misaligned by earlier versions must be recreated from the complete source; they cannot be repaired by guessing study identities. Global moderator dictionaries remain unchanged.}

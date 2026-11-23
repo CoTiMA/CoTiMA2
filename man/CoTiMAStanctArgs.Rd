@@ -3,19 +3,20 @@
 \docType{data}
 \name{CoTiMAStanctArgs}
 \alias{CoTiMAStanctArgs}
-\title{This are preset arguments}
+\alias{.ctmaStanBackendDefaults}
+\title{Legacy Stan backend defaults}
 \format{
-An object of class \code{list} of length 37.
+An object of class \code{list} of length 38.
 }
 \usage{
-CoTiMAStanctArgs
+.ctmaStanBackendDefaults()
 
-CoTiMAStanctArgs
+data(CoTiMAStanctArgs)
 }
 \description{
-This are preset arguments
-
-object created to store standard parameters passed forward to ctStanFit
+Deprecated compatibility snapshot of the Stan backend
+defaults. New code should use \code{ctmaBackendDefaults("stan")} and pass
+modifications through \code{backendArgs}.
 }
 \author{
 C. Dormann & M. Homburg \email{CoTiMA@uni-mainz.org}

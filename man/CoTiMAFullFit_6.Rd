@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 10.
 }
 \usage{
-CoTiMAFullFit_6
+data(CoTiMAFullFit_6)
 }
 \description{
 ctmaFit-object with a 'full' CoTiMA of 6 studies

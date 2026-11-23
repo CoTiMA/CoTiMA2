@@ -3,7 +3,10 @@
   standard_errors <- fit$modelResults$DRIFTCoeffViaWECSD
   if (is.null(means) || is.null(standard_errors)) {
     stop(label, " does not contain reconstructed WEC study effects. ",
-      "Refit it with WEC=TRUE and retain transformed model results.",
+      paste0(
+        "Refit it with studyCoding='weighted', include 'DRIFT' in ",
+        "studyVarying, and retain transformed model results."
+      ),
       call. = FALSE)
   }
   n_studies <- length(fit$studyList)

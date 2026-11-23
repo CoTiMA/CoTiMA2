@@ -42,6 +42,11 @@
 #'   \code{studyMatrices}, and \code{matrixSummary}.
 #'
 #' @details
+#' Native Julia fits with saturated study contrasts and no random effects are
+#' supported for DRIFT-matrix summaries. Profile order is first occurrence in
+#' the fitted data. Additional moderators are not supported on this path.
+#' Use ctmaStudyEstimates() for ML modes and joint delta-method covariance;
+#' the draw summaries returned here deliberately retain their existing meaning.
 #' For posterior draw \eqn{d}, study \eqn{s}, and parameter \eqn{p}, the
 #' function first calculates the raw study value
 #' \deqn{\eta_{sp}^{(d)}=\mu_p^{(d)}+\sum_j x_{sj}\beta_{pj}^{(d)}}
@@ -94,6 +99,10 @@ ctmaReMoments <- function(
       "SEweighting must be TRUE, FALSE, or NULL.", call. = FALSE)
     weighting <- if (isTRUE(SEweighting)) "inverse_variance" else "equal"
   }
+
+  native <- .ctmaNativeStudyFit(fit)
+  if (!is.null(native)) return(.ctmaReMomentsNative(fit, native, study_design, probs,
+    weighting, SEsource, cores, include_matrices, include_individual))
 
   ctfit <- .ctmaParMapFit(fit)
   if (is.null(ctfit$stanfit$rawposterior)) stop(
@@ -148,6 +157,7 @@ ctmaReMoments <- function(
     covarianceWeighting = "equal study weights",
     SEsource = se_source,
     pooledFit = ctfit,
+    scaleTime = .ctmaSummaryTimeFactor(fit),
     parameterMap = parameter_map,
     studyDesign = design,
     rawStudyDraws = draws$raw,
@@ -473,7 +483,7 @@ ctmaReMoments <- function(
       "parameter-specific inverse-variance study weights. ",
     "It is not a hierarchical fit and contains no partial pooling."
   ))
-  list(
+  answer <- list(
     method = object$method,
     weighting = object$weighting,
     SEsource = object$SEsource,
@@ -488,4 +498,20 @@ ctmaReMoments <- function(
     individualRandomEffects = object$individualRandomEffects,
     probs = probs
   )
+  scale <- if (is.null(object$scaleTime)) .ctmaSummaryTimeFactor(object$pooledFit) else
+    object$scaleTime
+  map <- object$parameterMap$rawpopmeans
+  drift <- as.character(map$parameter[map$matrix %in% "DRIFT"])
+  if (scale != 1 && length(drift)) {
+    study <- answer$studyParameters
+    population <- answer$distributionParameters
+    answer$originalTime <- list(scaleTime = scale,
+      studyParameters = .ctmaScaleDriftSDTable(
+        study[study$parameter %in% drift, , drop = FALSE], scale),
+      distributionParameters = .ctmaScaleDriftSDTable(
+        population[population$parameter %in% drift, , drop = FALSE], scale))
+    if (isTRUE(print_note)) message(
+      "Original-time drift results are available under $originalTime.")
+  }
+  answer
 }

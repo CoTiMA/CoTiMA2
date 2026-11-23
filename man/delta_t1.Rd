@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 1.
 }
 \usage{
-delta_t1
+data(delta_t1)
 }
 \description{
 delta_t1 example vector

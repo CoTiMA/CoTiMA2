@@ -8,7 +8,7 @@
 An object of class \code{character} of length 2.
 }
 \usage{
-recodeVariables128
+data(recodeVariables128)
 }
 \description{
 recodeVariables128 example vector

@@ -8,7 +8,7 @@
 An object of class \code{list} of length 3.
 }
 \usage{
-combineVariables128
+data(combineVariables128)
 }
 \description{
 combineVariables128 example vector

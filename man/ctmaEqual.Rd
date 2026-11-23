@@ -7,32 +7,35 @@
 ctmaEqual(
   ctmaInvariantFit = NULL,
   activeDirectory = NULL,
-  activateRPB = FALSE,
   digits = 4,
   coresToUse = 2,
   backend = c("stan", "julia"),
-  backendArgs = list()
+  backendArgs = list(), ...
 )
 }
 \arguments{
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
+
 \item{ctmaInvariantFit}{object to which a CoTiMA fit has been assigned to (i.e., what has been returned by \code{\link{ctmaFit}}).
 In most cases probably a model in which (only) two effects were specified with invariantDrift.}
 
 \item{activeDirectory}{defines another active directory than the one used in ctmaInvariantFit}
 
-\item{activateRPB}{set to TRUE to receive push messages with CoTiMA notifications on your phone}
 
 \item{digits}{Number of digits used for rounding (in outputs)}
 
 \item{coresToUse}{If neg., the value is subtracted from available cores, else value = cores to use}
 
-\item{backend}{estimation backend, \code{"stan"} (default) or \code{"julia"}.}
+\item{backend}{estimation backend, \code{"stan"} (default) or
+\code{"julia"}.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{named list of controls for the selected backend. Calling
+\code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+specify the backend and workflow to inspect another supported list.}
 }
 \value{
 returns a model where two or more parameters were set equal across primary studies and a log-likelihood difference test
-informing about the probability that the equality assumption is correct.
+reporting a likelihood-ratio comparison. Its p-value is not the probability that equality is true.
 }
 \description{
 test if the two or more invariant drift parameters in the CoTiMAFit object supplied are equal. The supplied CoTiMA fit-object
@@ -50,3 +53,7 @@ CoTiMAFullInvEq23Fit_6 <- ctmaEqual(ctmaInvariantFit=CoTiMAFullInv23Fit_6)
 }
 
 }
+
+\details{Equality refits use fresh engine starting values because tying parameters changes the raw parameter layout. Equality across incompatible parameter transformations is rejected before fitting.
+
+Native pooled Gaussian ML inputs can be refitted using the supported stan or julia backend without transferring native raw starts. Native binary/ordinal, Bayesian, study-random-effect and derived-DRIFT equality refits are not supported. Numerical failure to obtain admissible uncertainty draws remains an error, not validated inference.}

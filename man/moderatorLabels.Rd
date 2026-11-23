@@ -8,7 +8,7 @@
 An object of class \code{character} of length 2.
 }
 \usage{
-moderatorLabels
+data(moderatorLabels)
 }
 \description{
 moderatorLabels example vector

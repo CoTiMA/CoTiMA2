@@ -4,7 +4,6 @@
 #'
 #' @param ctmaInitFit ctmaInitFit
 #' @param activeDirectory activeDirectory
-#' @param activateRPB activateRPB
 #' @param digits digits
 #' @param coresToUse coresToUse
 #' @param drift Labels for drift effects. Have to be either of the type V1toV2 or 0 for effects to be excluded, which is usually not recommended)
@@ -26,7 +25,9 @@
 #' @param manifestMeans Default 0 (assuming standardized variables). Can be assigned labels to estimate them freely.
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctStanFit}} Function
 #' @param backend estimation backend, \code{"stan"} (default) or \code{"julia"}.
-#' @param backendArgs named list of controls for the selected backend.
+#' @param backendArgs named list of controls for the selected backend. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
 #' @param manifestVars define the error variances of the manifests with a single time point using R-type lower triangular matrix with nrow=n.manifest & ncol=n.manifest.
 #' @param lambda R-type matrix with pattern of fixed (=1) or free (any string) loadings.
@@ -38,7 +39,7 @@
 ctmaAllInvFit <- function(
   ctmaInitFit=NULL,
   activeDirectory=NULL,
-  activateRPB=FALSE,
+
   digits=4,
   drift=drift,
   coresToUse=c(1),
@@ -69,6 +70,8 @@ ctmaAllInvFit <- function(
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaAllInvFit")
   on.exit(.ctma_timer(), add = TRUE)
+
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaAllInvFit")
 
 
   if (utils::packageDescription("ctsem")$Version > "3.10.2") type <- "ct" else type <- "stanct"
@@ -114,7 +117,7 @@ ctmaAllInvFit <- function(
 
   # check if fit object is specified
   if (is.null(ctmaInitFit)){
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nA fitted CoTiMA object has to be supplied to plot something. \nGood luck for the next try!"
     stop(ErrorMsg)
   }
@@ -309,7 +312,7 @@ ctmaAllInvFit <- function(
       T0meansParams <- 'auto'
 
       print(paste0("#################################################################################"))
-      print(paste0("######### Manifest means (as replacement for intercepts) are set free.  #########"))
+      print(paste0("######### Manifest intercepts (MANIFESTMEANS, not CINT) are set free.  #########"))
       print(paste0("#################################################################################"))
 
       manifestMeansParams <- 'auto'
@@ -327,7 +330,7 @@ ctmaAllInvFit <- function(
       T0meansParams <- 0
 
       print(paste0("#################################################################################"))
-      print(paste0("######### Manifest means (as replacement for intercepts) are set free.  #########"))
+      print(paste0("######### Manifest intercepts (MANIFESTMEANS, not CINT) are set free.  #########"))
       print(paste0("#################################################################################"))
 
       manifestMeansParams <- 'auto'
@@ -421,7 +424,7 @@ ctmaAllInvFit <- function(
       gendata=CoTiMAStanctArgs$gendata,
       control=CoTiMAStanctArgs$control,
       verbose=CoTiMAStanctArgs$verbose,
-      warmup=CoTiMAStanctArgs$warmup,
+      warmup=.ctmaStanWarmup(CoTiMAStanctArgs),
       cores=coresToUse))
 
       #Msg <- "\nComputing results summary of all invariant model.\n"
@@ -434,7 +437,7 @@ ctmaAllInvFit <- function(
   if (length(saveAllInvFit) > 0)  {
     x1 <- paste0(saveAllInvFit[1], ".rds"); x1
     x2 <- paste0(activeDirectory); x2
-    ctmaSaveFile(activateRPB, "", allFixedModelFit, x1, x2, silentOverwrite=silentOverwrite)
+    ctmaSaveFile( "", allFixedModelFit, x1, x2, silentOverwrite=silentOverwrite)
   }
 
   ### Extract estimates & statistics
@@ -591,6 +594,9 @@ ctmaAllInvFit <- function(
                                minus2ll= homAll_Minus2LogLikelihood,
                                n.parameters = homAll_estimatedParameters))
   class(results) <- "CoTiMAFit"
+
+  results$argumentList$scaleTime <- CoTiMAStanctArgs$scaleTime
+  results <- .ctmaStoreOriginalTime(results)
 
   invisible(results)
 

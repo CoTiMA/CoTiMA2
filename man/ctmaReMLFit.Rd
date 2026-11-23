@@ -6,7 +6,7 @@
 \usage{
 ctmaReMLFit(
   prepared,
-  cores = max(1L, parallel::detectCores(logical = FALSE) - 1L),
+  cores = -1L,
   n_starts = max(4L, cores),
   parameterization = c("auto", "centered", "noncentered"),
   seed = 1234L,
@@ -24,7 +24,8 @@ ctmaReMLFit(
 \arguments{
 \item{prepared}{Object returned by \code{\link{ctmaRePrep}}.}
 
-\item{cores}{Maximum number of concurrent optimization workers.}
+\item{cores}{Maximum number of concurrent optimization workers. Negative values
+reserve cores from the available CPU budget; -1 uses all but one.}
 
 \item{n_starts}{Number of independent optimizer starts.}
 

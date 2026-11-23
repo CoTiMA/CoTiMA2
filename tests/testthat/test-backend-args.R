@@ -35,6 +35,87 @@ test_that("Julia defaults are workflow and estimation specific", {
   )
 })
 
+test_that("ctsemjulia defaults expose the experimental native interface", {
+  defaults <- ctmaBackendDefaults("ctsemjulia")
+
+  expect_named(defaults, c(
+    "study_id", "study_id_ti", "study_dummy_ti",
+    "study_random_effects", "subject_random_effects",
+    "study_parameters", "subject_parameters", "reDRIFT",
+    "reDIFFUSION", "reT0VAR", "remove_study_fixed_effects",
+    "sdscale_study", "inits", "intoverpop", "stationary", "optimcontrol", "priors", "verbose"
+  ))
+  expect_true(defaults$remove_study_fixed_effects)
+  expect_identical(defaults$sdscale_study, 1)
+  expect_identical(defaults$optimcontrol$uncertainty, "hessian")
+  bayes_defaults <- ctmaBackendDefaults(
+    "ctsemjulia", "Bayes", "ctmaFit"
+  )
+  expect_null(bayes_defaults$sampleControl$sampler)
+  expect_null(bayes_defaults$sampleControl$chains)
+  expect_null(bayes_defaults$sampleControl$warmup)
+  expect_null(bayes_defaults$sampleControl$draws)
+  expect_null(bayes_defaults$sampleControl$processes)
+  init_defaults <- ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")
+  expect_named(
+    init_defaults,
+    c("inits", "intoverpop", "stationary", "optimcontrol", "priors", "verbose")
+  )
+  expect_identical(init_defaults$optimcontrol$uncertainty, "hessian")
+})
+
+test_that("ctsemjulia resolves separately from the CoTiMA2 Julia backend", {
+  local_mocked_bindings(
+    .ctmaRequireCtsemJuliaLaplace = function() list(available = TRUE),
+    .package = "CoTiMA2"
+  )
+  expect_message(
+    resolved <- CoTiMA2:::.ctmaResolveFitBackend(
+      backend = "ctsemjulia",
+      backendArgs = list(study_random_effects = "CINT"),
+      estimation = "ML",
+      workflow = "ctmaFit"
+    ),
+    "Julia"
+  )
+  expect_identical(resolved$backend, "ctsemjulia")
+  expect_identical(
+    resolved$backend_args$optimcontrol$uncertainty, "hessian"
+  )
+
+  resolved_partial <- CoTiMA2:::.ctmaResolveFitBackend(
+    backend = "ctsemjulia",
+    backendArgs = list(optimcontrol = list(laplace_inner_maxiter = 500L)),
+    estimation = "ML",
+    workflow = "ctmaFit"
+  )
+  expect_identical(
+    resolved_partial$backend_args$optimcontrol$uncertainty, "hessian"
+  )
+  expect_identical(
+    resolved_partial$backend_args$optimcontrol$laplace_inner_maxiter, 500L
+  )
+  expect_identical(resolved$backend_args$study_random_effects, "CINT")
+  expect_null(resolved$stan_args)
+  resolved_saem <- CoTiMA2:::.ctmaResolveFitBackend(
+    backend = "ctsemjulia", estimation = "Bayes", workflow = "ctmaFit",
+    backendArgs = list(sampleControl = list(
+      sampler = "saem", chains = 3L, maxDraws = 8000L
+    ))
+  )
+  expect_identical(resolved_saem$backend_args$sampleControl$sampler, "saem")
+  expect_null(resolved_saem$backend_args$sampleControl$placement)
+  expect_identical(resolved_saem$backend_args$sampleControl$chains, 3L)
+  expect_identical(resolved_saem$backend_args$sampleControl$maxDraws, 8000L)
+  expect_error(
+    CoTiMA2:::.ctmaResolveFitBackend(
+      backend = "ctsemjulia", estimation = "Bayes", workflow = "ctmaFit",
+      backendArgs = list(sampleControl = list(sampler = "slice"))
+    ),
+    "nuts.*saem"
+  )
+})
+
 test_that("ctmaAllInvFit exposes Julia backend defaults", {
   defaults <- ctmaBackendDefaults("julia", "ML", "ctmaAllInvFit")
   expect_true(defaults$uncertainty)
@@ -60,6 +141,12 @@ test_that("central core resolution is backend aware", {
     -1L, backend = "julia", max_stan_workers = 1L, announce = FALSE
   )
   expect_identical(julia$resolved, max(1L, julia$available - 1L))
+
+  native <- CoTiMA2:::.ctmaResolveCores(
+    -1L, backend = "ctsemjulia", max_stan_workers = 1L,
+    announce = FALSE
+  )
+  expect_identical(native$resolved, max(1L, native$available - 1L))
 })
 
 test_that("backend overrides merge recursively and by name", {
@@ -142,10 +229,14 @@ test_that("legacy Stan argument use is deprecated", {
   )
 })
 test_that("CoTiMA2 preview identity and major-call notices are explicit", {
-  expect_identical(as.character(utils::packageVersion("CoTiMA2")), "0.14.7")
+  call_state <- getFromNamespace(".ctma_call_state", "CoTiMA2")
+  call_state$depth <- 0L
+  expect_identical(utils::packageDescription("CoTiMA2")$Package, "CoTiMA2")
+  expect_identical(CoTiMA2:::.ctma_package_version,
+    as.character(utils::packageVersion("CoTiMA2")))
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package \\(version 0.14.7\\)."
+    "This is the experimental CoTiMA 2.0 package"
   )
 
   major_functions <- c(
@@ -192,6 +283,6 @@ test_that("nested CoTiMA calls suppress duplicate version notices", {
   suppressMessages(outer_timer())
   expect_message(
     CoTiMA2:::.ctmaVersionNote(),
-    "Note: This is the experimental CoTiMA 2.0 package"
+    "This is the experimental CoTiMA 2.0 package"
   )
 })

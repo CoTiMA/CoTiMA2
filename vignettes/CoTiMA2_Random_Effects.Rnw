@@ -27,7 +27,7 @@
 \title{Study-Level Random Effects in Continuous-Time Meta-Analysis:\\
   From CoTiMA-FE to CoTiMA-RE}
 \author{C. Dormann, T. Hagen, \& $\widehat{\textnormal{C}}$. G. Petee}
-\date{\today}
+\date{CoTiMA2 0.14.59 --- 6 November 2026}
 
 \begin{document}
 \maketitle
@@ -861,7 +861,17 @@ used, so \code{scaleTI = TRUE} and \code{WEC = TRUE} are supported.
 \subsection{Store the requested random-effect masks}
 
 With \code{fit = FALSE}, \code{ctmaFit()} returns the data, the ctsem model
-specification, and an \code{argumentList}. The latter retains
+specification, an executable textual representation in \code{ctModelText},
+and an \code{argumentList}. The text can be inspected with
+\code{cat(cotimaSetup\$ctModelText)} or evaluated to recreate the model as an
+object named \code{ctModel}:
+
+<<recreate-ctmodel-text, purl=FALSE, eval=FALSE>>=
+eval(parse(text = cotimaSetup$ctModelText))
+@
+
+The generated code preserves the final CoTiMA2 parameter table and its
+post-construction constraints. The \code{argumentList} retains
 \code{sameInitialTimes} and \code{CoTiMAStanctArgs}, allowing
 \code{ctmaRePrep()} to reproduce relevant ctsem setup options. The user may
 define the random-effect masks before preparation. Each mask must be an
@@ -1323,8 +1333,28 @@ because their final scale depends jointly on the complete Cholesky matrix;
 their study-specific final values remain in \code{study\_T0VAR} and
 \code{study\_T0cov}.
 
+Calling \code{summary()} prints a short interpretation note because two
+population estimands must not be confused. The backward-compatible
+\code{population\_parameters} table and its explicit alias
+\code{population\_parameters\_raw\_centre} report
+$g_p(\alpha_p)$: the population centre is defined on ctsem's raw estimation
+scale and is then transformed. With nonlinear $g_p$, this is generally not the
+mean natural-scale study parameter. The table
+\code{population\_parameters\_study\_average} instead computes
+$K^{-1}\sum_s g_p(\alpha_p+u_{sp})$ within every posterior draw and then
+summarizes those draw-wise equal-study averages. This is normally the relevant
+meta-analytic population estimand. The same equal-study principle is used for
+\code{population\_T0VAR\_study\_average} and
+\code{population\_T0cov\_study\_average}; these use the complete jointly
+transformed study matrices rather than transforming individual raw Cholesky
+elements. None of the heterogeneity SD tables is a standard error of the
+population mean.
+
 <<re-summary-output, eval=FALSE, purl=FALSE>>=
 re_summary <- summary(re_fit)
+re_summary$estimand_interpretation
+re_summary$population_parameters_raw_centre
+re_summary$population_parameters_study_average
 re_summary$study_sd_raw
 re_summary$study_sd_transformed
 @
@@ -1468,6 +1498,32 @@ effect already acts on the appropriate freely estimated T0 (co)variance.
 
 \section{Diagnostics and reporting}
 
+\subsection{Native ctsem Julia Bayesian sampling}
+
+CoTiMA2 0.14.29 additionally supports native Bayesian sampling in
+\code{ctmaInit()} and \code{ctmaFit()} with \code{backend="ctsemjulia"}.
+This interface is separate from \code{ctmaRePrep()} and \code{ctmaReFit()}.
+Use \code{optimize=FALSE}, \code{priors=TRUE}, and a nested
+\code{backendArgs\$sampleControl} list. Since 0.14.33, the sampler and
+placement are chosen by ctsem unless explicitly supplied. Select the target
+with \code{backendArgs\$intoverpop}: \code{"none"} for joint random-effects
+sampling, \code{"laplace"} or \code{"augmented"} for a marginal, or
+\code{"auto"}. NUTS can use either target; SAEM and learned-map NUTS
+(\code{sampler="map"}) require the joint target, and tempered SMC
+(\code{sampler="smc"}) requires a marginal target. Existing controls selecting study and subject
+random effects still define the model; selecting SAEM alone does not add any
+random effects.
+
+NUTS, map and SAEM accept \code{chains}, \code{warmup}, \code{draws},
+\code{maxDraws}, \code{processes}, and \code{seed}. NUTS also accepts
+\code{target\_accept} and \code{maxdepth}. For SMC, use \code{particles}
+and optionally \code{coreset}; omit chains, warmup and stepsize.
+The map sampler is not MAP optimization. The Julia Usage guide provides
+complete initial-study and pooled-fitting examples and explains the native
+diagnostic stopping targets. Report the sampler and integration target along
+with posterior convergence diagnostics; the ML recovery tests described
+elsewhere in this guide do not replace those diagnostics.
+
 Centred and non-centred parameterizations should be compared through short
 diagnostic runs before committing to long sampling. The central HMC quantities
 are divergences, the proportion of iterations that reach
@@ -1581,7 +1637,7 @@ The following commands knit this document in RStudio or from the R console.
 
 <<knit-document, purl=FALSE>>=
 knitr::knit2pdf(
-  "CoTiMA_Random_Effects.Rnw",
+  "CoTiMA2_Random_Effects.Rnw",
   clean = FALSE
 )
 
@@ -1625,5 +1681,74 @@ Stan Development Team (2026).
 \url{https://mc-stan.org/docs/reference-manual/}.
 
 \end{thebibliography}
+
+\section{Native-engine smoke-test evidence, 27 October 2026}
+
+Real fits with ctsem revision \code{57a9758d} and CoTiMA2 0.14.33 completed
+for person-only, study-only and nested person/study intercepts. ML and MAP
+optimization and joint learned-map sampling were exercised; person-level SAEM
+and study-level marginal SMC also completed. These small tests demonstrate
+that study-only random effects need no artificial person-level effect.
+
+They do not establish random-effect variance recovery or posterior accuracy.
+In particular, the prior-free study-only ML fit warned that its study SD was
+unidentified. The short Bayesian runs had zero reported divergences but were
+not long enough for substantive inference. Automatic sampling retained a
+marginal NUTS route for the tested Gaussian person-intercept model; explicit
+joint sampling remains available with \code{intoverpop="none"}.
+
+
+\section{Reproducible initialization and batch-safe file handling}
+
+Automatic initialization for the Stan study-level random-effects workflow
+\code{ctmaReFit()} follows the fitting \code{seed}, including an explicit
+override of \code{seed} in the fitting-control list. Chain-specific initialization streams differ,
+but repeated calls with the same seed and chain are reproducible. Each
+initialization callback restores its caller's random-number state, including
+when initialization fails. This concerns initialization; it does not promise
+that an entire stochastic fitting call leaves the RNG state unchanged.
+
+\code{ctmaOptimizeInit()} validates its required inputs before running retries.
+On Unix systems parallel retries use workers owned by that call; on Windows
+retries are sequential. The function does not replace a user's registered
+\code{foreach} backend. In \code{ctmaGenData()}, cluster cleanup no longer
+replaces restoration of the \code{scipen} option on exit.
+
+When an output file already exists, noninteractive saving now stops with a
+clear message unless \code{silentOverwrite = TRUE} was explicitly requested.
+Use a new filename or directory to keep both results. Interactive saving still
+offers overwrite, skip, rename and cancel; a renamed target is checked again
+before an existing file can be replaced. Blank input cancels rather than
+waiting indefinitely. These changes do not authorize overwriting user files
+by default.
+
+<<safe-study-re-and-saving, eval=FALSE, purl=FALSE>>=
+# Reproducible automatic initialization for the Stan study-RE workflow:
+fit <- ctmaReFit(prepared, estimation = "bayes", seed = 1234,
+                 cores = 2, chains = 2)
+# For scripted ctmaInit calls, explicitly choose whether saved files may change:
+init <- ctmaInit(primaryStudies = studyList, n.latent = 2,
+                 activeDirectory = outputDirectory, silentOverwrite = TRUE)
+@
+
+
+\clearpage
+\subsection*{Native quadrature refinement and stored diagnostics}
+With a compatible recent experimental ctsem, request
+\code{backendArgs = list(intoverpop = "quadrature")} to refine an optimized
+Laplace fit with random effects. This option requires \code{optimize = TRUE};
+it is not a sampler and is not needed for a model without random effects.
+The returned mode records \code{"quadrature"}. Earlier ctsem versions may
+not support this explicit route.
+
+\code{ctmaFitDiagnostics(fit)} reports stored likelihood definitions separately:
+\code{loglik} with its source method and reported \code{loglik\_se}, and
+\code{loglik\_laplace}. A checked likelihood must not be substituted for the
+optimized Laplace objective when comparing optimization results. Optimizer
+predicted gain, resolution, convergence tolerance and convergence floor are
+shown when stored. These are source-reported diagnostics, not a new common
+convergence threshold. Optimizer convergence does not establish posterior
+convergence or Laplace accuracy; an unresolved integration check remains
+unresolved. Reading these diagnostics starts neither Julia nor a new fit.
 
 \end{document}

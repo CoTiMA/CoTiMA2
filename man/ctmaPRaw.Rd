@@ -10,9 +10,7 @@ ctmaPRaw(
   empN = NULL,
   studyNumber = NULL,
   empMeanVector = NULL,
-  empVarVector = NULL,
-  activateRPB = FALSE,
-  experimental = FALSE
+  empVarVector = NULL
 )
 }
 \arguments{
@@ -28,9 +26,7 @@ ctmaPRaw(
 
 \item{empVarVector}{vector of variances for all variables, usually 1}
 
-\item{activateRPB}{set TRUE to receive push messages with 'CoTiMA' notifications on your phone}
 
-\item{experimental}{set TRUE to try new pairwise N function}
 }
 \description{
 Uses empirical correlation matrices to synthesise pseudo raw data (i.e. random data, that perfectly reproduce the correlations)

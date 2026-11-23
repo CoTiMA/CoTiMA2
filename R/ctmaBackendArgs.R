@@ -10,8 +10,29 @@
 #' remain top-level CoTiMA arguments. \code{backendArgs} is intended only for
 #' controls of the selected estimation engine.
 #'
-#' @param backend Estimation backend, either \code{"stan"} (the default) or
-#'   \code{"julia"}.
+#' Calling \code{ctmaBackendDefaults()} without arguments returns the
+#' \code{"stan"} defaults; it does not display defaults for every backend.
+#' Request another backend explicitly, for example
+#' \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")}. Stan has no
+#' separate \code{uncertainty} entry in this list: Bayesian uncertainty comes
+#' from posterior draws, while optimized Stan fits use ctsem's corresponding
+#' estimation machinery. CoTiMA2's own \code{"julia"} backend exposes
+#' \code{uncertainty} directly. For \code{"ctsemjulia"}, CoTiMA2 explicitly
+#' returns \code{optimcontrol$uncertainty = "hessian"}, an explicit CoTiMA2 choice. Current ctsem 4.x instead defaults to
+#' checked uncertainty. This makes the effective default visible and gives regular
+#' ML fits standard errors and intervals. Fast development diagnostics can
+#' deliberately skip post-fit uncertainty with
+#' \code{backendArgs = list(optimcontrol = list(estonly = TRUE))}.
+#'
+#' @param backend Estimation backend: \code{"stan"} (the default),
+#'   \code{"julia"} for CoTiMA2's Julia engine, or experimental
+#'   \code{"ctsemjulia"} for ctsem's native Julia engine. It supports ML and,
+#'   with a compatible ctsem 4.x development version, Bayesian sampling with
+#'   NUTS, SAEM, learned-map NUTS, or tempered SMC. NULL sampling defaults
+#'   leave selection and tuning to ctsem. \code{intoverpop="auto"} delegates
+#'   integration to ctsem; \code{"none"} requests joint random-effects
+#'   sampling and \code{"laplace"} or \code{"augmented"} requests a marginal.
+#' \code{"quadrature"} explicitly refines an optimized native Laplace fit with random effects. It is not a posterior sampler. Support requires a compatible recent ctsem version.
 #' @param estimation Estimation method. For
 #'   \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
 #'   \code{"none"} returns the common Julia evaluation controls.
@@ -29,15 +50,81 @@
 #' ctmaBackendDefaults()
 #' ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
 #' ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
+#' ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")
+#' ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
 ctmaBackendDefaults <- function(
-    backend = c("stan", "julia"),
+    backend = c("stan", "julia", "ctsemjulia"),
     estimation = NULL,
     workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit",
                  "ctmaEqual", "ctmaReFit")) {
-  backend <- match.arg(tolower(backend), c("stan", "julia"))
+  if (missing(workflow) && identical(tolower(backend[1L]), "ctsemjulia")) {
+    workflow <- "ctmaFit"
+  }
+  backend <- match.arg(
+    tolower(backend), c("stan", "julia", "ctsemjulia")
+  )
 
   if (identical(backend, "stan")) {
     return(.ctmaStanBackendDefaults())
+  }
+
+  if (identical(backend, "ctsemjulia")) {
+    workflow <- workflow[1L]
+    if (!workflow %in% c("ctmaFit", "ctmaInit")) stop(
+      "backend = 'ctsemjulia' is currently available only for ctmaFit() ",
+      "and ctmaInit().",
+      call. = FALSE
+    )
+    if (is.null(estimation)) estimation <- "ml"
+    estimation <- match.arg(tolower(estimation), c("ml", "bayes"))
+    if (identical(estimation, "ml")) {
+      common <- list(
+        inits = NULL,
+        intoverpop = "auto",
+        stationary = FALSE,
+        optimcontrol = list(uncertainty = "hessian"),
+        priors = NULL,
+        verbose = NULL
+      )
+    } else {
+      common <- list(
+        inits = NULL,
+        intoverpop = "auto",
+        stationary = FALSE,
+        optimcontrol = list(),
+        priors = NULL,
+        verbose = NULL,
+        sampleControl = list(
+          sampler = NULL,
+          placement = NULL,
+          chains = NULL,
+          warmup = NULL,
+          draws = NULL,
+          maxDraws = NULL,
+          processes = NULL,
+          seed = NULL,
+          minESS = NULL,
+          meanESS = NULL,
+          rhatTarget = NULL,
+          saveEffects = NULL
+        )
+      )
+    }
+    if (identical(workflow, "ctmaInit")) return(common)
+    return(c(list(
+      study_id = NULL,
+      study_id_ti = NULL,
+      study_dummy_ti = NULL,
+      study_random_effects = NULL,
+      subject_random_effects = NULL,
+      study_parameters = NULL,
+      subject_parameters = NULL,
+      reDRIFT = NULL,
+      reDIFFUSION = NULL,
+      reT0VAR = NULL,
+      remove_study_fixed_effects = TRUE,
+      sdscale_study = 1
+    ), common))
   }
 
   workflow <- match.arg(workflow)
@@ -74,6 +161,7 @@ ctmaBackendDefaults <- function(
   }
 
   common <- list(
+    compute = NULL,
     julia_file = NULL,
     initialize = TRUE,
     julia_home = NULL,
@@ -102,6 +190,13 @@ ctmaBackendDefaults <- function(
       parallel_starts = 1L,
       threads_per_start = NULL,
       multistart_jitter = 0.1,
+      warm_start = "auto",
+      warm_start_fraction = 0.10,
+      warm_start_subjects_per_parameter = 20L,
+      warm_start_minimum_per_study = 25L,
+      warm_start_maximum_subjects = 5000L,
+      warm_start_binary_minimum = 20L,
+      warm_start_maxiters = 250L,
       carefulFit = TRUE,
       confidence = 0.95,
       transformed = TRUE,
@@ -136,15 +231,48 @@ ctmaBackendDefaults <- function(
   ))
 }
 
+.ctmaResourceInteger <- function(value, name, minimum = 1L) {
+  if (!is.numeric(value) || length(value) != 1L || !is.finite(value) ||
+      value != floor(value) || value < minimum || value > .Machine$integer.max)
+    stop("'", name, "' must be one integer >= ", minimum, ".", call. = FALSE)
+  as.integer(value)
+}
+
 .ctmaAvailableCores <- function(omit = 0L) {
-  detected <- if (requireNamespace("parallelly", quietly = TRUE)) {
-    suppressWarnings(as.integer(parallelly::availableCores(omit = omit)[1L]))
-  } else {
-    suppressWarnings(as.integer(parallel::detectCores(logical = TRUE)[1L])) -
-      as.integer(omit)
+  omit <- .ctmaResourceInteger(omit, "omit", 0L)
+  # parallelly respects affinity, scheduler/cgroup limits and R check limits.
+  detected <- tryCatch(parallelly::availableCores(omit = omit)[1L],
+    error = function(e) 1L)
+  if (!is.numeric(detected) || length(detected) != 1L ||
+      !is.finite(detected) || detected < 1L) return(1L)
+  as.integer(detected)
+}
+
+.ctmaCheckJuliaBudget <- function(pool, workers = 1L, per_worker = pool,
+    blas = 1L, budget = .ctmaAvailableCores()) {
+  pool <- .ctmaResourceInteger(pool, "julia_threads")
+  workers <- .ctmaResourceInteger(workers, "parallel workers")
+  per_worker <- .ctmaResourceInteger(per_worker, "threads per worker")
+  blas <- .ctmaResourceInteger(blas, "blas_threads")
+  budget <- .ctmaResourceInteger(budget, "CPU budget")
+  # Placement/main and worker phases are sequential, not simultaneous.
+  demand <- max(as.double(pool), as.double(workers) * per_worker) * blas
+  if (demand > budget) stop("Julia/BLAS configuration requests up to ", demand,
+    " CPU threads but the resolved CPU budget is ", budget,
+    ". Reduce parallel workers, Julia threads or blas_threads.", call. = FALSE)
+  invisible(demand)
+}
+
+.ctmaLimitThreadEnvironment <- function() {
+  keys <- c("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "BLIS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS")
+  old <- Sys.getenv(keys, unset = NA_character_)
+  do.call(Sys.setenv, as.list(stats::setNames(rep("1", length(keys)), keys)))
+  function() {
+    absent <- is.na(old)
+    if (any(absent)) Sys.unsetenv(keys[absent])
+    if (any(!absent)) do.call(Sys.setenv, as.list(old[!absent]))
   }
-  if (is.na(detected) || detected < 1L) detected <- 1L
-  detected
 }
 
 .ctmaResolveJuliaThreads <- function(value, available = .ctmaAvailableCores()) {
@@ -152,35 +280,27 @@ ctmaBackendDefaults <- function(
       identical(tolower(value), "auto")) {
     return(max(1L, as.integer(available) - 1L))
   }
-  resolved <- suppressWarnings(as.integer(value)[1L])
-  if (is.na(resolved) || resolved < 1L) {
-    stop("'julia_threads' must be 'auto' or a positive integer.", call. = FALSE)
-  }
+  resolved <- .ctmaResourceInteger(value, "julia_threads")
+  if (resolved > available) stop("'julia_threads' exceeds the available CPU budget (",
+    available, ").", call. = FALSE)
   resolved
 }
 
 .ctmaResolveSubjectThreads <- function(value, julia_threads) {
   if (is.null(value) || (is.character(value) && length(value) == 1L &&
       identical(tolower(value), "auto"))) return(as.integer(julia_threads))
-  resolved <- suppressWarnings(as.integer(value)[1L])
-  if (is.na(resolved) || resolved < 1L) {
-    stop("'subject_threads' must be 'auto' or a positive integer.", call. = FALSE)
-  }
+  resolved <- .ctmaResourceInteger(value, "subject_threads")
   min(resolved, as.integer(julia_threads))
 }
 
 .ctmaResolveCores <- function(
-    coresToUse, backend = c("stan", "julia"), task_count = NULL,
+    coresToUse, backend = c("stan", "julia", "ctsemjulia"), task_count = NULL,
     max_stan_workers = 32L, announce = TRUE, workflow = "CoTiMA") {
-  backend <- match.arg(tolower(backend), c("stan", "julia"))
-  detected <- if (requireNamespace("parallelly", quietly = TRUE)) {
-    suppressWarnings(as.integer(parallelly::availableCores()[1L]))
-  } else {
-    suppressWarnings(as.integer(parallel::detectCores(logical = TRUE)[1L]))
-  }
-  if (is.na(detected) || detected < 1L) detected <- 1L
-  requested <- suppressWarnings(as.integer(coresToUse)[1L])
-  if (is.na(requested)) stop("'coresToUse' must be one integer.", call. = FALSE)
+  backend <- match.arg(
+    tolower(backend), c("stan", "julia", "ctsemjulia")
+  )
+  detected <- .ctmaAvailableCores()
+  requested <- .ctmaResourceInteger(coresToUse, "coresToUse", -.Machine$integer.max)
   if (requested < 0L) requested <- detected + requested
   if (requested == 0L) requested <- 1L
   resolved <- min(max(1L, requested), detected)
@@ -250,4 +370,20 @@ ctmaBackendDefaults <- function(
   .ctmaValidateBackendArgs(defaults, overrides, path = path)
   if (is.null(overrides)) return(defaults)
   utils::modifyList(defaults, overrides, keep.null = TRUE)
+}
+
+.ctmaBoundCtFitResources <- function(args) {
+  # `$cores` also matches `coreset`: resource keys must be exact.
+  cores <- args[["cores", exact = TRUE]]
+  if (is.null(cores)) return(args)
+  args[["cores"]] <- .ctmaResolveCores(cores, backend = "ctsemjulia",
+    announce = FALSE)$resolved
+  control <- args[["optimcontrol", exact = TRUE]]
+  nested <- control[["cores", exact = TRUE]]
+  if (!is.null(nested)) {
+    control[["cores"]] <- min(args[["cores"]],
+      .ctmaResourceInteger(nested, "optimcontrol$cores"))
+    args[["optimcontrol"]] <- control
+  }
+  args
 }

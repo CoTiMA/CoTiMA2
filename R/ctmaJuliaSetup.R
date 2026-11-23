@@ -17,7 +17,8 @@
 #' @param julia_home Optional directory containing the Julia executable. It is
 #'   used only when `julia` is omitted.
 #' @param project Optional path to the Julia project. The default is the
-#'   `julia` directory installed with CoTiMA.
+#'   content-keyed copy of the bundled project in tools::R_user_dir("CoTiMA2",
+#'   "cache"). The installed package is never used as a writable project.
 #' @param bootstrap_juliacall JuliaCall dependency policy. The default
 #'   `"auto"` installs `Suppressor` or `RCall` only when missing and builds
 #'   RCall only when newly installed. `TRUE` also forces an RCall rebuild;
@@ -33,6 +34,10 @@
 #' @param r_home R installation directory used to build Julia's RCall package.
 #' @param dry_run Return the commands without executing them.
 #' @param verbose Print commands and subprocess output.
+#' @param agree Explicit consent to dependency setup or precompilation. Default
+#'   FALSE prompts in interactive sessions and stops in batch sessions. Inspect
+#'   dry_run=TRUE first. JuliaCall bootstrap may update Julia's default user
+#'   environment; project instantiation changes only the selected user project.
 #'
 #' @return Invisibly, a list containing the Julia executable, Julia home,
 #'   Julia version, project path, commands, and execution results.
@@ -40,7 +45,7 @@
 #'
 #' @examples
 #' \dontrun{
-#' setup <- ctmaJuliaSetup()
+#' setup <- ctmaJuliaSetup(agree = TRUE)
 #' setup$julia_home
 #'
 #' fit <- ctmaJuliaFit(
@@ -59,7 +64,8 @@ ctmaJuliaSetup <- function(
     precompile_tasks = 1L,
     r_home = R.home(),
     dry_run = FALSE,
-    verbose = TRUE) {
+    verbose = TRUE,
+    agree = FALSE) {
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaJuliaSetup")
   on.exit(.ctma_timer(), add = TRUE)
@@ -86,37 +92,51 @@ ctmaJuliaSetup <- function(
   precompile <- scalar_flag(precompile, "precompile")
   dry_run <- scalar_flag(dry_run, "dry_run")
   verbose <- scalar_flag(verbose, "verbose")
+  agree <- scalar_flag(agree, "agree")
 
-  precompile_tasks <- suppressWarnings(as.integer(precompile_tasks)[1L])
-  if (is.na(precompile_tasks) || precompile_tasks < 1L) stop(
-    "'precompile_tasks' must be a positive integer.", call. = FALSE
-  )
+  precompile_tasks <- .ctmaResourceInteger(precompile_tasks, "precompile_tasks")
+  if (precompile_tasks > .ctmaAvailableCores()) stop(
+    "precompile_tasks exceeds the available CPU budget.", call. = FALSE)
 
   julia <- .ctmaJuliaFindExecutable(julia = julia, julia_home = julia_home)
   julia_home <- dirname(julia)
 
-  if (is.null(project)) {
-    project <- system.file("julia", package = "CoTiMA2")
+  managed_project <- is.null(project)
+  if (managed_project) {
+    project <- .ctmaJuliaManagedProject(create = FALSE)
+  } else {
+    if (!is.character(project) || length(project) != 1L || is.na(project) ||
+        !nzchar(project) || !dir.exists(project)) stop(
+      "The CoTiMA Julia project was not found; supply an existing 'project'.",
+      call. = FALSE)
+    project <- normalizePath(project, mustWork = TRUE)
+    bundled <- system.file("julia", package = "CoTiMA2")
+    if (nzchar(bundled) && identical(project, normalizePath(bundled))) stop(
+      "Do not modify the installed Julia project. Omit 'project' to use the ",
+      "managed user cache.", call. = FALSE)
+    if (!all(file.exists(file.path(project, c("Project.toml", "CtsemJulia.jl")))))
+      stop("'project' must contain Project.toml and CtsemJulia.jl.", call. = FALSE)
   }
-  if (!is.character(project) || length(project) != 1L || !nzchar(project) ||
-      !dir.exists(project)) stop(
-    "The CoTiMA Julia project was not found. Reinstall CoTiMA with its ",
-    "inst/julia directory, or supply 'project'.", call. = FALSE
-  )
-  project <- normalizePath(project, mustWork = TRUE)
-  project_file <- file.path(project, "Project.toml")
-  backend_file <- file.path(project, "CtsemJulia.jl")
-  if (!file.exists(project_file) || !file.exists(backend_file)) stop(
-    "'project' must contain Project.toml and CtsemJulia.jl.", call. = FALSE
-  )
+  if (!dry_run && (bootstrap_mode != "skip" || instantiate || precompile)) {
+    if (!agree && interactive()) agree <- isTRUE(utils::askYesNo(paste0(
+      "Set up Julia packages in ", project,
+      "? JuliaCall bootstrap may also update Julia's default user environment.")))
+    if (!agree) stop("Julia setup needs explicit consent. Inspect ",
+      "ctmaJuliaSetup(dry_run = TRUE), then run ctmaJuliaSetup(agree = TRUE).",
+      call. = FALSE)
+  }
   if (!is.character(r_home) || length(r_home) != 1L ||
       !dir.exists(r_home)) stop("'r_home' is not a directory.", call. = FALSE)
   r_home <- normalizePath(r_home, mustWork = TRUE)
+  if (managed_project && !dry_run) project <- .ctmaJuliaManagedProject(create = TRUE)
+
 
   commands <- list()
   add_command <- function(label, args, env = character()) {
     commands[[length(commands) + 1L]] <<- list(
-      label = label, executable = julia, args = args, env = env
+      label = label, executable = julia, args = c("--threads=1", args), env = c(env,
+        "JULIA_NUM_THREADS=1", "OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1", "MKL_NUM_THREADS=1",
+        "BLIS_NUM_THREADS=1", "VECLIB_MAXIMUM_THREADS=1")
     )
   }
 
@@ -180,6 +200,7 @@ ctmaJuliaSetup <- function(
       julia_home = julia_home,
       julia_version = NA_character_,
       project = project,
+      managed_project = managed_project,
       commands = lapply(commands, render_command),
       results = list(),
       restart_required = FALSE
@@ -233,6 +254,7 @@ ctmaJuliaSetup <- function(
     julia_home = julia_home,
     julia_version = julia_version,
     project = project,
+    managed_project = managed_project,
     commands = lapply(commands, render_command),
     results = results,
       restart_required = bootstrap_mode != "skip"
@@ -304,4 +326,53 @@ ctmaJuliaSetup <- function(
     call. = FALSE
   )
   normalizePath(candidates[[length(candidates)]], mustWork = TRUE)
+}
+
+# The package tree is read-only input. Julia may resolve/update Manifest.toml
+# only in this content-keyed user project. Dry runs compute the path, not a copy.
+.ctmaJuliaManagedProject <- function(create = FALSE,
+    source = system.file("julia", package = "CoTiMA2"),
+    cache = tools::R_user_dir("CoTiMA2", which = "cache")) {
+  files <- c("Project.toml", "Manifest.toml", "CtsemJulia.jl")
+  paths <- file.path(source, files)
+  if (!nzchar(source) || !all(file.exists(paths))) stop(
+    "The bundled Julia project was not found. Reinstall CoTiMA2.", call. = FALSE)
+  hashes <- unname(tools::md5sum(paths))
+  key <- paste(c("project", substr(hashes, 1L, 12L)), collapse = "-")
+  target <- file.path(path.expand(cache), "julia-projects", key)
+  if (!create) return(target)
+  if (!dir.exists(target)) {
+    parent <- dirname(target)
+    if (!dir.create(parent, recursive = TRUE, showWarnings = FALSE) &&
+        !dir.exists(parent)) stop("Cannot create Julia user cache: ", parent,
+          call. = FALSE)
+    staging <- tempfile("project-", tmpdir = parent)
+    dir.create(staging)
+    on.exit(unlink(staging, recursive = TRUE), add = TRUE)
+    if (!all(file.copy(paths, staging))) stop("Cannot copy Julia project to cache.",
+      call. = FALSE)
+    # Installed templates can be read-only. The new user-owned project must
+    # remain writable for Pkg to resolve its Project/Manifest.
+    Sys.chmod(file.path(staging, files), mode = "0600")
+    # Another process may have published the same complete project first.
+    if (!dir.exists(target) && !file.rename(staging, target) && !dir.exists(target))
+      stop("Cannot publish Julia user project: ", target, call. = FALSE)
+  }
+  if (!all(file.exists(file.path(target, files))) ||
+      !identical(unname(tools::md5sum(file.path(target, "CtsemJulia.jl"))), hashes[3L]))
+    stop("The managed Julia project is incomplete or its source was changed: ",
+      target, ". Select a new cache or remove this project before retrying.", call. = FALSE)
+  if (file.access(target, 2L) != 0L ||
+      any(file.access(file.path(target, c("Project.toml", "Manifest.toml")), 2L) != 0L)) stop("Julia user project is not writable: ",
+    target, call. = FALSE)
+  normalizePath(target, mustWork = TRUE)
+}
+
+.ctmaJuliaRuntimeFile <- function(file) {
+  bundled <- system.file("julia", "CtsemJulia.jl", package = "CoTiMA2")
+  if (nzchar(bundled) && identical(normalizePath(file, mustWork = TRUE),
+      normalizePath(bundled, mustWork = TRUE))) {
+    return(file.path(.ctmaJuliaManagedProject(create = TRUE), "CtsemJulia.jl"))
+  }
+  normalizePath(file, mustWork = TRUE)
 }

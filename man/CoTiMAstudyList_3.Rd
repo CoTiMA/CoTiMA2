@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 28.
 }
 \usage{
-CoTiMAstudyList_3
+data(CoTiMAstudyList_3)
 }
 \description{
 ctmaPrep-object created with 3 primary studies

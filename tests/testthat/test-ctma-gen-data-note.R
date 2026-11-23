@@ -21,3 +21,10 @@ test_that("ctmaGenData validates resultName before generating data", {
     "'resultName' must be NULL or one non-empty character string"
   )
 })
+
+test_that("ctmaGenData preserves the legacy positional arguments", {
+  expect_identical(
+    names(formals(ctmaGenData))[23:29],
+    c("T0means", "T0var", "TIpreds", "tpoints", "tpointTargets", "useRawData", "resultName")
+  )
+})

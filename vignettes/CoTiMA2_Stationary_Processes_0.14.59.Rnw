@@ -1,0 +1,190 @@
+%\VignetteIndexEntry{Stationary processes and determined diffusion}
+%\VignetteEngine{utils::Sweave}
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper,margin=20mm]{geometry}
+\usepackage{amsmath,listings,hyperref}
+\lstset{basicstyle=\ttfamily\small,breaklines=true}
+\title{CoTiMA2: Stationary Processes and Determined Diffusion}
+\author{CoTiMA2 development documentation}
+\date{CoTiMA2 0.14.59 --- 6 November 2026}
+\setlength{\emergencystretch}{3em}
+\begin{document}
+\maketitle
+\section{Stationary initialization and determined diffusion}
+\label{sec:stationary-determined}
+The arguments \texttt{stationary=FALSE} and
+\texttt{determinedDiffusions=FALSE} are appended to \texttt{ctmaInit()}
+and \texttt{ctmaFit()}. Both defaults preserve the existing model.
+
+\texttt{stationary=TRUE} asks ctsem to initialize the dynamic latent process
+at its long-run distribution. It does not fix its variance to one.
+A stable continuous-time drift matrix \(A\), stationary within-person
+covariance \(\Sigma\), and diffusion covariance \(Q\) satisfy
+\[
+ A\Sigma+\Sigma A^{\mathsf T}+Q=0.
+\]
+With \texttt{determinedDiffusions=TRUE}, \(Q\) is derived from \(A\)
+and an estimated \(\Sigma\). Observed standardization does not supply
+\(\Sigma\): random-intercept variance and measurement error remain separate.
+
+The first implementation is deliberately restricted to ML
+(\texttt{optimize=TRUE, priors=FALSE}), one or two unrestricted dynamic
+latent processes, and \texttt{stationary=TRUE}. It retains the original drift parameters and their exact
+transforms, including the usual negative-diagonal constraints. The alternative
+covariance coordinates describe total stationary within-person variance and
+admissible covariance shape. This does not reduce the number of free parameters.
+Under identical stationarity assumptions the model domain is preserved;
+numerical optimization can still stop at different solutions. Existing fixed/equality/custom
+process constraints, general predictor/random effects on DRIFT or DIFFUSION,
+phantom random-intercept factors, and old raw starting vectors are rejected.
+Only Gaussian manifests are currently supported; binary/ordinal measurement,
+random CINT and study-level random effects require further validation.
+Explicit \texttt{indVaryingT0=FALSE} is honoured by both \texttt{ctmaInit()}
+and \texttt{ctmaFit()}; it disables only person-level initial-mean random effects.
+Random manifest intercepts are supported when initial means do not vary
+randomly (\texttt{indVaryingT0=FALSE}). Their native \texttt{z} covariance
+construction, correlation safeguard and boundary diagnostics are retained.
+Unsupported legacy random-effect covariance constructions are rejected.
+The native pooled extension described below explicitly maps saturated study
+contrasts to stationary covariance coordinates while keeping drift common.
+
+For CoTiMA2, use \texttt{backend="ctsemjulia"} with a compatible experimental
+ctsem version. The bundled \texttt{backend="julia"} does not implement
+these options. Stan depends on the installed ctsem version; a native-only
+stationary implementation cannot be requested through Stan.
+
+\begin{lstlisting}[language=R]
+# Model preparation only; no fitting and no old raw inits.
+prepared <- ctmaInit(
+  primaryStudies = studyList,
+  activeDirectory = activeDirectory,
+  n.latent = 2,
+  fit = FALSE,
+  stationary = TRUE,
+  determinedDiffusions = TRUE
+)
+# CoTiMA2: additionally select backend = "ctsemjulia".
+# Inspect the exact generated model before fitting:
+prepared$ctModelText
+prepared$stationary_specification
+\end{lstlisting}
+
+For a pooled model with common process parameters, explicitly request
+\texttt{allInvModel=TRUE}. CoTiMA2 also provides parameter-selective
+\texttt{studyVarying}; unsupported study effects cause an error instead
+of an unnoticed change in invariance constraints. For random manifest
+intercepts add \texttt{indVarying="MANIFEST", indVaryingT0=FALSE}.
+Do not add \texttt{randomIntercepts="MANIFEST"} here: that option constructs
+phantom factors, which this first implementation does not support.
+
+An omitted top-level \texttt{stationary} retains an explicitly supplied
+backend/legacy stationary setting. Conflicting explicit settings cause an
+error. Parameterization metadata are retained in
+\texttt{stationary\_specification} and in the fitted CoTiMA summary.
+Curvature warnings, boundary variances and invalid intervals remain
+important even when optimization reports convergence. No identification
+improvement is guaranteed.
+
+\subsection{Published Stan compatibility}
+Published ctsem 3.11.1 disables its stationary switch. For the supported
+determined-diffusion models with CINT fixed at zero, CoTiMA specifies the
+estimated stationary covariance explicitly in T0VAR and zero in T0MEANS,
+then calls Stan with its unavailable switch off. This is exact stationary
+initialization, not a fixed empirical covariance approximation. A console
+note explains the compatibility path. A stationary-only request on this
+ctsem release is rejected with guidance; it is never ignored. Nonzero/free
+CINT requires a compatible native Julia stationary implementation.
+
+
+\subsection{Randomly alternating stationary covariance parametrizations}
+For a difficult pooled stationary ML fit, an additional opt-in search can
+alternate between estimating diffusion and estimating the stationary within-person
+covariance. This does not randomly impose stationarity: the baseline must already
+specify \texttt{stationary = TRUE}. The model, studies and scales remain fixed.
+The default \texttt{randomDeterminedDiffusions = FALSE} preserves the existing search.
+\begin{lstlisting}[language=R]
+# initFit must be the initialization object used for stationaryFit.
+# A common process structure is required for this first implementation.
+stationaryFit <- ctmaFit(
+  ctmaInitFit = initFit, backend = "ctsemjulia",
+  optimize = TRUE, priors = FALSE,
+  allInvModel = TRUE, stationary = TRUE
+)
+search <- ctmaOptimizeFit(
+  ctmaFitFit = stationaryFit, ctmaInitFit = initFit,
+  gambling = TRUE, randomDeterminedDiffusions = TRUE,
+  backend = "ctsemjulia", reFits = 6, seed = 42,
+  coresToUse = 2
+)
+search$attempts
+bestFit <- search$bestFit
+\end{lstlisting}
+Both parametrizations are checked with \texttt{fit = FALSE} before any refit.
+Only supported one/two-process Gaussian ML models are accepted; fixed/custom
+process constraints and incompatible study effects are rejected. Raw starting
+vectors are discarded because the covariance coordinates differ.
+This option currently supports pooled \texttt{ctmaFit()} models, not primary-study
+or raw ctsem searches, and cannot be combined with the other random model,
+scale or study-order switches. \texttt{seed} controls variant choices and R seeds;
+the caller's R random-number state is restored. Independent choices may select
+only one variant in a short search. \texttt{attempts} records choices, failures,
+objective values and available convergence diagnostics. The best finite objective
+is not a certification of convergence, identification or valid uncertainty.
+
+\section{Common drift with study-specific stationary covariance}
+With CoTiMA2's native \texttt{backend="ctsemjulia"}, a pooled ML model may
+retain common drift while every study has its own stationary within-person
+covariance. Saturated dummy and weighted study coding are supported. All
+free diffusion covariance coordinates must be allowed to vary across all
+study contrasts. These contrasts are moved to the auxiliary stationary
+covariance coordinates. The derived diffusion then varies by study as well:
+\[
+ Q_s=-(A\Sigma_s+\Sigma_s A^\top).
+\]
+This neither fixes the within-person variances to one nor turns the
+population random-intercept covariance into a study-specific covariance.
+Stationary initialization uses the same within covariance; there is no
+additional independent Time-0 process covariance. The free parameter count
+is preserved, but raw covariance contrast coefficients have new meanings.
+Old raw starting vectors cannot be reused.
+
+\begin{lstlisting}[language=R]
+FullFit_ML2 <- ctmaFit(
+  ctmaInitFit = InitFit_ML,
+  activeDirectory = activeDirectory,
+  backend = "ctsemjulia",
+  optimize = TRUE, priors = FALSE,
+  indVarying = "MANIFEST", indVaryingT0 = FALSE,
+  stationary = TRUE, determinedDiffusions = TRUE,
+  studyCoding = "dummy", # "weighted" is also supported
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR"),
+  coresToUse = 8, scaleTime = 1/48
+)
+\end{lstlisting}
+
+The example retains the default study-varying families. General moderators
+on the process covariance, study-varying drift, random process effects,
+partial covariance invariance, binary outcomes, phantom intercept factors
+and Bayesian estimation remain outside this supported path. A shared raw
+diffusion coordinate cannot simply be replaced by a shared stationary
+covariance coordinate: those restrictions generally define different models.
+Unsupported restrictions cause an error rather than being silently relaxed.
+The common-process \texttt{ctmaOptimizeFit(randomDeterminedDiffusions=TRUE)}
+search retains its existing restrictions; this extension concerns direct
+pooled \texttt{ctmaFit()} calls.
+
+
+\section{Long-expression setup error corrected in 0.14.57}
+The message \texttt{variable names are limited to 10000 bytes} during
+\texttt{.ctModelMatSetup()} can arise before estimation when a generated
+covariance expression is too long for R's internal name storage. Version
+0.14.57 constructs the same process covariance directly from its marginal
+standard deviations and Fisher-transformed correlations, avoiding repeated
+expansion of Cholesky expressions. Parameter labels, study contrasts,
+random-intercept safeguards and the scientific model are retained. This is
+an implementation repair, not a reason to remove studies or alter covariance
+constraints. Install the corrected release and rerun the original model
+specification. This repair does not require changing the ctsem installation.
+
+\end{document}

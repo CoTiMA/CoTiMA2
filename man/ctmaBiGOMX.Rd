@@ -8,7 +8,6 @@ ctmaBiGOMX(
   ctmaInitFit = NULL,
   activeDirectory = NULL,
   PETPEESEalpha = 0.1,
-  activateRPB = FALSE,
   digits = 4
 )
 }
@@ -19,7 +18,6 @@ ctmaBiGOMX(
 
 \item{PETPEESEalpha}{# probability level (condition) below which to switch from PET to PEESE (Stanley, 2017, SPPS,p. 582, below Eq. 2; (default p = .10)}
 
-\item{activateRPB}{if TRUE, messages (warning, finishs) could be send to smart phone (default = FALSE)}
 
 \item{digits}{rounding (default = 4)}
 }

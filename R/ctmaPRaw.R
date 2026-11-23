@@ -8,55 +8,51 @@
 #' @param studyNumber internal number
 #' @param empMeanVector vector of means for all variables, usually 0
 #' @param empVarVector vector of variances for all variables, usually 1
-#' @param activateRPB set TRUE to receive push messages with 'CoTiMA' notifications on your phone
-#' @param experimental set TRUE to try new pairwise N function
 #'
-#' @importFrom RPushbullet pbPost
 #' @importFrom stats rnorm
 #' @importFrom MASS mvrnorm
 #' @importFrom psych corr.test
 #'
 #'
 ctmaPRaw <- function(empCovMat=NULL, empNMat=matrix(0,0,0), empN=NULL, studyNumber=NULL,
-                     empMeanVector=NULL, empVarVector=NULL, activateRPB=FALSE,
-                     experimental=FALSE)
+                     empMeanVector=NULL, empVarVector=NULL)
 {  # begin function definition (until end of file)
 
   if (is.null(empCovMat)) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nNo empirical covariance matrix provided for synthesising data! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
 
   if (!(isSymmetric(empCovMat))) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nThe empirical covariance matrix provided is not symmetric! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
 
   if (!(is.null(empNMat))) {
     if (!(isSymmetric(empNMat))) {
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nThe pairwise N matrix provided is not symmetrix! \nGood luck for the next try!"
       stop(ErrorMsg)
     }
   }
 
   if ( (is.null(empNMat) & is.null(empN)) ) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nEITHER a matrix with pairwise N OR an overall N has to be provided for synthesising data! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
 
   if (empN != round(empN)) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     Msg <- paste0("Sample size should be provided as integer values. I rounded ", empN, " to ", round(empN), " to synthesize data. \n")
     empN <- round(empN)
     message(Msg)
   }
 
   if ( (!(is.null(empMeanVector))) & (length(empMeanVector) != (dim(empCovMat)[1]) )  ){
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nThe number of means provided does not match the number of variables in the empirical covariance matrix! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
@@ -67,7 +63,7 @@ ctmaPRaw <- function(empCovMat=NULL, empNMat=matrix(0,0,0), empN=NULL, studyNumb
     colNACounter[i] <- length(which(is.na(empCovMat[ ,i]) == TRUE))
   }
   if (any(rowNACounter != colNACounter)) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nCurrently missing correlations can only be handled if a variable is entirely missing. \nThe NA-pattern provided implies this is not the case. \nConsider setting all correlations involving a critical variable to NA. \nGood luck for the next try!"
     stop(ErrorMsg)
   }
@@ -118,7 +114,7 @@ ctmaPRaw <- function(empCovMat=NULL, empNMat=matrix(0,0,0), empN=NULL, studyNumb
   currentN[currentN == 0] <- max(currentN[currentN > 0]); currentN #replace N=0 (missing correlations) by max N
 
   ###### Pairwise deletion ######
-  if (experimental == FALSE) {
+  {
     numberOfMatrices <- 2^(dim(currentN)[1]); numberOfMatrices
     if (numberOfMatrices > 10^6) numberOfMatrices <- 10^6     # prevent memory overflow
     matrixL <- lapply(1:numberOfMatrices, list); matrixL
@@ -242,86 +238,7 @@ ctmaPRaw <- function(empCovMat=NULL, empNMat=matrix(0,0,0), empN=NULL, studyNumb
     }
     if (all(diag(currentR) == 1)) newData <- scale(newData)
 
-  } # END if (experimental == FALSE)
-
-  if (experimental == TRUE)  {
-    tmpRMat <- currentR; tmpRMat
-    tmpNMat <- currentN
-    tmpNMat[upper.tri(tmpNMat)] <- NA; tmpNMat
-    colnames(tmpRMat) <- rownames(tmpRMat) <- seq(1, dim(tmpRMat)[1], 1)
-
-    # d
-    newData <- matrix(NA, ncol=dim(tmpRMat)[1], nrow=max(tmpNMat, na.rm=T)); newData  # all variables have 0
-    colnames(newData) <- tmpColNames <- colnames(tmpRMat)
-
-    #
-    counter <- 0
-    currentN2 <- 0          # currentN already in use in ctmaPRaw
-    currentStartCol <- 1 # where start inserting praw data
-
-    # try making positive definite by adding .01 to diag if necessary
-    while (any(eigen(tmpRMat)$values < 0)) {
-      print("Adding .01 to diagonal of correlation matrix to make it positive definite (ridge constant)")
-      tmpRMat <- tmpRMat + diag(.01, dim(tmpRMat)[1])
-    }
-
-    allCollectors <- list()
-    while (any(tmpNMat > 1, na.rm=T) & dim(tmpRMat)[1] >1 & dim(tmpNMat)[1] > 1) {
-      counter <- counter + 1; counter
-      collectorCounter <- 0
-      min1 <- unique(which(tmpNMat == min(tmpNMat, na.rm=T), arr.ind = TRUE)); min1      # which matrix index is currenlty min(N)
-      currentN2 <- tmpNMat[min1[1,1], min1[1,2]]; currentN2                                    # what is the current min(N)
-
-      if (counter > 1) {
-        for (i in length(allCollectors):1) {
-          if (allCollectors[[i]][1] == length(allCollectors[[i]])-1) {
-            tmpRMat <- tmpRMat[-allCollectors[[i]][1], -allCollectors[[i]][1]]
-            tmpColNames <- tmpColNames[tmpColNames != allCollectors[[i]][1]]; tmpColNames
-          } else {
-            remove <- c()
-            if (allCollectors[[i]][1] == allCollectors[[i]][length(allCollectors[[i]])]) remove <- allCollectors[[i]][1]
-            tmpRMat <- tmpRMat[!(rownames(tmpRMat) %in% remove), !(colnames(tmpRMat) %in% remove)]
-            tmpColNames <- tmpColNames[!(tmpColNames %in% remove)]; tmpColNames
-          }
-        }
-      }
-      if (is.null(dim(tmpRMat))) tmpRMat <- matrix(tmpRMat, 1, 1)
-      if (currentN2 >= dim(tmpRMat)[1]) {                                                  # if not, some cases are lost
-        data <- MASS::mvrnorm(n=currentN2, mu=rep(0, dim(tmpRMat)[1]),
-                              Sigma=tmpRMat, empirical = TRUE)                            # create praw
-        if (dim(newData)[1] < currentStartCol+dim(data)[1]) {
-          tmpData <- newData[1:dim(data)[1] , ]
-          tmpData[!(is.null(tmpData))] <- NA
-          newData <- rbind(newData, tmpData)
-        }
-        newData[currentStartCol:(currentStartCol+dim(data)[1]-1) , tmpColNames] <-  data  # insert in in newData
-      }
-
-      currentStartCol <- currentStartCol + currentN2; currentStartCol
-
-      # correction
-      psych::corr.test(newData)
-      tmpNMat[!(is.na(tmpNMat))] <- tmpNMat[!(is.na(tmpNMat))] - currentN2
-      tmpNMat[tmpNMat == 0] <- NA
-
-      ## collect fully filled rows and columns (per row)
-      collector <- list()
-      counter2 <- 0
-      # collect
-      for (r in unique(min1[ ,1])) {
-        counter2 <- counter2 + 1
-        collector[[counter2]] <- min1[min1[,1]==r , ]
-      }
-      # create vector in which the first value is a critical row and all subsequent ones are the forbidden columns
-      allCollectors <- list() # collects lists of variable sets for which the remaining N is 0 after previous data computation
-      for (r in 1:length(collector)) {
-        collectorCounter <- collectorCounter + 1
-        if (is.null(dim(collector[[r]]))) collector[[r]] <- matrix(collector[[r]], ncol=2, nrow=1)
-        allCollectors[[collectorCounter]] <- c(collector[[r]][1,1], collector[[r]][ ,2])
-      }
-    }
-    if (all(diag(currentR) == 1)) newData <- scale(newData)
-  } # END if (experimental == TRUE)
+  }
 
 
   # replace values which cannot exist

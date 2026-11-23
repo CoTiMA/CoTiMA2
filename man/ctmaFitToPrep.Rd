@@ -4,18 +4,28 @@
 \alias{ctmaFitToPrep}
 \title{ctmaFitToPrep}
 \usage{
-ctmaFitToPrep(ctmaFitObject = NULL, reUseEmprawData = FALSE)
+ctmaFitToPrep(
+  ctmaFitObject = NULL,
+  reUseEmprawData = FALSE,
+  emprawLong = FALSE
+)
 }
 \arguments{
 \item{ctmaFitObject}{ctmaFitObject}
 
-\item{reUseEmprawData}{whether data should be transferred (will be re-used in subsequent fit attempts)}
+\item{reUseEmprawData}{Whether cached wide data should be reused in subsequent fits.}
+
+\item{emprawLong}{Logical; additionally return cached empirical data in
+\code{emprawLongList}, one long-format data frame per study, with
+\code{id}, \code{time}, and manifest columns. Wide data remain in
+\code{emprawList}. Times use the original cached intervals, without applying
+\code{scaleTime}. Does not enable reuse unless \code{reUseEmprawData=TRUE}.}
 }
 \value{
 list that could be used for fitting new CoTiMA models with \code{\link{ctmaInit}} or \code{\link{ctmaFit}}.
 }
 \description{
-Extracts information from fitted CoTiMA objects to (re-)crearte list of primary studies originally created with \code{\link{ctmaPrep}}
+Extracts information from fitted CoTiMA objects to (re-)create list of primary studies originally created with \code{\link{ctmaPrep}}
 }
 \examples{
 ctmaLoadExamples("CoTiMAInitFit_3")

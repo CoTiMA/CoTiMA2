@@ -14,7 +14,8 @@ ctmaJuliaSetup(
   precompile_tasks = 1L,
   r_home = R.home(),
   dry_run = FALSE,
-  verbose = TRUE
+  verbose = TRUE,
+  agree = FALSE
 )
 }
 \arguments{
@@ -26,7 +27,8 @@ Juliaup's versioned Linux installation directories.}
 used only when `julia` is omitted.}
 
 \item{project}{Optional path to the Julia project. The default is the
-`julia` directory installed with CoTiMA.}
+content-keyed copy of the bundled project in tools::R_user_dir("CoTiMA2",
+"cache"). The installed package is never used as a writable project.}
 
 \item{bootstrap_juliacall}{JuliaCall dependency policy. The default
 `"auto"` installs `Suppressor` or `RCall` only when missing and builds
@@ -49,6 +51,11 @@ on high-core-count machines.}
 \item{dry_run}{Return the commands without executing them.}
 
 \item{verbose}{Print commands and subprocess output.}
+
+\item{agree}{Explicit consent to dependency setup or precompilation. Default
+FALSE prompts in interactive sessions and stops in batch sessions. Inspect
+dry_run=TRUE first. JuliaCall bootstrap may update Julia's default user
+environment; project instantiation changes only the selected user project.}
 }
 \value{
 Invisibly, a list containing the Julia executable, Julia home,
@@ -67,7 +74,7 @@ own native dependencies.
 }
 \examples{
 \dontrun{
-setup <- ctmaJuliaSetup()
+setup <- ctmaJuliaSetup(agree = TRUE)
 setup$julia_home
 
 fit <- ctmaJuliaFit(

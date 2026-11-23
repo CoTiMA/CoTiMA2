@@ -16,9 +16,22 @@ probabilities used for random-effects posterior summaries.}
 }
 \value{
 For a conventional CoTiMA fit, the stored \code{object$summary} is printed
-and returned. For a hierarchical study-level random-effects fit, a list
+and returned, with fitted- and original-time aliases and explicit labels.
+The original-scale fields retain their established meanings; drift and
+diffusion covariance rates, SEs and intervals use the recorded time factor.
+For a hierarchical study-level random-effects fit, a list
 containing population, study-specific, raw-scale and transformed-scale
 heterogeneity, correlation, and Time-0 parameter summaries is returned.
+The hierarchical summary distinguishes the transformed raw-scale population
+centre from the equal-study average calculated after transforming each
+study-specific parameter within every posterior draw. An interpretation
+note is printed and retained in \code{estimand_interpretation}.
+Julia primary-study fits additionally print separate stored fit checks;
+use \code{ctmaFitDiagnostics(object)} to retrieve these diagnostics.
+Identification notes are displayed as a compact study table and a single
+explanation per flag. Full messages remain available with
+\code{as.character(object$summary$identification_notes)} or
+\code{print(object$summary$identification_notes, details = TRUE)}.
 }
 \description{
 Provides the standard summary for conventional CoTiMA fit objects and

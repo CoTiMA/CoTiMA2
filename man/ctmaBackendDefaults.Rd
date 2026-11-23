@@ -5,15 +5,22 @@
 \title{Backend-specific default arguments}
 \usage{
 ctmaBackendDefaults(
-  backend = c("stan", "julia"),
+  backend = c("stan", "julia", "ctsemjulia"),
   estimation = NULL,
   workflow = c("ctmaJuliaFit", "ctmaFit", "ctmaInit", "ctmaAllInvFit", "ctmaEqual",
     "ctmaReFit")
 )
 }
 \arguments{
-\item{backend}{Estimation backend, either \code{"stan"} (the default) or
-\code{"julia"}.}
+\item{backend}{Estimation backend: \code{"stan"} (the default),
+  \code{"julia"} for CoTiMA2's Julia engine, or experimental
+  \code{"ctsemjulia"} for ctsem's native Julia engine. It supports ML and,
+  with a compatible ctsem 4.x development version, Bayesian sampling with
+  NUTS, SAEM, learned-map NUTS, or tempered SMC. NULL sampling defaults
+  leave selection and tuning to ctsem. \code{intoverpop="auto"} delegates
+  integration to ctsem; \code{"none"} requests joint random-effects
+  sampling and \code{"laplace"} or \code{"augmented"} requests a marginal.
+\code{"quadrature"} explicitly refines an optimized native Laplace fit with random effects. It is not a posterior sampler. Support requires a compatible recent ctsem version.}
 
 \item{estimation}{Estimation method. For
 \code{workflow = "ctmaJuliaFit"}, use \code{"ML"} or \code{"Bayes"};
@@ -40,9 +47,25 @@ workflow and estimation method that uses them.
 Model-construction controls such as time scaling and TI-predictor scaling
 remain top-level CoTiMA arguments. \code{backendArgs} is intended only for
 controls of the selected estimation engine.
+
+Calling \code{ctmaBackendDefaults()} without arguments returns the
+\code{"stan"} defaults; it does not display defaults for every backend.
+Request another backend explicitly, for example
+\code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")}. Stan has no
+separate \code{uncertainty} entry in this list: Bayesian uncertainty comes
+from posterior draws, while optimized Stan fits use ctsem's corresponding
+estimation machinery. CoTiMA2's own \code{"julia"} backend exposes
+\code{uncertainty} directly. For \code{"ctsemjulia"}, CoTiMA2 explicitly
+returns \code{optimcontrol$uncertainty = "hessian"}, an explicit CoTiMA2 choice. Current ctsem 4.x instead defaults to
+checked uncertainty. This makes the effective default visible and gives regular
+ML fits standard errors and intervals. Fast development diagnostics can
+deliberately skip post-fit uncertainty with
+\code{backendArgs = list(optimcontrol = list(estonly = TRUE))}.
 }
 \examples{
 ctmaBackendDefaults()
 ctmaBackendDefaults("julia", "ML", "ctmaJuliaFit")
 ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
+ctmaBackendDefaults("ctsemjulia", "ML", "ctmaFit")
+ctmaBackendDefaults("ctsemjulia", "Bayes", "ctmaFit")
 }

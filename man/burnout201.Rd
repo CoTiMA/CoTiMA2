@@ -8,7 +8,7 @@
 An object of class \code{character} of length 1.
 }
 \usage{
-burnout201
+data(burnout201)
 }
 \description{
 burnout201 example vector

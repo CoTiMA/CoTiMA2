@@ -18,23 +18,37 @@
 # added on ctsem's unconstrained/raw scale and are shared by every person in a
 # study. Person-level random effects remain a separate level.
 
-.ctma_print_message <- function(text, width = 81L,
-    prefix = "Note: ") {
+# Wrap informational notices using display widths so each line fits the frame.
+.ctmaFormatNote <- function(text, width = 81L) {
   width <- max(40L, as.integer(width)[1L])
-  left <- "######## "
-  right <- " #########"
-  content_width <- width - nchar(left) - nchar(right)
-  text <- paste0(prefix, paste(as.character(text), collapse = ""))
-  lines <- unlist(strwrap(text, width = content_width, simplify = FALSE),
-    use.names = FALSE)
-  if (!length(lines)) lines <- ""
+  paragraphs <- strsplit(paste0(text, collapse = ""), "\n", fixed = TRUE)[[1L]]
+  lines <- unlist(lapply(paragraphs, function(line) {
+    wrapped <- strwrap(line, width = width - 4L)
+    if (length(wrapped)) wrapped else ""
+  }), use.names = FALSE)
+  # Keep long unbroken paths within the frame too.
+  lines <- unlist(lapply(lines, function(line) {
+    chunks <- character()
+    while (nchar(line, type = "width") > width - 4L) {
+      end <- width - 4L
+      while (nchar(substr(line, 1L, end), type = "width") > width - 4L)
+        end <- end - 1L
+      chunks <- c(chunks, substr(line, 1L, end))
+      line <- substring(line, end + 1L)
+    }
+    c(chunks, line)
+  }), use.names = FALSE)
+  centered <- vapply(lines, function(line) {
+    padding <- width - nchar(line, type = "width") - 2L
+    left <- padding %/% 2L
+    paste0(strrep("#", left), " ", line, " ", strrep("#", padding - left))
+  }, character(1L), USE.NAMES = FALSE)
   border <- strrep("#", width)
-  print(border)
-  for (line in lines) {
-    padding <- content_width - nchar(line, type = "width")
-    print(paste0(left, line, strrep(" ", max(0L, padding)), right))
-  }
-  print(border)
+  paste(c(border, centered, border), collapse = "\n")
+}
+
+.ctma_print_message <- function(text, width = 81L, prefix = "") {
+  message(.ctmaFormatNote(paste0(prefix, paste0(text, collapse = "")), width))
   invisible(NULL)
 }
 
@@ -136,7 +150,7 @@
   same_initial <- .ctma_named_ci(model$argumentList, "sameInitialTimes")
   if (is.null(same_initial)) same_initial <- FALSE
 
-  setup <- ctsem::ctFit(
+  setup_args <- list(
     datalong = model$data,
     model = model$ctModel,
     fit = FALSE,
@@ -150,6 +164,10 @@
     savesubjectmatrices = arg("savesubjectmatrices", FALSE),
     verbose = 0
   )
+  # ctsem 4 defaults to Julia; this adapter explicitly needs Stan code.
+  # Older ctsem releases have no backend argument.
+  if ("backend" %in% names(formals(ctsem::ctFit))) setup_args$backend <- "stan"
+  setup <- do.call(ctsem::ctFit, setup_args)
   # Preserve CoTiMA-side settings (including any manually attached
   # randomEffect specification) alongside ctsem's generated representation.
   setup$argumentList <- model$argumentList
@@ -402,12 +420,28 @@
        setup_new = setup_new, used_old = used_old, source = src$source)
 }
 
-.ctma_init_function <- function(prepared, jitter = 0.02) {
+.ctma_init_function <- function(prepared, jitter = 0.02, seed = NULL) {
   template <- prepared$init_template
   if (is.null(template)) return("random")
-  force(prepared); force(jitter)
+  if (!is.null(seed) && (!is.numeric(seed) || length(seed) != 1L ||
+      !is.finite(seed) || seed < 0 || seed > .Machine$integer.max ||
+      seed != floor(seed))) stop("seed must be NULL or one nonnegative integer.")
+  force(prepared); force(jitter); force(seed)
   function(chain_id = 1L) {
-    set.seed(as.integer(104729L + chain_id))
+    if (!is.numeric(chain_id) || length(chain_id) != 1L ||
+        !is.finite(chain_id) || chain_id < 1 || chain_id != floor(chain_id))
+      stop("chain_id must be one positive integer.")
+    # Initialization uses a local stream and never changes the caller's RNG.
+    old_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+    if (old_exists) old_seed <- get(".Random.seed", envir = .GlobalEnv)
+    on.exit({
+      if (old_exists) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+      else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE))
+        rm(".Random.seed", envir = .GlobalEnv)
+    }, add = TRUE)
+    # With no explicit seed, derive the local seed from the caller's stream.
+    base_seed <- if (is.null(seed)) sample.int(.Machine$integer.max, 1L) else seed
+    set.seed(as.integer((as.double(base_seed) + chain_id - 1) %% (as.double(.Machine$integer.max) + 1)))
     q <- prepared$standata$nstudyre; k <- prepared$standata$nstudies
     out <- list(
       rawpopmeans = array(template$rawpopmeans +
@@ -767,7 +801,27 @@
     prior = paste(prior, collapse = "\n"), ncorr = ncorr)
 }
 
+# Recognize the two supported covariance layouts before modifying the program.
+# An unknown/ambiguous template must fail rather than silently omit RE effects.
+.ctma_stan_t0_layout <- function(text) {
+  anchors <- c(
+    legacy = "if(intoverpop && nindvarying > 0) T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = rawpopcovbase;",
+    additive = paste0("T0cov[intoverpopindvaryingindex, intoverpopindvaryingindex] = ",
+      "T0cov[intoverpopindvaryingindex, intoverpopindvaryingindex] + ",
+      "quad_form_diag(rawpopcov, popstatescale);"))
+  counts <- vapply(anchors, function(anchor) {
+    hits <- gregexpr(anchor, text, fixed = TRUE)[[1L]]
+    if (identical(hits[1L], -1L)) 0L else length(hits)
+  }, integer(1))
+  if (sum(counts) != 1L) stop(
+    "Expected exactly one supported Stan insertion point for subject T0 covariance; ",
+    "found ", sum(counts), ". The ctsem template may have changed.")
+  list(name = names(anchors)[counts == 1L], anchor = unname(anchors[counts == 1L]))
+}
+
 .ctma_patch_stan <- function(text, covariance, parameterization, blocks) {
+  t0_layout <- .ctma_stan_t0_layout(text)
+  modern_t0 <- identical(t0_layout$name, "additive")
   block_code <- .ctma_stan_block_code(blocks)
   data_anchor <- "  int nindvaryingoffdiagonals; //number of off diagonal parameters needed for popcov matrix"
   data_add <- paste0(data_anchor, "\n",
@@ -825,12 +879,18 @@
     "      if(studyre_type[q] == 3){\n",
     "        int r = studyre_row[q];\n",
     "        int c = studyre_col[q];\n",
-    "        studyre_rawpopcovbase[s][r,c] = inv_logit(sqrtpcov[studyre_index[q]] + studyre_effect[s,q])*2-1;\n",
+    if (modern_t0)
+      "        studyre_rawpopcovbase[s][r,c] = sqrtpcov[studyre_index[q]] + studyre_effect[s,q];\n"
+    else
+      "        studyre_rawpopcovbase[s][r,c] = inv_logit(sqrtpcov[studyre_index[q]] + studyre_effect[s,q])*2-1;\n",
     "        studyre_rawpopcovbase[s][c,r] = 0;\n",
     "      }\n",
     "    }\n",
     "    studyre_T0VAR[s] = studyre_rawpopcovbase[s];\n",
     "    studyre_T0cov[s] = sdcovsqrt2cov(studyre_T0VAR[s],choleskymats);\n",
+    if (modern_t0)
+      "    studyre_T0cov[s] = quad_form_diag(studyre_T0cov[s], popstatescale);\n"
+    else paste0(
     "    // Apply the same T0-mean scaling used by ctsem.\n",
     "    if(nindvarying > 0){\n",
     "      for(q in 1:nindvarying){\n",
@@ -841,7 +901,7 @@
     "          }\n",
     "        }\n",
     "      }\n",
-    "    }\n",
+    "    }\n"),
     "  }")
   text <- .ctma_replace_once(text, cov_anchor, cov_add, "T0 covariance construction")
 
@@ -853,13 +913,22 @@
     "  }\n\n", raw_anchor)
   text <- .ctma_replace_once(text, raw_anchor, raw_add, "subject raw parameters")
 
-  t0_anchor <- "if(intoverpop && nindvarying > 0) T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = rawpopcovbase;"
-  t0_add <- paste0(
-    "    if(intoverpop && nindvarying > 0){\n",
-    "      if(si > 0) T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = studyre_rawpopcovbase[study_id[si]];\n",
-    "      else T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = rawpopcovbase;\n",
-    "    }")
-  text <- .ctma_replace_once(text, t0_anchor, t0_add, "subject T0 covariance")
+  if (modern_t0) {
+    # ctsem 4 adds population covariance AFTER converting the model's own
+    # T0VAR. Keep that addition, and apply the carrier-state scaling once.
+    block <- "T0cov[intoverpopindvaryingindex, intoverpopindvaryingindex]"
+    t0_add <- paste0(
+      "if(si > 0) ", block, " = ", block,
+      " + studyre_T0cov[study_id[si]];\n",
+      "    else ", t0_layout$anchor)
+  } else {
+    t0_add <- paste0(
+      "    if(intoverpop && nindvarying > 0){\n",
+      "      if(si > 0) T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = studyre_rawpopcovbase[study_id[si]];\n",
+      "      else T0VAR[intoverpopindvaryingindex, intoverpopindvaryingindex] = rawpopcovbase;\n",
+      "    }")
+  }
+  text <- .ctma_replace_once(text, t0_layout$anchor, t0_add, "subject T0 covariance")
 
   model_anchor <- "  real priormod2 = priormod / nsubsets;"
   study_distribution <- if (parameterization == "noncentered")
@@ -1321,16 +1390,10 @@ ctmaRePrep <- function(
     )
     a$parallel_chains <- as.integer(chains)
   }
-  requested_cpus <- a$parallel_chains * a$threads_per_chain
-  available_cpus <- suppressWarnings(parallel::detectCores(logical = TRUE))
-  if (is.finite(available_cpus) && requested_cpus > available_cpus) warning(
-    "Julia chain parallelism requests ", requested_cpus, " CPU threads (",
-    a$parallel_chains, " parallel chains x ", a$threads_per_chain,
-    " threads per chain), but only ", available_cpus,
-    " logical cores were detected. Reduce parallel_chains or ",
-    "threads_per_chain to avoid oversubscription.", call. = FALSE
-  )
+  .ctmaCheckJuliaBudget(a$julia_threads, a$parallel_chains,
+    a$threads_per_chain, a$blas_threads)
   if (!file.exists(a$julia_file)) stop("Cannot find CtsemJulia.jl at ", a$julia_file)
+  a$julia_file <- .ctmaJuliaRuntimeFile(a$julia_file)
 
   template <- prepared$init_template
   q <- as.integer(prepared$standata$nstudyre)
@@ -1496,7 +1559,9 @@ ctmaRePrep <- function(
 #' @param chains Number of Bayesian chains.
 #' @param iter Total sampling iterations per chain or maximum optimizer
 #'   iterations.
-#' @param seed Random-number seed.
+#' @param seed Random-number seed. Automatic study-RE initialization uses this
+#'   seed (or a \code{fit_args$seed} override) with distinct chain streams,
+#'   restoring the caller's RNG state after each initialization callback.
 #' @param init Optional fitting-stage initialization override.
 #' @param init_jitter Optional override of the preparation-stage jitter.
 #' @param verbose Print CoTiMA-style progress messages.
@@ -1514,6 +1579,9 @@ ctmaRePrep <- function(
 #'   \code{threads_per_chain}. Set \code{nuts_progress = TRUE} to report
 #'   aggregate progress across chains and \code{progress_every} to control
 #'   the number of NUTS iterations between worker updates (default 25).
+#'   Calling \code{ctmaBackendDefaults()} without arguments returns Stan
+#'   defaults; request \code{backend = "julia"}, Bayesian estimation, and the
+#'   \code{"ctmaReFit"} workflow to inspect this function's Julia defaults.
 #'
 #' @return A \code{"CoTiMAFit"} object with subtype
 #'   \code{"CoTiMAStudyREFit"}. Apply \code{summary()} for population,
@@ -1551,6 +1619,8 @@ ctmaReFit <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaReFit")
   on.exit(.ctma_timer(), add = TRUE)
 
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaReFit")
+
   # `method` is retained as a backward-compatible alias. Previously,
   # method="sample" meant Bayesian sampling and method="optimize" meant MAP.
   if (!is.null(method)) {
@@ -1560,10 +1630,15 @@ ctmaReFit <- function(
   backend <- match.arg(tolower(backend), c("stan", "julia"))
   if (identical(backend, "julia")) .ctmaJuliaInstallationGuideNote()
   optimizer_uncertainty <- match.arg(optimizer_uncertainty)
+  cores <- .ctmaResolveCores(cores, backend = backend,
+    workflow = "ctmaReFit")$resolved
+  .ctma_restore_threads <- .ctmaLimitThreadEnvironment()
+  on.exit(.ctma_restore_threads(), add = TRUE)
   if (is.null(init)) init <- prepared$init
   if (is.null(init_jitter)) init_jitter <- prepared$init_jitter
   resolved_init <- if (is.character(init) && identical(init, "auto"))
-    .ctma_init_function(prepared, init_jitter) else init
+    .ctma_init_function(prepared, init_jitter,
+      seed = if (!is.null(fit_args$seed)) fit_args$seed else seed) else init
   if (estimation != "bayes" && optimizer_uncertainty != "none")
     stop(
       "optimizer_uncertainty = '", optimizer_uncertainty,
@@ -1584,6 +1659,13 @@ ctmaReFit <- function(
       "compile_args and fit_args are Stan-specific and ignored by backend='julia'.",
       call. = FALSE
     )
+    defaults <- ctmaBackendDefaults("julia", "Bayes", "ctmaReFit")
+    defaults <- utils::modifyList(defaults, backendArgs)
+    defaults$chains <- chains
+    allocated <- .ctmaInitJuliaResources(cores, "Bayes", backendArgs,
+      defaults, workflow = "ctmaReFit")$backend_args
+    allocated$chains <- NULL
+    backendArgs <- allocated
     return(.ctma_re_julia_bayes(
       prepared = prepared, chains = as.integer(chains), iter = as.integer(iter),
       seed = as.integer(seed), init_jitter = init_jitter,
@@ -1642,6 +1724,8 @@ ctmaReFit <- function(
            init = resolved_init),
       fit_args
     )
+    call$cores <- .ctmaResolveCores(call$cores, backend = "stan",
+      task_count = call$chains, workflow = "ctmaReFit")$resolved
     engine_fit <- do.call(rstan::sampling, call)
     if (!methods::is(engine_fit, "stanfit") ||
         length(methods::slot(engine_fit, "sim")$samples) == 0L) stop(
@@ -1771,6 +1855,18 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
 
 .ctmaReSummary <- function(fit, probs = c(.025, .5, .975)) {
   if (!inherits(fit, "ctmaStudyREFit")) stop("fit must be a ctmaStudyREFit.")
+  estimand_note <- paste0(
+    "Hierarchical summary estimands: 'population_parameters_raw_centre' ",
+    "transforms the population centre on ctsem's raw estimation scale; it ",
+    "is not generally the natural-scale mean across studies. ",
+    "'population_parameters_study_average' transforms each observed study's ",
+    "parameter within every posterior draw and then averages studies equally; ",
+    "this is usually the meta-analytic population estimand. ",
+    "'study_parameters' reports the corresponding study-specific posterior ",
+    "summaries. Heterogeneity summaries describe distributions, not standard ",
+    "errors of the population mean."
+  )
+  .ctma_print_message(estimand_note)
   if (identical(fit$optimizer_uncertainty, "none")) .ctma_print_message(paste0(
     "This MAP/ML fit contains point estimates only. The lower, median, and ",
     "upper summary columns therefore equal the optimized estimate."
@@ -1804,6 +1900,10 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
   # excluded because their final variances/covariances depend jointly on the
   # complete Cholesky matrix rather than on a scalar transformation.
   transformed_sd_summary <- data.frame()
+  transformed_variance <- list()
+  source <- fit$prepared$CoTiMASetup
+  if (is.null(source)) source <- fit$prepared$original
+  scale <- .ctmaSummaryTimeFactor(source)
   transformed_re <- which(spec$type == 1L)
   if (length(transformed_re)) {
     transformed_sd_summary <- do.call(rbind, lapply(transformed_re, function(q) {
@@ -1812,6 +1912,9 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
         tau = d$studyre_sd[, q],
         transform = spec$transform[q]
       )
+      if (scale != 1 && identical(as.character(spec$matrix[q]), "DRIFT"))
+        transformed_variance[[as.character(q)]] <<-
+          .ctma_draw_summary((transformed_sd_draws * scale)^2, probs)
       z <- .ctma_draw_summary(transformed_sd_draws, probs)
       data.frame(re = q, matrix = spec$matrix[q], row = spec$row[q],
                  col = spec$col[q], parameter = spec$parameter[q],
@@ -1822,7 +1925,8 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
   }
 
   rawmean_re <- which(spec$type == 1L)
-  study_parameter_summary <- population_parameter_summary <- data.frame()
+  study_parameter_summary <- population_parameter_summary <-
+    population_study_average_summary <- data.frame()
   if (length(rawmean_re)) {
     study_parameter_summary <- do.call(rbind, lapply(seq_along(studies), function(s)
       do.call(rbind, lapply(rawmean_re, function(q) {
@@ -1844,6 +1948,20 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
                  scale = "transformed population mean",
                  mean = z[1], lower = z[2], median = z[3], upper = z[4])
     }))
+    population_study_average_summary <- do.call(rbind,
+      lapply(rawmean_re, function(q) {
+        study_values <- vapply(seq_along(studies), function(s) {
+          raw <- d$rawpopmeans[, spec$index[q]] + effect[, s, q]
+          .ctma_transform(raw, spec$transform[q])
+        }, numeric(nrow(d$rawpopmeans)))
+        value <- rowMeans(study_values)
+        z <- .ctma_draw_summary(value, probs)
+        data.frame(re = q, matrix = spec$matrix[q], row = spec$row[q],
+                   col = spec$col[q], parameter = spec$parameter[q],
+                   block = spec$block[q],
+                   scale = "equal-study average on transformed scale",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
   }
 
   correlation_summary <- data.frame()
@@ -1872,6 +1990,7 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
   }
 
   t0var_summary <- t0cov_summary <- data.frame()
+  population_t0var_summary <- population_t0cov_summary <- data.frame()
   if (!is.null(d$studyre_T0VAR)) {
     selected_t0 <- which(spec$matrix == "T0VAR" & spec$type %in% c(2L, 3L))
     if (length(selected_t0)) {
@@ -1889,10 +2008,29 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
                      row = spec$row[q], col = spec$col[q],
                      mean = z[1], lower = z[2], median = z[3], upper = z[4])
         }))))
+      population_t0var_summary <- do.call(rbind, lapply(selected_t0, function(q) {
+        values <- d$studyre_T0VAR[, , spec$t0_row[q], spec$t0_col[q], drop = FALSE]
+        dim(values) <- dim(d$studyre_T0VAR)[1:2]
+        z <- .ctma_draw_summary(rowMeans(values), probs)
+        data.frame(parameter = spec$parameter[q], row = spec$row[q],
+                   col = spec$col[q],
+                   scale = "equal-study average T0VAR",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
+      population_t0cov_summary <- do.call(rbind, lapply(selected_t0, function(q) {
+        values <- d$studyre_T0cov[, , spec$t0_row[q], spec$t0_col[q], drop = FALSE]
+        dim(values) <- dim(d$studyre_T0cov)[1:2]
+        z <- .ctma_draw_summary(rowMeans(values), probs)
+        data.frame(parameter = spec$parameter[q], row = spec$row[q],
+                   col = spec$col[q],
+                   scale = "equal-study average T0 covariance",
+                   mean = z[1], lower = z[2], median = z[3], upper = z[4])
+      }))
     }
   }
 
-  list(specification = spec,
+  answer <- list(estimand_interpretation = estimand_note,
+       specification = spec,
        covariance_blocks = fit$prepared$covariance_blocks,
        study_effects_raw = effect_summary,
        study_sd_raw = sd_summary,
@@ -1900,8 +2038,26 @@ attr(ctmaReFit, "script_version") <- "2026-08-19.25"
        study_correlations = correlation_summary,
        study_parameters = study_parameter_summary,
        population_parameters = population_parameter_summary,
+       population_parameters_raw_centre = population_parameter_summary,
+       population_parameters_study_average = population_study_average_summary,
        study_T0VAR = t0var_summary, study_T0cov = t0cov_summary,
+       population_T0VAR_study_average = population_t0var_summary,
+       population_T0cov_study_average = population_t0cov_summary,
        ctsem_draws = d)
+  if (length(transformed_variance)) {
+    tables <- c("study_sd_transformed", "study_parameters",
+      "population_parameters_raw_centre", "population_parameters_study_average")
+    original <- lapply(answer[tables], function(table)
+      .ctmaScaleDriftSDTable(table[table$matrix %in% "DRIFT", , drop = FALSE], scale))
+    variance <- original$study_sd_transformed
+    values <- do.call(rbind, transformed_variance[as.character(variance$re)])
+    variance[c("mean", "lower", "median", "upper")] <- values
+    variance$scale <- "variance of transformed study drift"
+    original$study_variance_transformed <- variance
+    answer$originalTime <- c(list(scaleTime = scale), original)
+    message("Original-time drift results are available under $originalTime.")
+  }
+  answer
 }
 
 # Backward-compatible aliases. New code should use ctmaRePrep(), ctmaReFit(),

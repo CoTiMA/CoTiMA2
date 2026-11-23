@@ -8,7 +8,7 @@
 An object of class \code{character} of length 1.
 }
 \usage{
-occupation201
+data(occupation201)
 }
 \description{
 occupation201 example vector

@@ -7,10 +7,12 @@
 #' moderated model these deviations are measured around the study-specific
 #' means predicted by the moderator model, rather than around one grand mean.
 #'
-#' @param activateRPB if TRUE, messages (warning, finished) could be send to smart phone (default = FALSE)
 #' @param activeDirectory the directory where to save results (if not specified, it is taken from ctmaInitFit)
-#' @param ctmaFitObject ctmaFit Object WITHOUT Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)
-#' @param ctmaFitObjectMod ctmaFit Object WITH Moderators (obtained from \code{\link{ctmaFit}} with the arguments WEC=\'TRUE\' and scaleTI=FALSE)
+#' @param ctmaFitObject A ctmaFit object without moderators, fitted with
+#'   \code{studyCoding="weighted"} and \code{"DRIFT"} included in
+#'   \code{studyVarying}.
+#' @param ctmaFitObjectMod The corresponding weighted-coding ctmaFit object
+#'   with \code{"DRIFT"} in \code{studyVarying} and at least one moderator.
 #' @param digits rounding (default = 4)
 #' @param dt A vector of scalars indicating a time interval across which discrete time effects should be estimated and then used for ctmaBiG.
 #' @param undoTimeScaling if TRUE, the original time scale is used (timeScale argument possibly used in \code{\link{ctmaInit}} is undone )
@@ -24,21 +26,22 @@
 #' unconditional heterogeneity estimate is zero, proportional reduction is
 #' undefined and returned as \code{NA}.
 #'
-#' @importFrom RPushbullet pbPost
 #' @importFrom ctsem ctExtract
 #' @importFrom OpenMx expm
 #' @importFrom stats var lm pnorm
 #'
 #' @export ctmaRedHet
 #'
-ctmaRedHet <- function(activateRPB=FALSE,
+#' @param ... Reserved. Unknown arguments are rejected with a migration hint where applicable.
+ctmaRedHet <- function(
                        activeDirectory=NULL,
                        ctmaFitObject=NULL,
                        ctmaFitObjectMod=NULL,
                        digits=4,
                        dt=NULL,
-                       undoTimeScaling=TRUE)
+                       undoTimeScaling=TRUE, ...)
 {  # begin function definition (until end of file)
+  .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaRedHet")
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaRedHet")
   on.exit(.ctma_timer(), add = TRUE)
@@ -46,48 +49,56 @@ ctmaRedHet <- function(activateRPB=FALSE,
   {
     # check if correct fit objects are specified ######################
     if (is.null(ctmaFitObject)){
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object has to be supplied to analyse something.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
     if (is.null(ctmaFitObjectMod)){
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object with moderators has to be supplied to analyse something. \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
-    if (ctmaFitObject$argumentList$WEC == FALSE){
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using the argument \'WEC=TRUE\' has to be supplied.
+    uses_weighted_drift <- function(x) {
+      if (is.null(x$argumentList$studyCoding)) {
+        return(isTRUE(x$argumentList$WEC))
+      }
+      identical(x$argumentList$studyCoding, "weighted") &&
+        "DRIFT" %in% x$argumentList$studyVarying
+    }
+
+    if (!uses_weighted_drift(ctmaFitObject)){
+
+      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using studyCoding='weighted' with 'DRIFT' in studyVarying has to be supplied.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
-    if (ctmaFitObjectMod$argumentList$WEC == FALSE){
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
-      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using the argument \'WEC=TRUE\' has to be supplied.
+    if (!uses_weighted_drift(ctmaFitObjectMod)){
+
+      ErrorMsg <- "\nA fitted CoTiMA (\"ctmaFit\") object estimated using studyCoding='weighted' with 'DRIFT' in studyVarying has to be supplied.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
     if (( length(ctmaFitObjectMod$argumentList$ind.mod.number) == 0) & ( length(ctmaFitObjectMod$argumentList$mod.number) == 0)) {
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nA The ctmaFitObjectMod object does neither involve study-level nor individual-level moderators.
     \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
     if ( (!(is.null(dt))) & (any(dt <= 0)) ) {
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nA The argument \"dt\" was provided. All values must by > 0. \nGood luck for the next try!"
       stop(ErrorMsg)
     }
 
     scaleTime1 <- scaleTime2 <- 1
     if (ctmaFitObjectMod$argumentList$scaleTime != ctmaFitObject$argumentList$scaleTime) {
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       Msg <- "\nA The two fit objects provided were estimated with different scaleTime-arguments. Undoing time scaling for both fit objects is enforced!"
       message(Msg)
       undoTimeScaling <- TRUE

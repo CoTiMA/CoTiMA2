@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 13.
 }
 \usage{
-CoTiMAMod2on23Fit_6
+data(CoTiMAMod2on23Fit_6)
 }
 \description{
 ctmaFit-object with a continuous moderator of 2 cross effects

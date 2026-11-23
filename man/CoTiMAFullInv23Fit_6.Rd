@@ -8,7 +8,7 @@
 An object of class \code{CoTiMAFit} of length 12.
 }
 \usage{
-CoTiMAFullInv23Fit_6
+data(CoTiMAFullInv23Fit_6)
 }
 \description{
 1st fitted ctmaFit-object in a series of 2 to test equality of 2 cross effects

@@ -52,6 +52,21 @@
 #' @param multistart_jitter Relative raw-scale jitter for starts after the
 #'   first. A value of 0.1 means a 10 percent perturbation, with a small floor
 #'   for coordinates initialized at zero.
+#' @param warm_start \code{"auto"} (the default), \code{TRUE}, or
+#'   \code{FALSE}. Before full-data ML, an automatic warm start may optimize
+#'   only population/base parameters on a stratified subset of complete
+#'   subjects. Explicit \code{inits} disable this pass.
+#' @param warm_start_fraction Initial fraction of subjects requested for the
+#'   warm-start pilot. Structural minimum rules may enlarge it.
+#' @param warm_start_subjects_per_parameter Minimum informative subjects per
+#'   population/base parameter.
+#' @param warm_start_minimum_per_study Minimum subjects retained from each
+#'   study, or all subjects when a study is smaller.
+#' @param warm_start_maximum_subjects Soft maximum pilot size. Identification,
+#'   study, and binary-category minima take precedence.
+#' @param warm_start_binary_minimum Minimum subjects representing each
+#'   available zero/one category of every binary manifest.
+#' @param warm_start_maxiters Maximum L-BFGS iterations for the subset pilot.
 #' @param carefulFit Whether to use staged optimization for models with TI/WEC
 #'   effects: optimize base parameters first, then all effects, then perform a
 #'   jointly rescaled refinement if needed. The default is `TRUE`, and
@@ -87,13 +102,15 @@
 #' @param show_trace Whether Julia should print the Optim iteration trace.
 #' @param julia_threads Number of Julia threads used to evaluate independent
 #'   subject likelihoods and gradients. This must be set when Julia starts;
-#'   consequently, use `initialize=TRUE` when changing it.
+#'   consequently, restart R when changing an active thread pool.
+#'   The requested Julia/worker/BLAS combination must fit the available CPU budget.
 #' @param subject_threads Maximum number of concurrent subject tasks used by
 #'   this fit. Unlike `julia_threads`, this can be changed between fits in the
 #'   same R session. `"auto"` uses the complete Julia thread pool. Numeric
 #'   likelihoods use these tasks directly; gradients use them only after an
 #'   automatic serial-versus-parallel AD consistency check passes. Hessians use
 #'   the serial-safe path.
+#' @param compute Optional execution plan from \code{ctmaCompute()}.
 #' @param blas_threads Number of BLAS threads. One avoids competing with other
 #'   jobs and is generally appropriate for the small ctsem matrices here.
 #'
@@ -125,6 +142,13 @@ ctmaJuliaFit <- function(
     parallel_starts = 1L,
     threads_per_start = NULL,
     multistart_jitter = 0.1,
+    warm_start = "auto",
+    warm_start_fraction = 0.10,
+    warm_start_subjects_per_parameter = 20L,
+    warm_start_minimum_per_study = 25L,
+    warm_start_maximum_subjects = 5000L,
+    warm_start_binary_minimum = 20L,
+    warm_start_maxiters = 250L,
     carefulFit = TRUE,
     staged_optimization = NULL,
     confidence = 0.95,
@@ -146,7 +170,13 @@ ctmaJuliaFit <- function(
     show_trace = TRUE,
     julia_threads = "auto",
     subject_threads = "auto",
-    blas_threads = 1L) {
+    blas_threads = 1L,
+    compute = NULL) {
+  if (!is.null(compute)) {
+    if (!inherits(compute, "ctmaCompute")) stop("Invalid compute plan")
+    julia_threads <- subject_threads <- blas_threads <- 1L
+    parallel_starts <- threads_per_start <- 1L
+  }
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaJuliaFit")
   on.exit(.ctma_timer(), add = TRUE)
@@ -154,6 +184,7 @@ ctmaJuliaFit <- function(
   julia_threads_was_supplied <- !missing(julia_threads)
   uncertainty_was_supplied <- !missing(uncertainty)
   transformed_was_supplied <- !missing(transformed)
+  user_supplied_inits <- !is.null(inits)
 
   if (!is.null(staged_optimization)) {
     warning(
@@ -183,6 +214,13 @@ ctmaJuliaFit <- function(
     stop("'optimize=TRUE' is only compatible with estimation='ML'.", call. = FALSE)
   }
   optimize <- identical(estimation, "ml")
+  if (!is.null(compute) && !identical(estimation, "ml")) stop("compute currently supports maximum likelihood only")
+
+  if (identical(estimation, "ml")) {
+    message("Maximum likelihood estimation requested.")
+  } else if (identical(estimation, "bayes")) {
+    message("Bayesian NUTS estimation requested.")
+  }
 
   if (!requireNamespace("JuliaCall", quietly = TRUE)) {
     stop("Package 'JuliaCall' is required.", call. = FALSE)
@@ -195,6 +233,7 @@ ctmaJuliaFit <- function(
     inits = inits
   )
   fit <- prepared_input$fit
+  .ctmaJuliaCheckCovarianceCode(fit$standata)
   setup_only <- prepared_input$setup_only
   if (setup_only && !transformed_was_supplied) {
     transformed <- FALSE
@@ -213,12 +252,67 @@ ctmaJuliaFit <- function(
     )
   }
 
+  julia_file <- .ctmaJuliaRuntimeFile(julia_file)
+
   requested_julia_threads <- julia_threads
   julia_threads <- .ctmaResolveJuliaThreads(julia_threads)
+  cpu_budget <- .ctmaAvailableCores()
+  blas_threads <- .ctmaResourceInteger(blas_threads, "blas_threads")
+  concurrent <- if (isTRUE(optimize)) parallel_starts else parallel_chains
+  per_worker <- if (isTRUE(optimize)) threads_per_start else threads_per_chain
+  if (is.null(per_worker)) per_worker <- julia_threads
+  .ctmaCheckJuliaBudget(julia_threads, concurrent, per_worker,
+    blas_threads, cpu_budget)
+  transformed_cores <- .ctmaResourceInteger(transformed_cores, "transformed_cores")
+  if (transformed_cores > cpu_budget) stop(
+    "transformed_cores exceeds the available CPU budget.", call. = FALSE)
+
 
   # This assessment deliberately precedes Julia initialization and the first
   # likelihood evaluation, so the user can still stop an unattractive run.
   dimensions <- .ctmaJuliaDimensionsFromFit(fit)
+  warm_start_plan <- list(
+    use = FALSE,
+    reason = if (user_supplied_inits) "explicit inits were supplied" else
+      "not requested for this estimation method",
+    subjects = integer(),
+    nsubjects = dimensions$nsubjects
+  )
+  if (isTRUE(optimize) && !user_supplied_inits) {
+    warm_start_plan <- .ctmaWarmStartPlan(
+      fit = fit, source_object = source_object, mode = warm_start,
+      fraction = warm_start_fraction,
+      subjects_per_parameter = warm_start_subjects_per_parameter,
+      minimum_per_study = warm_start_minimum_per_study,
+      maximum_subjects = warm_start_maximum_subjects,
+      binary_minimum = warm_start_binary_minimum,
+      seed = seed
+    )
+  } else {
+    .ctmaWarmStartMode(warm_start)
+  }
+  if (isTRUE(optimize) && user_supplied_inits &&
+      .ctmaWarmStartMode(warm_start) != "never") {
+    message(
+      "Note: The subset warm start is ignored because explicit 'inits' ",
+      "were supplied."
+    )
+  } else if (isTRUE(optimize) && isTRUE(warm_start_plan$use)) {
+    message(sprintf(
+      paste0(
+        "Note: Subset warm start selected %d of %d complete subjects ",
+        "(%.1f%%; %d study stratum/strata) after structural checks."
+      ),
+      warm_start_plan$selected, warm_start_plan$nsubjects,
+      100 * warm_start_plan$fraction, warm_start_plan$studies
+    ))
+  } else if (isTRUE(optimize) &&
+      .ctmaWarmStartMode(warm_start) != "never") {
+    message(
+      "Note: Subset warm start was skipped because ",
+      warm_start_plan$reason, "."
+    )
+  }
   performance_assessment <- .ctmaJuliaPerformanceAssessment(
     dimensions = dimensions,
     julia_threads = julia_threads,
@@ -282,6 +376,8 @@ ctmaJuliaFit <- function(
       call. = FALSE
     )
   }
+  .ctmaCheckJuliaBudget(active_julia_threads, concurrent, per_worker,
+    blas_threads, cpu_budget)
   subject_threads <- .ctmaResolveSubjectThreads(
     subject_threads, active_julia_threads
   )
@@ -416,6 +512,8 @@ ctmaJuliaFit <- function(
 
   optimization <- NULL
   optimization_timing <- NULL
+  warm_start_diagnostics <- warm_start_plan
+  warm_start_timing <- NULL
   optimizer_controls <- NULL
   bayes <- NULL
   bayes_timing <- NULL
@@ -456,6 +554,107 @@ ctmaJuliaFit <- function(
       stop("'inits' contains non-finite values.", call. = FALSE)
     }
 
+    warm_start_maxiters <- suppressWarnings(
+      as.integer(warm_start_maxiters)[1L]
+    )
+    if (is.na(warm_start_maxiters) || warm_start_maxiters < 1L) stop(
+      "'warm_start_maxiters' must be a positive integer.", call. = FALSE
+    )
+    if (isTRUE(warm_start_plan$use)) {
+      warm_start_threaded <- use_subject_threads &&
+        !is.null(parallel_backend_check) &&
+        isTRUE(parallel_backend_check$fully_parallel)
+      JuliaCall::julia_assign(
+        "ctma_warm_subjects", as.integer(warm_start_plan$subjects)
+      )
+      JuliaCall::julia_assign("ctma_warm_original", inits)
+      warm_error <- NULL
+      warm_result <- NULL
+      warm_start_timing <- system.time({
+        warm_result <- tryCatch(
+          JuliaCall::julia_eval(sprintf(
+            paste0(
+              "CtsemJulia.ctsem_optimize_warm_start(",
+              "ctma_warm_original,ctma_sd,ctma_warm_subjects;",
+              "maxiters=%d,show_trace=%s,threaded=%s,",
+              "initial_raw_step=%.17g,gradient_tolerance=%.17g,",
+              "function_relative_tolerance=%.17g,",
+              "parameter_relative_tolerance=%.17g)"
+            ),
+            warm_start_maxiters,
+            if (isTRUE(show_trace)) "true" else "false",
+            if (warm_start_threaded) "true" else "false",
+            optimizer_initial_step, gradient_tolerance,
+            function_relative_tolerance, parameter_relative_tolerance
+          )),
+          error = function(e) {
+            warm_error <<- conditionMessage(e)
+            NULL
+          }
+        )
+      })
+      if (!is.null(warm_result)) {
+        JuliaCall::julia_assign(
+          "ctma_warm_candidate", as.numeric(warm_result$estimates)
+        )
+        full_objectives <- JuliaCall::julia_eval(paste0(
+          "begin\n",
+          "ordinary=-CtsemJulia.ctsem_loglik_by_subject(",
+          "ctma_warm_original,ctma_sd;threaded=",
+          if (use_subject_threads) "true" else "false", ")\n",
+          "candidate=-CtsemJulia.ctsem_loglik_by_subject(",
+          "ctma_warm_candidate,ctma_sd;threaded=",
+          if (use_subject_threads) "true" else "false", ")\n",
+          "(ordinary=ordinary,candidate=candidate)\nend"
+        ))
+        accepted <- is.finite(full_objectives$candidate) &&
+          (!is.finite(full_objectives$ordinary) ||
+             full_objectives$candidate <= full_objectives$ordinary)
+        if (accepted) {
+          inits <- as.numeric(warm_result$estimates)
+          message(sprintf(
+            paste0(
+              "Note: Subset warm start accepted after full-data validation ",
+              "(objective %.6g versus %.6g for the ordinary start)."
+            ),
+            full_objectives$candidate, full_objectives$ordinary
+          ))
+        } else {
+          message(sprintf(
+            paste0(
+              "Note: Subset warm start rejected after full-data validation ",
+              "(objective %.6g versus %.6g for the ordinary start)."
+            ),
+            full_objectives$candidate, full_objectives$ordinary
+          ))
+        }
+        warm_start_diagnostics <- c(warm_start_plan, list(
+          attempted = TRUE, accepted = accepted,
+          subset_starting_objective = warm_result$starting_objective,
+          subset_final_objective = warm_result$best_objective,
+          subset_iterations = warm_result$iterations,
+          subset_initial_maximum_absolute_gradient =
+            warm_result$initial_maximum_absolute_gradient,
+          subset_maximum_absolute_gradient =
+            warm_result$maximum_absolute_gradient,
+          full_objective_ordinary = full_objectives$ordinary,
+          full_objective_candidate = full_objectives$candidate,
+          error = NULL
+        ))
+      } else {
+        message(
+          "Note: Subset warm start failed and ordinary starting values will ",
+          "be used."
+        )
+        warm_start_diagnostics <- c(warm_start_plan, list(
+          attempted = TRUE, accepted = FALSE, error = warm_error
+        ))
+      }
+    } else {
+      warm_start_diagnostics$attempted <- FALSE
+      warm_start_diagnostics$accepted <- FALSE
+    }
+
     multistart <- as.integer(multistart)[1L]
     parallel_starts <- as.integer(parallel_starts)[1L]
     if (is.null(threads_per_start)) threads_per_start <- julia_threads
@@ -481,7 +680,7 @@ ctmaJuliaFit <- function(
       parallel_starts <- multistart
     }
     requested_cpus <- parallel_starts * threads_per_start
-    available_cpus <- suppressWarnings(parallel::detectCores(logical = TRUE))
+    available_cpus <- .ctmaAvailableCores()
     if (is.finite(available_cpus) && requested_cpus > available_cpus) warning(
       "Julia ML multistart requests ", requested_cpus, " CPU threads (",
       parallel_starts, " parallel starts x ", threads_per_start,
@@ -502,7 +701,14 @@ ctmaJuliaFit <- function(
     } else {
       "ctsem_optimize_auto"
     }
-    if (multistart > 1L) {
+    if (!is.null(compute)) {
+      optimization_timing <- system.time({
+        optimization <- .ctmaComputeOptimize(compute, julia_file, inits,
+          maxiters, chunksize, gradient_tolerance, optimizer_initial_step,
+          multistart, multistart_jitter, seed, function_relative_tolerance,
+          parameter_relative_tolerance, show_trace)
+      })
+    } else if (multistart > 1L) {
       JuliaCall::julia_assign(
         "ctma_ml_julia_file", normalizePath(julia_file)
       )
@@ -672,7 +878,7 @@ ctmaJuliaFit <- function(
       parallel_chains <- chains
     }
     requested_cpus <- parallel_chains * threads_per_chain
-    available_cpus <- suppressWarnings(parallel::detectCores(logical = TRUE))
+    available_cpus <- .ctmaAvailableCores()
     if (is.finite(available_cpus) && requested_cpus > available_cpus) warning(
       "Julia chain parallelism requests ", requested_cpus, " CPU threads (",
       parallel_chains, " parallel chains x ", threads_per_chain,
@@ -799,7 +1005,9 @@ ctmaJuliaFit <- function(
     transformed <- FALSE
   }
 
-  if (isTRUE(uncertainty)) {
+  # Posterior uncertainty comes from retained NUTS draws. A likelihood Hessian
+  # at the starting point is neither needed nor a posterior covariance estimate.
+  if (isTRUE(uncertainty) && is.null(bayes)) {
     confidence <- as.numeric(confidence)[1L]
     if (!is.finite(confidence) || confidence <= 0 || confidence >= 1) {
       stop("'confidence' must lie strictly between zero and one.", call. = FALSE)
@@ -960,6 +1168,8 @@ ctmaJuliaFit <- function(
     likelihood_timing = likelihood_timing,
     optimization = optimization,
     optimization_timing = optimization_timing,
+    warm_start = warm_start_diagnostics,
+    warm_start_timing = warm_start_timing,
     optimizer_controls = optimizer_controls,
     bayes = bayes,
     bayes_timing = bayes_timing,
@@ -1260,6 +1470,8 @@ ctAddJuliaSamples <- function(
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctAddJuliaSamples")
   on.exit(.ctma_timer(), add = TRUE)
+  pooled <- if (inherits(fit, "CoTiMAPooledJuliaFit")) fit else NULL
+  if (!is.null(pooled)) fit <- .ctmaPooledJuliaNative(pooled)
   if (!inherits(fit, "ctmaJuliaFit")) {
     stop("'fit' must inherit from 'ctmaJuliaFit'.", call. = FALSE)
   }
@@ -1278,6 +1490,11 @@ ctAddJuliaSamples <- function(
   setup_source <- .ctmaJuliaReadObject(setup)
   bridge_fit <- if (.ctmaJuliaIsUnfittedCoTiMA(setup_source)) {
     .ctmaJuliaGenerateSetup(setup_source)
+  } else if (is.list(setup_source) &&
+             is.list(setup_source$fit) &&
+             !is.null(setup_source$fit$standata) &&
+             !is.null(setup_source$fit$setup)) {
+    setup_source$fit
   } else if (is.list(setup_source) && !is.null(setup_source$standata) &&
              !is.null(setup_source$setup) &&
              is.null(setup_source$stanfit)) {
@@ -1378,12 +1595,135 @@ ctAddJuliaSamples <- function(
   } else {
     cotima$study_specific_parameters
   }
-  fit
+  if (is.null(pooled)) fit else .ctmaWrapPooledJuliaFit(fit, pooled)
 }
 
 #' @rdname ctAddJuliaSamples
 #' @export
 ctsmAddJuliaSamples <- ctAddJuliaSamples
+
+#' Transform Julia point estimates without calculating uncertainty
+#'
+#' Applies ctsem's parameter constraints and generated-quantity transformations
+#' to the raw maximum-likelihood estimates stored in a completed
+#' `ctmaJuliaFit`.  Unlike [ctAddJuliaSamples()], this function does not require
+#' a Hessian or covariance matrix, does not draw samples, and does not repeat
+#' optimization.  It is intended for inspecting population, TI-predictor,
+#' matrix, and study-specific point estimates after a fast fit performed with
+#' `uncertainty = FALSE` and `transformed = FALSE`.
+#'
+#' The resulting transformed components are point estimates only.  They must
+#' not be interpreted as standard errors, confidence intervals, or evidence
+#' that the optimizer converged.
+#'
+#' @param fit A completed `ctmaJuliaFit` object.
+#' @param setup A matching fitted, `fit=FALSE`, or prepared ctsem/CoTiMA setup
+#'   object supplying ctsem's transformation model.
+#' @param cores Number of cores passed to ctsem's transformation code.
+#' @param digits Number of decimal places used internally by the ctsem summary.
+#' @return The updated `ctmaJuliaFit` object. Its `coefficients$transformed`,
+#'   `coefficients$population`, `coefficients$tipred`,
+#'   `coefficients$matrices`, and, where available, `coefficients$study`
+#'   components contain point transformations. No covariance matrix,
+#'   transformed draws, or uncertainty summary is added.
+#' @export
+ctmaTransformJuliaFit <- function(fit, setup, cores = 1L, digits = 4L) {
+  .ctmaVersionNote()
+  .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaTransformJuliaFit")
+  on.exit(.ctma_timer(), add = TRUE)
+  pooled <- if (inherits(fit, "CoTiMAPooledJuliaFit")) fit else NULL
+  if (!is.null(pooled)) fit <- .ctmaPooledJuliaNative(pooled)
+  if (!inherits(fit, "ctmaJuliaFit")) {
+    stop("'fit' must inherit from 'ctmaJuliaFit'.", call. = FALSE)
+  }
+  cores <- suppressWarnings(as.integer(cores)[1L])
+  digits <- suppressWarnings(as.integer(digits)[1L])
+  if (is.na(cores) || cores < 1L) {
+    stop("'cores' must be a positive integer.", call. = FALSE)
+  }
+  if (is.na(digits) || digits < 1L) {
+    stop("'digits' must be a positive integer.", call. = FALSE)
+  }
+
+  setup_source <- .ctmaJuliaReadObject(setup)
+  bridge_fit <- if (.ctmaJuliaIsUnfittedCoTiMA(setup_source)) {
+    .ctmaJuliaGenerateSetup(setup_source)
+  } else if (is.list(setup_source) &&
+             is.list(setup_source$fit) &&
+             !is.null(setup_source$fit$standata) &&
+             !is.null(setup_source$fit$setup)) {
+    setup_source$fit
+  } else if (is.list(setup_source) && !is.null(setup_source$standata) &&
+             !is.null(setup_source$setup) &&
+             is.null(setup_source$stanfit)) {
+    setup_source
+  } else {
+    .ctmaJuliaExtractFit(setup_source)
+  }
+  bridge_fit <- .ctmaJuliaAttachConstraintModel(bridge_fit)
+  estimates <- as.numeric(coef(fit, type = "raw"))
+  expected <- length(bridge_fit$stanfit$rawest)
+  if (expected != length(estimates)) {
+    stop(
+      sprintf(
+        paste0(
+          "The ctsem setup has %d raw parameters, but the Julia fit has %d; ",
+          "they do not describe the same parameterization."
+        ),
+        expected, length(estimates)
+      ),
+      call. = FALSE
+    )
+  }
+  if (any(!is.finite(estimates))) {
+    stop("The Julia fit contains non-finite raw estimates.", call. = FALSE)
+  }
+
+  # ctsem's transformation routine accepts posterior/sample rows. Repeating
+  # the same ML point twice evaluates generated quantities deterministically
+  # while deliberately introducing no sampling or Hessian approximation.
+  point_rows <- matrix(
+    rep(estimates, each = 2L), nrow = 2L, byrow = FALSE
+  )
+  loglik <- if (!is.null(fit$optimization)) {
+    fit$optimization$loglik
+  } else {
+    fit$likelihood$julia
+  }
+  transformed <- .ctmaJuliaTransformSummary(
+    fit = bridge_fit,
+    estimates = estimates,
+    covariance = matrix(0, nrow = length(estimates), ncol = length(estimates)),
+    loglik = loglik,
+    draws = 2L,
+    cores = cores,
+    raw_draws = point_rows,
+    digits = digits
+  )
+  cotima <- .ctmaJuliaCoTiMAWEC(
+    object = setup_source,
+    fit = bridge_fit,
+    raw_draws = point_rows
+  )
+
+  fit$coefficients$transformed <- transformed$parameters
+  fit$coefficients$population <- transformed$summary$popmeans
+  fit$coefficients$tipred <- transformed$summary$tipreds
+  fit$coefficients$matrices <- transformed$summary$parmatrices
+  fit$coefficients$study <- if (is.null(cotima)) {
+    NULL
+  } else {
+    cotima$study_specific_parameters
+  }
+  fit$ctsem_fit <- transformed$ctsem_fit
+  fit$point_transformation <- list(
+    completed = TRUE,
+    uncertainty = FALSE,
+    draws = FALSE,
+    setup_call = match.call()
+  )
+  if (is.null(pooled)) fit else .ctmaWrapPooledJuliaFit(fit, pooled)
+}
 
 #' Construct or return a ctsem summary for a Julia fit
 #'
@@ -1430,6 +1770,7 @@ summary.ctmaJuliaFit <- function(
       summary_object$study_specific <- tables
     }
     attr(summary_object, "ctmaJulia_digits") <- digits
+    attr(summary_object, "cotima_fit_checks") <- .ctmaFitChecks(fit_object)
     class(summary_object) <- unique(c(
       "summary.ctmaJuliaFitStudy",
       class(summary_object)
@@ -1542,6 +1883,8 @@ print.summary.ctmaJuliaFitStudy <- function(
     }
   }
 
+  checks <- attr(x, "cotima_fit_checks")
+  if (!is.null(checks)) .ctmaPrintFitChecks(checks)
   invisible(x)
 }
 
@@ -1580,6 +1923,18 @@ print.summary.ctmaJuliaFitStudy <- function(
     (is.null(object$studyFitList) || !length(object$studyFitList))
 }
 
+.ctmaJuliaSuppressSetupMessage <- function(message) {
+  message <- as.character(message)[1L]
+  any(vapply(
+    c(
+      "Maximum likelihood estimation requested",
+      "Binary indicators use a linearised (moment-matched Gaussian) measurement update on the stan backend"
+    ),
+    function(pattern) grepl(pattern, message, fixed = TRUE),
+    logical(1)
+  ))
+}
+
 .ctmaJuliaGenerateSetup <- function(object) {
   if (!requireNamespace("ctsem", quietly = TRUE)) {
     stop("Package 'ctsem' is required for unfitted CoTiMA input.", call. = FALSE)
@@ -1598,10 +1953,8 @@ print.summary.ctmaJuliaFitStudy <- function(
     same_initial <- FALSE
   }
 
-  message(
-    "Generating ctsem setup data."
-  )
-  ctsem::ctFit(
+  ct_fit <- ctsem::ctFit
+  setup_args <- list(
     datalong = object$data,
     model = object$ctModel,
     fit = FALSE,
@@ -1614,6 +1967,18 @@ print.summary.ctmaJuliaFitStudy <- function(
     sameInitialTimes = same_initial,
     savesubjectmatrices = argument("savesubjectmatrices", FALSE),
     verbose = 0
+  )
+  # The bundled Julia engine reads the Stan parameter layout from this setup.
+  if ("backend" %in% names(formals(ct_fit))) setup_args$backend <- "stan"
+
+  message("Generating ctsem setup data.")
+  withCallingHandlers(
+    do.call(ct_fit, setup_args),
+    message = function(condition) {
+      if (.ctmaJuliaSuppressSetupMessage(conditionMessage(condition))) {
+        invokeRestart("muffleMessage")
+      }
+    }
   )
 }
 
@@ -1931,9 +2296,13 @@ print.summary.ctmaJuliaFitStudy <- function(
     )
   }
 
-  drift_code <- unname(getFromNamespace("ctStanMatricesList", "ctsem")()$all[
-    "DRIFT"
-  ])
+  # ctsem 4 renamed the shared matrix registry; retain older ctsem support.
+  registry_name <- if (exists(".ctMatricesList", asNamespace("ctsem"),
+                              inherits = FALSE)) ".ctMatricesList" else "ctStanMatricesList"
+  drift_code <- unname(getFromNamespace(registry_name, "ctsem")()$all["DRIFT"])
+  if (length(drift_code) != 1L || is.na(drift_code)) {
+    stop("ctsem matrix registry does not identify DRIFT.", call. = FALSE)
+  }
   drift_rows <- which(
     !is.na(popsetup$matrix) & !is.na(popsetup$copyrow) &
       !is.na(popsetup$param) &
@@ -2128,4 +2497,16 @@ print.summary.ctmaJuliaFitStudy <- function(
     ),
     call. = FALSE
   )
+}
+
+# Reject future/unknown covariance meanings before loading an estimation engine.
+.ctmaJuliaCheckCovarianceCode <- function(standata) {
+  code <- standata$choleskymats
+  if (!is.numeric(code) || length(code) != 1L || !is.finite(code) ||
+      !code %in% c(-1, 0, 1, 2)) stop(
+    "Unsupported ctsem covariance transformation code. CoTiMA2's bundled Julia ",
+    "engine supports -1/0 (raw correlation), 1 (Cholesky), and 2 (ctsem 4 z). ",
+    "Update CoTiMA2 or use backend = 'ctsemjulia'; the model was not fitted.",
+    call. = FALSE)
+  invisible(code)
 }

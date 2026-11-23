@@ -9,10 +9,8 @@
 #' @param CoTiMAFit Fitted CoTiMA object.
 #' @param undoTimeScaling Whether (TRUE) or not (FALSE) LCS results should be provided ignoring the scaleTime argument used in ctmaFit.
 #' @param digits Number of digits used for rounding (in outputs)
-#' @param activateRPB  set to TRUE to receive push messages with 'CoTiMA' notifications on your phone
 #'
 #' @importFrom OpenMx expm
-#' @importFrom RPushbullet pbPost
 #' @importFrom stats quantile
 #' @importFrom ctsem ctExtract
 #'
@@ -26,10 +24,12 @@
 #' @return Returns LCS effects derived from CT CoTiMA CLPM estimates.
 #'
 #'
-ctmaLCS <- function(CoTiMAFit=NULL, undoTimeScaling=TRUE, digits=4, activateRPB=FALSE) {
+#' @param ... Reserved. Unknown arguments are rejected with a migration hint where applicable.
+ctmaLCS <- function(CoTiMAFit=NULL, undoTimeScaling=TRUE, digits=4, ...) {
+  .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaLCS")
 
   if (is.null(CoTiMAFit$studyFitList$stanfit) & is.null(CoTiMAFit$stanfit)) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
     ErrorMsg <- "\nA fitted CoTiMA object has to be supplied to compute LCS results \nGood luck for the next try!"
     stop(ErrorMsg)
   }

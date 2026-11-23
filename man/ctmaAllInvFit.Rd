@@ -7,7 +7,6 @@
 ctmaAllInvFit(
   ctmaInitFit = NULL,
   activeDirectory = NULL,
-  activateRPB = FALSE,
   digits = 4,
   drift = drift,
   coresToUse = c(1),
@@ -39,7 +38,6 @@ ctmaAllInvFit(
 
 \item{activeDirectory}{activeDirectory}
 
-\item{activateRPB}{activateRPB}
 
 \item{digits}{digits}
 
@@ -87,7 +85,9 @@ ctmaAllInvFit(
 
 \item{backend}{estimation backend, \code{"stan"} (default) or \code{"julia"}.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{named list of controls for the selected backend. Calling
+\code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+specify the backend and workflow to inspect another supported list.}
 }
 \value{
 returns a fitted CoTiMA object, in which all drift parameters, Time 0 variances and covariances, and diffusion parameters were set invariant across primary studies

@@ -1,0 +1,17 @@
+test_that('long empirical output supplements wide data and preserves original times', {
+  wide <- as.data.frame(matrix(seq_len(48), nrow=2))
+  names(wide) <- unlist(lapply(0:11, function(t) paste0(c('V1','V2'),'_T',t)))
+  for (i in 1:11) wide[[paste0('dT',i)]] <- c(i,i+1)
+  study <- list(originalStudyNo=4, empcov=diag(24),delta_t=1:11,sampleSize=2)
+  fit <- list(studyList=list(study),emprawList=list(wide))
+  prep <- ctmaFitToPrep(fit,emprawLong=TRUE)
+  expect_identical(prep$emprawList[[1]],wide)
+  expect_false(prep$reUseEmprawData)
+  expect_equal(nrow(prep$emprawLongList[[1]]),24)
+  expect_equal(prep$emprawLongList[[1]]$time[1:12],c(0,cumsum(1:11)))
+  expect_equal(prep$emprawLongList[[1]]$V1[1:12],as.numeric(wide[1,seq(1,23,2)]))
+  expect_null(ctmaFitToPrep(fit)$emprawLongList)
+  expect_error(ctmaFitToPrep(fit,emprawLong=NA),'emprawLong must')
+  fit$emprawList <- NULL
+  expect_error(ctmaFitToPrep(fit,emprawLong=TRUE),'Cached wide-format data')
+})

@@ -1,5 +1,5 @@
 % !Rnw weave = knitr
-%\VignetteIndexEntry{Random-Intercept CoTiMA with Study-Level Random Effects}
+%\VignetteIndexEntry{Random-Intercept CoTiMA2 with Study-Level Random Effects}
 %\VignetteEngine{knitr::knitr}
 %\VignetteEncoding{UTF-8}
 \documentclass[11pt]{article}
@@ -23,10 +23,10 @@
 \newcommand{\Normal}{\mathcal{N}}
 \newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
 
-\title{Random-Intercept CoTiMA with Study-Level Random Effects:\\
+\title{Random-Intercept CoTiMA2 with Study-Level Random Effects:\\
   Phantom Continuous-Time Processes and Their Heterogeneity}
 \author{C. Dormann, T. Hagen, \& $\widehat{\textnormal{C}}$. G. Petee}
-\date{\today}
+\date{CoTiMA2 0.14.59 --- 6 November 2026}
 
 \begin{document}
 \maketitle
@@ -69,6 +69,17 @@ The two occurrences of ``random'' in RI CoTiMA-RE refer to different levels:
   \item \textbf{RE} (random effects) refers to differences \emph{between
     primary studies} in selected model parameters.
 \end{itemize}
+
+These levels must not be collapsed into one set of fixed study indicators.
+With \code{backend="julia"}, \code{indVarying="CINT"} (or
+\code{"MANIFEST"}) uses augmented time-invariant phantom processes and
+estimates one pooled person-level RI covariance matrix.  The baseline phantom
+(co-)variances are free; only their TI-predictor effects are fixed to zero.
+The phantom variance must not itself be fixed to zero, because that would
+remove the person-level random intercept.  Study-level random effects remain a
+separate extension: selected study parameters can later be assigned a
+between-study distribution and integrated, preferably by a Laplace
+approximation, while retaining the same Julia-compatible phantom-state model.
 Thus, an RI CoTiMA-RE is a three-level model: repeated observations are nested
 within persons, persons are nested within studies, and selected parameters
 vary across a population of studies. CoTiMA data are commonly synthesized from
@@ -76,6 +87,18 @@ correlation matrices or standardized within measurement occasions. The
 manifest means are consequently zero and mean-level heterogeneity between
 studies is not the target. The RI component instead concerns the covariance of
 stable person-level deviations.
+
+For large RI models, Julia ML uses \code{warm\_start="auto"} by default. The
+pilot samples complete persons within studies and estimates only the common
+population/base parameters, including the pooled person-level RI covariance;
+TI-predictor effects remain zero during this pass. The initial ten-percent
+request is enlarged when necessary for parameter count, study coverage,
+repeated measurements, or binary response categories. A pilot candidate is
+used only if its objective on the complete dataset is finite and no worse than
+the ordinary start. User-supplied \code{inits} always take precedence and
+disable the pilot. This person-subset warm start is computational
+initialization, not the later study-level random-effects distribution or its
+Laplace integration.
 
 \section{The ordinary continuous-time process}
 

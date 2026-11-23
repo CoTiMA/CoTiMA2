@@ -28,3 +28,5 @@ summary(minus2llDiffTest)
 ctmaUnloadExamples(c("CoTiMAFullInv23Fit_6", "CoTiMAFullInvEq23Fit_6"))
 
 }
+
+\details{Retained numeric fit statistics are used even when a native pooled fit has no legacy model label. Negative minus-two log likelihoods are compared arithmetically. The same observations, nesting, convergence and regular identification assumptions are not verified by this function.}

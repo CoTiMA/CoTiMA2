@@ -6,6 +6,8 @@
 #' excludedElements-object (e.g., excludedElements = c('ageM')), but dropping them is not really necessary. Additional elements could
 #' also be added, which could be useful to put together all information about primary studies at the convenience of the researcher.
 #'
+#' @details When excluding several studies, study-indexed caches are subset by the original study layout. Preparation objects already misaligned by earlier versions must be recreated from the complete source; they cannot be repaired by guessing study identities. Global moderator dictionaries remain unchanged.
+#'
 #' @param selectedStudies Vector of primary study numbers (numeric values with no leading 0; e.g., '2' but not '02')
 #' @param excludedElements Vector of predefined objects used to code primary study information. Some predefined objects are strongly
 #' defined; they have to be used in a special way because they are actually used in subsequent analyses. Some other objects could be
@@ -145,19 +147,7 @@ ctmaPrep <- function(selectedStudies=NULL,
 
   # if ####
   if ( (!is.null(ctmaPrepObject)) & (!is.null(excludedStudies)) )  {
-    old.n.studies <- ctmaPrepObject$n.studies
-    ctmaPrepObject$n.studies <- ctmaPrepObject$n.studies - length(excludedStudies)
-    excludedStudies <- which(unlist(ctmaPrepObject$studyNumbers) %in% excludedStudies)
-    for (i in sort(excludedStudies, decreasing=TRUE)) {
-      for (j in 1:length(names(ctmaPrepObject))) {
-        if (names(ctmaPrepObject)[j] %in% c("studyNumbers", "empcovs", "deltas", "sampleSizes",
-                                            "moderators", "source", "pairwiseNs", "rawData")) {
-          ctmaPrepObject[[j]][[i]] <- NULL
-        } else {
-          if (length(ctmaPrepObject[[j]]) >= old.n.studies) ctmaPrepObject[[j]][[i]] <- NULL
-        }
-      }
-    }
+    ctmaPrepObject <- .ctmaPrepExcludeStudies(ctmaPrepObject,excludedStudies)
     primaryStudies <- ctmaPrepObject
     if (!(is.null(activeDirectory))) primaryStudies$activeDirectory <- activeDirectory
     if (!(is.null(newRawDataDirectory))) {
@@ -609,4 +599,32 @@ ctmaPrep <- function(selectedStudies=NULL,
 
   rm(ctma)
   return(primaryStudies)
+}
+
+
+# Select once from the original layout. Re-testing lengths after each deletion
+# left ancillary caches only partially subset, and could also remove columns
+# from a summary data frame rather than study rows.
+.ctmaPrepExcludeStudies <- function(object,excluded) {
+  ids <- as.character(unlist(object$studyNumbers))
+  valid <- which(!is.na(ids)); n <- length(ids)
+  if(anyDuplicated(ids[valid]))stop("Original study IDs must be unique.",call.=FALSE)
+  keep <- which(!is.na(ids) & !ids %in% as.character(excluded))
+  if(!length(keep))stop("At least one primary study must remain.",call.=FALSE)
+  indexed <- c("studyNumbers","empcovs","deltas","sampleSizes","moderators",
+    "source","pairwiseNs","rawData","startValues","emprawList","emprawLongList")
+  metadata <- c("summary","excelSheets","activeDirectory","n.studies","plot.type",
+    "moderatorLabels","moderatorValues","reUseEmprawData")
+  for(name in names(object)) {
+    x <- object[[name]]
+    known <- name %in% indexed
+    # Extra researcher fields are study-aligned lists; never index workbooks,
+    # summary data frames or scalar metadata as though they were studies.
+    extra <- !name %in% metadata && is.list(x) && !is.data.frame(x) && length(x)==n
+    if(known && length(x) && length(x)!=n) stop(
+      "Preparation field '",name,"' is not aligned with studyNumbers. Recreate the prep object before excluding studies.",call.=FALSE)
+    if((known || extra) && length(x)) object[[name]] <- x[keep]
+  }
+  object$n.studies <- length(keep)
+  object
 }

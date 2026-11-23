@@ -8,7 +8,6 @@ ctmaPlot(
   ctmaFitObject = NULL,
   activeDirectory = NULL,
   saveFilePrefix = "ctmaPlot",
-  activateRPB = FALSE,
   plotCrossEffects = TRUE,
   plotAutoEffects = TRUE,
   timeUnit = "timeUnit (not specified)",
@@ -29,7 +28,6 @@ ctmaPlot(
 
 \item{saveFilePrefix}{Prefix used for saved plots}
 
-\item{activateRPB}{set to TRUE to receive push messages with 'CoTiMA' notifications on your phone}
 
 \item{plotCrossEffects}{logical}
 
@@ -37,7 +35,7 @@ ctmaPlot(
 
 \item{timeUnit}{label for x-axis when plotting discrete time plots}
 
-\item{timeRange}{vector describing the time range for x-axis as sequence from/to/stepSize (e.g., c(1, 144, 1))}
+\item{timeRange}{Numeric start/end/positive-step vector (e.g., c(1, 144, 1)); start must be nonnegative and end at least start. Power plots retain all available time lags within these bounds, including fractional lags.}
 
 \item{yLimitsForEffects}{range for y-axis}
 
@@ -47,7 +45,7 @@ ctmaPlot(
 
 \item{aggregateLabel}{label to indicate aggregated discrete time effects}
 
-\item{xLabels}{labes used for x-axis}
+\item{xLabels}{Optional finite numeric tick positions on the time axis; labels show these actual time values.}
 
 \item{undoTimeScaling}{if TRUE, the original time scale is used (timeScale argument possibly used in \code{\link{ctmaInit}} is undone )}
 
@@ -77,3 +75,5 @@ plot(CoTiMABiG_D_BO)
 }
 
 }
+
+\details{Native pooled ctsemjulia fits support common fixed DRIFT point curves, including covariance-only study contrasts. Predictor-varying or random DRIFT is rejected rather than replaced by a reference curve. These native plots do not display uncertainty bands. The retained engine fit is not modified.}

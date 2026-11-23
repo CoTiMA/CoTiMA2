@@ -56,7 +56,9 @@
                        #resample=NULL,
                        chais=2,
                        cores=2,
-                       #warmup=500,
+                       # NULL means half of `iter`, matching rstan's default.
+                       # Supplying backendArgs$warmup overrides this value.
+                       warmup=NULL,
                        inits=NULL,
                        forcerecompile=FALSE,
                        saveCompile=TRUE,
@@ -77,3 +79,21 @@
 # list from .ctmaStanBackendDefaults(), so user modification of this exported
 # object cannot change package defaults.
 CoTiMAStanctArgs <- .ctmaStanBackendDefaults()
+
+.ctmaStanWarmup <- function(arguments) {
+  iterations <- suppressWarnings(as.integer(arguments$iter)[1L])
+  warmup <- if (is.null(arguments$warmup)) {
+    iterations %/% 2L
+  } else {
+    suppressWarnings(as.integer(arguments$warmup)[1L])
+  }
+  if (is.na(iterations) || iterations < 1L || is.na(warmup) || warmup < 0L ||
+      warmup >= iterations) {
+    stop(
+      "Stan sampling requires a positive 'iter' and 'warmup' in the range ",
+      "0 <= warmup < iter.",
+      call. = FALSE
+    )
+  }
+  warmup
+}

@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 2.
 }
 \usage{
-delta_t313
+data(delta_t313)
 }
 \description{
 delta_t313 example vector

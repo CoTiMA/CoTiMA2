@@ -8,7 +8,7 @@
 An object of class \code{character} of length 1.
 }
 \usage{
-demands201
+data(demands201)
 }
 \description{
 demands201 example vector

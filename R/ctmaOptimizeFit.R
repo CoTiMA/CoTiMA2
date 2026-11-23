@@ -9,7 +9,8 @@
 #' \code{\link{ctmaOptimizeFit}} is like gambling, hoping that at least one set of starting values (the number it tries is specified in the reFits argument)
 #' enables finding the global optimal fit.
 #'
-#' @param activateRPB  set to TRUE to receive push messages with 'CoTiMA' notifications on your phone
+#' @details Study shuffles use original study identities and keep study-indexed preparation fields aligned. When no per-study wide-data cache is retained by the best pooled fit, usedStudyList contains study definitions with reUseEmprawData set FALSE; no empirical cache is invented.
+#'
 #' @param activeDirectory activeDirectory
 #' @param coresToUse if neg., the value is subtracted from available cores, else value = cores to use
 #' @param CoTiMAStanctArgs parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctStanFit}} Function
@@ -44,10 +45,96 @@
 #'   the default. Julia is currently available for the \code{ctmaFitFit}
 #'   branch and ML estimation only.
 #' @param backendArgs Named list of controls for the selected backend. Do not
-#'   supply this together with \code{CoTiMAStanctArgs}.
+#'   supply this together with \code{CoTiMAStanctArgs}. Calling
+#'   \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
+#'   specify the backend and workflow to inspect another supported list.
+#'
+#' @param randomDeterminedDiffusions Logical, default FALSE. With gambling=TRUE,
+#'   randomly choose determinedDiffusions=FALSE or TRUE independently for each
+#'   pooled ML refit. Requires a baseline explicitly fitted with stationary=TRUE,
+#'   its ctmaInitFit, and backend stan or ctsemjulia. Both variants are checked
+#'   with fit=FALSE before fitting; unsupported models are rejected. Model,
+#'   time scale, study order and stationarity remain fixed. Old raw starts are
+#'   discarded. seed controls reproducible choices and attempts records all
+#'   selected variants, failures and objective values. This opt-in path cannot
+#'   be combined with other random/model/scaling or systematic controls.
+#' @param gambling Logical; TRUE (default) preserves the legacy randomized search.
+#'   FALSE selects the systematic pooled ML workflow described below.
+#' @param candidateStudies Original study IDs explicitly nominated for exclusion
+#'   checks; these are not positions in the study list. Set to "auto" to
+#'   nominate up to ten studies from retained study-local weak-direction or
+#'   verified primary-fit diagnostics. No exclusions occur unless requested.
+#' @param exclusion Character vector: "none" (default), "single", "blocks", or
+#'   "all". The last excludes all nominated candidates together. May combine
+#'   single, blocks and all; at least two studies must remain in every case.
+#' @param studyBlocks List of vectors of original study IDs for block exclusions.
+#' @param referenceStudy "current", "largestN", or one original study ID.
+#'   If an exclusion removes the reference, use the largest remaining study.
+#' @param referenceCandidates Optional additional original study IDs to test as
+#'   reference on the full data. Set to "auto" to nominate up to three largest
+#'   unflagged alternative studies (distinct observation times break size ties).
+#'   Equivalent duplicate cases run only once.
+#' @param quickCheck Logical; defaults to TRUE when gambling=FALSE. Run bounded
+#'   pilots, not final estimates or validated confidence intervals.
+#' @param quickControl Named list: maxiter=100, maxSeconds=60,
+#'   fullMaxSeconds=600, maxFullChecks=0, jitter=0.01. Time caps include worker
+#'   startup/setup. After all pilots, optionally confirm up to maxFullChecks
+#'   cases in planned order. jitter applies only to starts after the first.
+#' @param timeBudget Total wall-time budget in seconds for a systematic call.
+#' @param maxCases Maximum number of distinct planned cases (default 20).
+#' @param seed Nonnegative integer controlling independent systematic starts
+#'   or the opt-in randomDeterminedDiffusions search. The latter restores the
+#'   caller's RNG state and records a separate seed for each refit.
+#' @param checkpointDirectory Directory for manifests, logs, fits and diagnostic
+#'   CSV files. Defaults to a unique subdirectory of activeDirectory.
+#' @param resume Reuse completed checkpoints only when data, plan, versions and
+#'   settings match. Supply the original checkpointDirectory.
+#' @param planOnly Logical; FALSE by default. TRUE returns the nomination
+#'   report and casePlan without workers, fitting, likelihood evaluation or
+#'   checkpoint-file creation. Only available with gambling=FALSE.
+#' @param x,object A systematic optimization result for print or summary.
+#' @param ... Additional arguments for the print method. In ctmaOptimizeFit(), unknown arguments are rejected with a migration hint where applicable.
+#' @details With gambling=FALSE, the first case retains all data and the current
+#'   reference. Additional reference and explicitly requested exclusion cases
+#'   preserve the original observations, time scale and model constraints.
+#'   This initial implementation supports pooled ML (optimize=TRUE, priors=FALSE)
+#'   with dummy study coding and backend stan or ctsemjulia; it retains the
+#'   baseline backend. Weighted coding, hierarchical study random effects,
+#'   reduced-rank covariance, and reference changes of partially constrained
+#'   study-effect families require an explicit model-specific transformation.
+#'   Bundled julia searches remain available through gambling=TRUE.
+#'
+#'   Systematic checks require optional packages callr and ps and an installed
+#'   CoTiMA2 package. Each numerical case runs in an isolated R subprocess with
+#'   a time cap. Published Stan optimizers without an iteration-limit control
+#'   retain the wall-time cap and record a warning. Timeout and finite
+#'   short-pilot results are inconclusive. Older Stan APIs may need their
+#'   standard uncertainty postprocessing to return complete TI-predictor fits;
+#'   these pilots retain only 20 approximate draws and remain inconclusive.
+#'   No probability of convergence is inferred from a quick check. Warnings,
+#'   optimizer convergence, gradients and available curvature diagnostics are
+#'   retained separately. Auto exclusion nominations use reported weak directions
+#'   containing at most four mapped study-TI coordinates and no shared/unmapped
+#'   coefficients, or explicit primary-fit nonconvergence/weak-direction flags
+#'   when original study IDs verify alignment. Supply ctmaInitFit if separate
+#'   primary fits are available. Small samples or few occasions alone do not
+#'   nominate exclusions. Empty automatic nominations skip single/all exclusions;
+#'   block exclusions still require explicit studyBlocks. At most nstudies-2
+#'   studies are nominated, and maxCases still limits the complete plan.
+#'   These descriptive flags are reference-dependent and do not prove which
+#'   study causes nonidentification. The diagnostic curvature_assessed flag records whether a finite saved Hessian is available; weak_directions is NA when unassessed.
+#'   A largest-N reference can improve numerical scaling
+#'   but cannot establish parameter identification.
+#' @return The legacy return is unchanged with gambling=TRUE. Systematic results
+#'   contain bestFit (best full-data attempt, including the original baseline),
+#'   bestConvergedFit, caseDiagnostics, warnings, errors, sensitivity$cases and
+#'   checkpointDirectory. With auto nominations, automaticSelection contains
+#'   studyDiagnostics, nominated IDs and explanatory notes; the diagnostic
+#'   table is also saved as automaticStudyDiagnostics.csv. Excluded-data likelihoods never compete with full-data
+#'   likelihoods. Inspect subset fits as sensitivity analyses, not replacements
+#'   selected for a preferred effect. summary() returns the diagnostic table, or casePlan in planOnly mode.
 #'
 #' @importFrom foreach %dopar%
-#' @importFrom RPushbullet pbPost
 #' @importFrom stats runif
 #' @importFrom methods is
 #' @importFrom ctsem ctStanFit
@@ -71,7 +158,7 @@
 #'   If no attempt succeeds, the function stops with an error summarizing the
 #'   captured fitting errors.
 #'
-ctmaOptimizeFit <- function(activateRPB=FALSE,
+ctmaOptimizeFit <- function(
                             activeDirectory=NULL,
                             coresToUse=c(2),
                             CoTiMAStanctArgs=NULL,
@@ -124,12 +211,80 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                                #verbose = 0,
                                                vb = FALSE),
                             backend=c("stan", "julia"),
-                            backendArgs=list()
-)
+                            backendArgs=list(),
+                            gambling=TRUE,
+                            candidateStudies=NULL,
+                            exclusion="none",
+                            studyBlocks=NULL,
+                            referenceStudy="current",
+                            referenceCandidates=NULL,
+                            quickCheck=!gambling,
+                            quickControl=list(),
+                            timeBudget=3600,
+                            maxCases=20L,
+                            seed=1234L,
+                            checkpointDirectory=NULL,
+                            resume=FALSE,
+                            planOnly=FALSE,
+                            randomDeterminedDiffusions=FALSE, ...)
 {
+  .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaOptimizeFit")
+  if (!is.logical(gambling) || length(gambling)!=1L || is.na(gambling))
+    stop("gambling must be TRUE or FALSE.", call.=FALSE)
+  randomDeterminedDiffusions <- .ctmaLogicalFlag(randomDeterminedDiffusions, "randomDeterminedDiffusions")
+  if (randomDeterminedDiffusions) {
+    if (!gambling) stop("randomDeterminedDiffusions requires gambling=TRUE.",call.=FALSE)
+    if (!is.null(ctStanFit) || is.null(ctmaFitFit))
+      stop("randomDeterminedDiffusions currently requires a pooled ctmaFitFit and its ctmaInitFit; primary-study and raw ctsem searches are not supported.",call.=FALSE)
+    if (isTRUE(randomIV) || isTRUE(randomRI) || isTRUE(randomPar) || isTRUE(randomScaleTI) ||
+        isTRUE(shuffleStudyList) || !identical(as.numeric(randomScaleTime),c(1,1)) ||
+        !is.null(scaleTime) || !is.null(scaleTI) || isTRUE(customPar))
+      stop("randomDeterminedDiffusions changes only covariance coordinates; random model/scaling/shuffle options and explicit scale overrides must be disabled.",call.=FALSE)
+    if (!is.null(candidateStudies) || !identical(exclusion,"none") || !is.null(studyBlocks) ||
+        !identical(referenceStudy,"current") || !is.null(referenceCandidates) || isTRUE(quickCheck) ||
+        resume || !missing(quickControl) || !missing(timeBudget) || !missing(maxCases) ||
+        !is.null(checkpointDirectory) || isTRUE(planOnly))
+      stop("Study/reference/quick-check controls require gambling=FALSE.",call.=FALSE)
+    return(.ctmaOptimizeRandomDetermined(ctmaFitFit,ctmaInitFit,reFits,seed,
+      backend=if(missing(backend))NULL else backend[1L],backendArgs=backendArgs,
+      legacyArgs=CoTiMAStanctArgs,cores=coresToUse,iter=iter,finishsamples=finishsamples,
+      activeDirectory=activeDirectory,saveModelFits=saveModelFits,verbose=verbose))
+  }
+  if (!gambling) {
+    .ctmaVersionNote()
+    .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaOptimizeFit")
+    on.exit(.ctma_timer(), add=TRUE)
+    if (!is.null(ctStanFit) || !is.null(primaryStudies) || !is.null(problemStudy))
+      stop("gambling=FALSE requires a pooled ctmaFitFit; primary-study and raw ctStanFit searches retain the legacy path.", call.=FALSE)
+    if (isTRUE(randomIV) || isTRUE(randomRI) || isTRUE(randomPar) ||
+        isTRUE(randomScaleTI) || isTRUE(shuffleStudyList) ||
+        !identical(as.numeric(randomScaleTime),c(1,1)))
+      stop("Random model/scaling/shuffle options conflict with gambling=FALSE; use explicit referenceStudy and a fixed model.",call.=FALSE)
+    if (!is.null(scaleTime) || !is.null(scaleTI))
+      stop("gambling=FALSE preserves the saved time/TI scale; fit a new baseline before changing it.",call.=FALSE)
+    if (!is.null(CoTiMAStanctArgs))
+      stop("Use backendArgs for gambling=FALSE.",call.=FALSE)
+    return(.ctmaOptimizeSystematic(ctmaFitFit,ctmaInitFit,
+      backend=if(missing(backend))NULL else backend[1L],backendArgs=backendArgs,
+      candidateStudies=candidateStudies,exclusion=exclusion,studyBlocks=studyBlocks,
+      referenceStudy=referenceStudy,referenceCandidates=referenceCandidates,
+      quickCheck=quickCheck,quickControl=quickControl,timeBudget=timeBudget,
+      maxCases=maxCases,seed=seed,checkpointDirectory=checkpointDirectory,
+      resume=resume,coresToUse=coresToUse,reFits=if(is.null(reFits))1L else reFits,
+      iter=iter,verbose=verbose,activeDirectory=activeDirectory,
+      finishsamples=if(is.null(finishsamples))1000L else finishsamples,planOnly=planOnly))
+  }
+  if (!is.null(candidateStudies) || !identical(exclusion,"none") ||
+      !is.null(studyBlocks) || !identical(referenceStudy,"current") ||
+      !is.null(referenceCandidates) || isTRUE(quickCheck) || resume ||
+      !missing(quickControl) || !missing(timeBudget) || !missing(maxCases) ||
+      !missing(seed) || !is.null(checkpointDirectory) || isTRUE(planOnly))
+    stop("Study/reference/quick-check controls require gambling=FALSE.",call.=FALSE)
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaOptimizeFit")
   on.exit(.ctma_timer(), add = TRUE)
+
+  .ctmaCheckCtsemJuliaRequest(backend, "ctmaOptimizeFit")
 
   julia_backend_overrides <- backendArgs
   backend <- match.arg(tolower(backend), c("stan", "julia"))
@@ -240,7 +395,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   }
 
   if (randomScaleTime[2] < randomScaleTime[1]) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
+
     ErrorMsg <- "\nrandomScaleTime[1] has to be <= randomScaleTime[2]! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
@@ -452,7 +607,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                diff=ctmaInitFit$argumentList$diff,
                                digits=ctmaInitFit$argumentList$digits,
                                drift=ctmaInitFit$argumentList$drift,
-                               experimental=ctmaInitFit$argumentList$experimental,
+
                                indVaryingT0=ctmaInitFit$argumentList$indVaryingT0,
                                lambda=ctmaInitFit$argumentList$lambda,
                                #loadSingleStudyModelFit=loadSingleStudyModelFit,
@@ -596,42 +751,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
         tmpStudyList <- ctmaInitFit$studyList; length(tmpStudyList)
         studyNumbers <- unlist(lapply(tmpStudyList, function(x) x$originalStudyNo)); studyNumbers
         newStudyOrder <- sample(studyNumbers, length(studyNumbers), replace=FALSE); newStudyOrder
-        newStudyList <- list()
-        for (s in 1:length(tmpStudyList)) {
-          newStudyList[[s]] <- tmpStudyList[[which(studyNumbers %in% newStudyOrder[s])]]
-          # CHD 2.1.2025
-          newStudyList[[s]]$studyNumber <- newStudyOrder[s]
-        }
-        ctmaInitFit$studyList <- newStudyList
-        #
-        tmpPrimaryStudyList <- ctmaInitFit$primaryStudyList
-        newPrimaryStudyList <- list()
-        for (s in 1:length(tmpPrimaryStudyList)) {
-          if (names(tmpPrimaryStudyList[s]) %in% c("deltas", "sampleSizes", "pairwiseNs", "empcovs", "moderators", "startValues", "studyNumbers",
-                                                   "rawData", "source")) {
-            newPrimaryStudyList[[s]] <- list()
-            for (t in 1:length(tmpPrimaryStudyList[[s]])) {
-              newPrimaryStudyList[[s]][[t]] <- tmpPrimaryStudyList[[s]][[which(studyNumbers %in% newStudyOrder[t])]]
-            }
-          } else {
-            newPrimaryStudyList[[s]] <- tmpPrimaryStudyList[[s]]
-          }
-        }
-        names(newPrimaryStudyList) <- names(tmpPrimaryStudyList)
-        ctmaInitFit$primaryStudyList <- newPrimaryStudyList
-
-        #
-        tmpEmprawList <- ctmaInitFit$emprawList
-        newEmprawList <- list()
-        tmpStudyFitList <- ctmaInitFit$studyFitList
-        newStudyFitList <- list()
-        for (s in 1:length(tmpEmprawList)) {
-          newEmprawList[[s]] <- tmpEmprawList[[which(studyNumbers %in% newStudyOrder[s])]]
-          newStudyFitList[[s]] <- tmpStudyFitList[[which(studyNumbers %in% newStudyOrder[s])]]
-        }
-        ctmaInitFit$emprawList <- newEmprawList
-        ctmaInitFit$studyFitList <- newStudyFitList
-
+        ctmaInitFit <- .ctmaOptimizeShuffleInit(ctmaInitFit, newStudyOrder)
         all_usedStudyList <- c(all_usedStudyList, newStudyOrder)
       }
 
@@ -663,7 +783,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        primaryStudyList=ctmaInitFit$primaryStudyList,
                        cluster=ctmaFitFit$argumentList$cluster,
                        activeDirectory=activeDirectory,
-                       activateRPB=ctmaFitFit$argumentList$activateRPB,
+
                        digits=ctmaFitFit$argumentList$digits,
                        drift=ctmaFitFit$argumentList$drift,
                        invariantDrift=ctmaFitFit$argumentList$invariantDrift,
@@ -701,7 +821,15 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                        #randomIntercepts=ctmaFitFit$argumentList$randomIntercepts,
                        randomIntercepts=randomIntercepts,
                        manifestVars=ctmaFitFit$argumentList$manifestVars,
-                       WEC=ctmaFitFit$argumentList$WEC,
+                       WEC=FALSE,
+                       studyCoding=if (is.null(ctmaFitFit$argumentList$studyCoding)) {
+                         if (isTRUE(ctmaFitFit$argumentList$WEC)) "weighted" else "dummy"
+                       } else ctmaFitFit$argumentList$studyCoding,
+                       studyVarying=if (is.null(ctmaFitFit$argumentList$studyVarying)) {
+                         if (isTRUE(ctmaFitFit$argumentList$WEC)) {
+                           c("CINT", "DIFFUSION", "T0VAR", "DRIFT")
+                         } else c("CINT", "DIFFUSION", "T0VAR")
+                       } else ctmaFitFit$argumentList$studyVarying,
                        priors=ctmaFitFit$argumentList$priors,
                        binaries=ctmaFitFit$argumentList$binaries,
                        T0var=ctmaFitFit$argumentList$T0var,
@@ -835,8 +963,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
                                 saveComplexPars = ctStanFitArgs$saveComplexPars,
                                 gendata = ctStanFitArgs$gendata,
                                 control = ctStanFitArgs$control,
-                                verbose = verbose,
-                                vb = ctStanFitArgs$vb
+                                verbose = verbose
         ),
         warning = function(w) {warns[[i]] <<- w}),
         error = function(e) {
@@ -894,10 +1021,7 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
     } else {
       bestFit
     }
-    result_used_studies <- ctmaFitToPrep(
-      fit_for_prep,
-      reUseEmprawData = TRUE
-    )
+    result_used_studies <- .ctmaOptimizePrepResult(fit_for_prep)
     result_time_scale <- bestFit$argumentList$scaleTime
     result_scale_ti <- bestFit$argumentList$scaleTI
   } else {
@@ -928,4 +1052,50 @@ ctmaOptimizeFit <- function(activateRPB=FALSE,
   class(results) <- "CoTiMAFit"
 
   invisible(results)
+}
+
+
+# Reorder by original study identity, not by unrelated prep-cache lengths.
+# Historical prep objects may retain a full-data startValues cache after a
+# study subset; the per-study records are authoritative in that case.
+.ctmaOptimizeShuffleInit <- function(init, order) {
+  studies <- init$studyList
+  ids <- vapply(studies,function(z) as.character(z$originalStudyNo),character(1))
+  order <- as.character(order)
+  if (!length(ids) || anyNA(ids) || anyDuplicated(ids) ||
+      length(order)!=length(ids) || anyDuplicated(order) || !setequal(ids,order))
+    stop("Study shuffle requires a permutation of unique original study IDs.",call.=FALSE)
+  ix <- match(order,ids); n <- length(ids)
+  init$studyList <- studies[ix]
+  for(j in seq_len(n))init$studyList[[j]]$studyNumber <- studies[[ix[j]]]$originalStudyNo
+  map <- c(studyNumbers="originalStudyNo",empcovs="empcov",deltas="delta_t",
+    sampleSizes="sampleSize",moderators="moderators",pairwiseNs="pairwiseN",
+    rawData="rawData",source="source",startValues="startValues")
+  for(name in intersect(names(map),names(init$primaryStudyList))) {
+    old <- init$primaryStudyList[[name]]
+    if(length(old)==n) init$primaryStudyList[[name]] <- old[ix]
+    else if(length(old)) {
+      key <- unname(map[name])
+      values <- lapply(init$studyList,function(z) z[[key]])
+      if(any(vapply(values,is.null,logical(1))))stop(
+        "Cannot align prep field '",name,"' to original studies; regenerate the initialization object.",call.=FALSE)
+      init$primaryStudyList[[name]] <- values
+    }
+  }
+  for(name in c("emprawList","studyFitList")) {
+    old <- init[[name]]
+    if(length(old)==n)init[[name]]<-old[ix]
+    else if(length(old))stop("Cannot align ",name," with original study IDs.",call.=FALSE)
+  }
+  if(length(init$primaryStudyList$emprawList))init$primaryStudyList$emprawList<-init$emprawList
+  init
+}
+
+
+.ctmaOptimizePrepResult <- function(fit) {
+  cached <- !is.null(fit$emprawList)
+  result <- ctmaFitToPrep(fit,reUseEmprawData=cached)
+  result$reUseEmprawData <- cached
+  if(!cached).ctma_print_message("No study-wise wide-data cache was retained in the best pooled fit. usedStudyList contains study definitions; cached-data reuse is disabled. The best fit retains its long data separately.")
+  result
 }

@@ -1,15 +1,14 @@
 .ctma_package_name <- "CoTiMA2"
-.ctma_package_version <- "0.14.7"
+.ctma_package_version <- "0.14.69"
 .ctma_call_state <- new.env(parent = emptyenv())
 .ctma_call_state$depth <- 0L
 
 .ctmaVersionNote <- function() {
   if (.ctma_call_state$depth == 0L) {
-    message(
-      "Note: This is the experimental CoTiMA 2.0 package (version ",
-      .ctma_package_version,
-      ")."
-    )
+    .ctma_print_message(paste0(
+      "This is the experimental CoTiMA 2.0 package (version ",
+      utils::packageVersion(.ctma_package_name), ")."
+    ))
   }
   invisible(NULL)
 }
@@ -43,9 +42,8 @@
 }
 
 .onAttach <- function(libname, pkgname) {
-  packageStartupMessage(
-    "Experimental CoTiMA 2.0 package (CoTiMA2 version ",
-    .ctma_package_version,
-    "). The original CoTiMA package can remain installed separately."
-  )
+  packageStartupMessage(.ctmaFormatNote(paste0(
+    "This is the experimental CoTiMA 2.0 package (version ",
+    utils::packageVersion(pkgname, lib.loc = libname), ")."
+  )))
 }

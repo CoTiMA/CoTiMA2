@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 9.
 }
 \usage{
-alphas128
+data(alphas128)
 }
 \description{
 alphas128 example vector

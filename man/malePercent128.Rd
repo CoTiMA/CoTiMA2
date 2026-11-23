@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 1.
 }
 \usage{
-malePercent128
+data(malePercent128)
 }
 \description{
 malePercent128 example vector

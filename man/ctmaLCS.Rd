@@ -7,18 +7,18 @@
 ctmaLCS(
   CoTiMAFit = NULL,
   undoTimeScaling = TRUE,
-  digits = 4,
-  activateRPB = FALSE
+  digits = 4, ...
 )
 }
 \arguments{
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
+
 \item{CoTiMAFit}{Fitted CoTiMA object.}
 
 \item{undoTimeScaling}{Whether (TRUE) or not (FALSE) LCS results should be provided ignoring the scaleTime argument used in ctmaFit.}
 
 \item{digits}{Number of digits used for rounding (in outputs)}
 
-\item{activateRPB}{set to TRUE to receive push messages with 'CoTiMA' notifications on your phone}
 }
 \value{
 Returns LCS effects derived from CT CoTiMA CLPM estimates.

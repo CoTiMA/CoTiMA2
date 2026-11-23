@@ -8,23 +8,25 @@ ctmaBiG(
   ctmaInitFit = NULL,
   activeDirectory = NULL,
   PETPEESEalpha = 0.1,
-  activateRPB = FALSE,
   digits = 4,
   finishsamples = 1000,
   zcurve = FALSE,
   undoTimeScaling = TRUE,
   dt = NULL,
-  excludeStudies = c()
+  excludeStudies = c(), ...
 )
 }
 \arguments{
-\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing the fitted ctsem model of each primary study}
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
+
+\item{ctmaInitFit}{fit object created with \code{\link{ctmaInit}} containing
+fitted primary-study models from the Stan or Julia backend. Julia fits
+must retain transformed ctsem draws.}
 
 \item{activeDirectory}{the directory where to save results (if not specified, it is taken from ctmaInitFit)}
 
 \item{PETPEESEalpha}{probability level (condition) below which to switch from PET to PEESE (cf. Stanley, 2017, p. 582, below Eq. 2; default p = .10)}
 
-\item{activateRPB}{if TRUE, messages (warning, finished) could be send to smart phone (default = FALSE)}
 
 \item{digits}{rounding (default = 4)}
 
@@ -52,7 +54,7 @@ precision), and "Z-Curve 2.0 Results". Plot type is plot.type=c("funnel", "fores
 }
 \description{
 Analysis of publication bias and generalizability. The function takes a CoTiMA fit object (created with \code{\link{ctmaInit}})
-and estimates fixed and random effects of single drift coefficients, heterogeneity  (Q, I square, H square, tau square),
+and estimates common- and random-effects meta-analyses of individual drift coefficients, heterogeneity (Q, I square, H square, tau square),
 PET-PEESE corrections, Egger's tests, and z-curve analysis yielding expected replication and detection rates (ERR, EDR).
 }
 \examples{

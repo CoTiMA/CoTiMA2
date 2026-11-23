@@ -218,7 +218,8 @@
 #' out, so this is joint/conditional and not marginal maximum likelihood.
 #'
 #' @param prepared Object returned by \code{\link{ctmaRePrep}}.
-#' @param cores Maximum number of concurrent optimization workers.
+#' @param cores Maximum number of concurrent optimization workers. Negative values
+#'   reserve cores from the available CPU budget; -1 uses all but one.
 #' @param n_starts Number of independent optimizer starts.
 #' @param parameterization Centered, noncentered, or automatic study-effect
 #'   parameterization. The prepared Stan text is regenerated if necessary.
@@ -248,7 +249,7 @@
 #' }
 ctmaReMLFit <- function(
     prepared,
-    cores = max(1L, parallel::detectCores(logical = FALSE) - 1L),
+    cores = -1L,
     n_starts = max(4L, cores),
     parameterization = c("auto", "centered", "noncentered"),
     seed = 1234L,
@@ -301,7 +302,10 @@ ctmaReMLFit <- function(
     "only on macOS/Linux. A Windows PSOCK implementation would need to load or ",
     "compile the Stan model independently in every worker."
   )
-  cores <- as.integer(cores)
+  cores <- .ctmaResolveCores(cores, backend = "stan",
+    workflow = "ctmaReMLFit")$resolved
+  .ctma_restore_threads <- .ctmaLimitThreadEnvironment()
+  on.exit(.ctma_restore_threads(), add = TRUE)
   n_starts <- as.integer(n_starts)
   if (cores < 1L || n_starts < 1L)
     stop("cores and n_starts must be positive integers.")

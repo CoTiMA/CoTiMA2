@@ -5,7 +5,6 @@
 \title{ctmaInit}
 \usage{
 ctmaInit(
-  activateRPB = FALSE,
   activeDirectory = NULL,
   binaries = NULL,
   chains = NULL,
@@ -18,7 +17,6 @@ ctmaInit(
   digits = 4,
   doPar = 1,
   drift = NULL,
-  experimental = FALSE,
   finishsamples = NULL,
   fit = TRUE,
   indVarying = FALSE,
@@ -44,18 +42,22 @@ ctmaInit(
   T0var = "auto",
   useSV = FALSE,
   verbose = 0,
-  backend = c("stan", "julia"),
-  backendArgs = list()
+  backend = c("stan", "julia", "ctsemjulia"),
+  backendArgs = list(),
+  stationary = FALSE,
+  determinedDiffusions = FALSE,
+  stationaryVariance = NULL,
+  compute = NULL, ...
 )
 }
 \arguments{
-\item{activateRPB}{set to TRUE to receive push messages with 'CoTiMA' notifications on your phone}
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
+
+\item{compute}{Optional execution plan from \code{\link{ctmaCompute}}.}
 
 \item{activeDirectory}{defines another active directory than the one used in \code{\link{ctmaPrep}}}
 
-\item{binaries}{Indicator vector identifying binary manifest variables.
-Their response location must be estimated through a freely estimated
-connected CINT (recommended) or MANIFESTMEANS parameter.}
+\item{binaries}{which manifest is a binary. Still experimental}
 
 \item{chains}{number of chains to sample, during HMC or post-optimization importance sampling.}
 
@@ -63,29 +65,56 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{cint}{default 'auto' (= 0). Are set free if random intercepts model with varying cints is requested (by indVarying='cint')}
 
-\item{coresToUse}{if neg., the value is subtracted from available cores, else value = cores to use}
+\item{coresToUse}{if negative, the value is added to the number of available
+cores; thus \code{-1} uses all but one core. With the Julia backend this is
+automatically translated into an ML or Bayesian thread allocation unless
+an explicit Julia thread control is supplied in \code{backendArgs}.
+Explicit controls must remain within the resolved CPU budget.}
 
 \item{CoTiMAStanctArgs}{parameters that can be set to improve model fitting of the \code{\link[ctsem]{ctFit}} Function}
 
 \item{customPar}{logical. If set TRUE leverages the first pass using priors and ensure that the drift diagonal cannot easily go too negative (helps since ctsem > 3.4)}
 
-\item{diff}{labels for diffusion effects. Have to be either of the character strings of the type "diff_eta1" or "diff_eta2_eta1" (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)}
+\item{diff}{Diffusion-matrix specification with exactly
+\code{n.latent^2} entries. Character entries are freely estimated labels
+(identical labels impose equality constraints); numeric entries are fixed
+values, for example zero to omit a covariance. Entries follow R's
+column-major matrix order; the diffusion matrix is symmetric and only its
+lower triangle is parameterized.}
 
 \item{digits}{number of digits used for rounding (in outputs)}
 
 \item{doPar}{parallel and multiple fitting if single studies. A value > 1 will fit each study doPar times in parallel mode during which no output is generated (screen remains silent). Useful to obtain best fit.}
 
-\item{drift}{labels for drift effects. Have to be either of the character strings of the type V1toV2 (= freely estimated) or values (e.g., 0 for effects to be excluded, which is usually not recommended)}
+\item{drift}{Drift-matrix specification with exactly
+\code{n.latent^2} entries. Character entries are freely estimated labels
+(identical labels impose equality constraints); numeric entries are fixed
+values, such as zero to exclude an effect.}
 
-\item{experimental}{used for debugging puposes (default = FALSE)}
 
-\item{finishsamples}{number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).}
+\item{finishsamples}{number of samples to draw (either from Hessian-based
+covariance or the posterior distribution) for final results computation
+(default = 1000). With the Julia backend this sets
+\code{backendArgs$transformed_draws}, unless that control is supplied
+explicitly in \code{backendArgs}.}
 
-\item{fit}{TRUE (default) fits the requested model. FALSE returns the ctsem-code CoTiMA uses to set up the model, the ctsemmodelbase which can be modified to match users requirements, and the data set (in long format created). The model can then be fitted using \code{\link[ctsem]{ctFit}})}
+\item{fit}{TRUE (default) fits the requested model. FALSE returns the generated
+long-format data, the editable ctsem model in \code{ctModel}, and a
+copyable, executable R specification of that model in \code{ctModelText}.
+The model can then be modified and fitted using
+\code{\link[ctsem]{ctFit}}.}
 
-\item{indVarying}{control for unobserved heterogeneity by having randomly (inter-individually) varying manifest means}
+\item{indVarying}{control for unobserved heterogeneity through randomly
+(inter-individually) varying manifest means. With
+\code{backend="ctsemjulia"}, \code{"MANIFEST"} or \code{"CINT"}
+activates ctsem's native Laplace integration. This is distinct from
+\code{randomIntercepts}, which adds explicit latent intercept processes.}
 
-\item{indVaryingT0}{deprecated. Automatically set to NULL.}
+\item{indVaryingT0}{NULL (default) or TRUE retains the automatic initial-mean
+random-effect specification selected by indVarying. FALSE disables individual
+T0MEANS random effects while retaining manifest/CINT random effects and
+the within-person T0VAR specification. In particular, the supported
+stationary determined-diffusion manifest-RI model requires FALSE.}
 
 \item{iter}{number of interation (defaul = 1000). Sometimes larger values could be required fom Bayesian estimation}
 
@@ -93,7 +122,13 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{loadSingleStudyModelFit}{load the fit of single study ctsem models}
 
-\item{manifestMeans}{Default 0 (assuming standardized variables). Can be assigned labels to estimate them freely.}
+\item{manifestMeans}{Scalar 0 fixes all manifest means; "auto" assigns free
+labels. A vector mixes labels and fixed values, e.g. c("mmV1", 0).
+Named lists for manifestMeans, cint and T0means must name every manifest
+or latent process, respectively. Numbers fix values and labels free them.
+Explicit fixed entries remain fixed with indVarying and randomIntercepts.
+A binary manifest offset differs from a dynamic CINT and can represent
+nonzero baseline log odds with centered initial latent means.}
 
 \item{manifestVars}{define the error variances of the manifests within a single time point using R-type lower triangular matrix with nrow=n.manifest & ncol=n.manifest.}
 
@@ -105,9 +140,16 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{primaryStudies}{list of primary study information created with \code{\link{ctmaPrep}}}
 
-\item{priors}{if FALSE, any priors are disabled – sometimes desirable for optimization}
+\item{priors}{With optimization, TRUE requests MAP for the stan and ctsemjulia backends.
+The bundled julia optimizer supports ML only and rejects TRUE when optimize=TRUE.
+With sampling, Bayesian priors are handled by the selected sampler. If FALSE, any priors are disabled – sometimes desirable for optimization}
 
-\item{randomIntercepts}{(default = FALSE) Experimental. Overrides ctsem's default mode for modelling indVarying cints.}
+\item{randomIntercepts}{(default = FALSE) Experimental. Adds explicit
+latent intercept processes and overrides ctsem's default representation
+of individually varying intercepts. It is not synonymous with
+\code{indVarying}; use \code{indVarying="MANIFEST"} or \code{"CINT"}
+to request person-level random effects integrated by Laplace under
+\code{backend="ctsemjulia"}.}
 
 \item{sameInitialTimes}{Only important for raw data. If TRUE (default=FALSE), T0MEANS occurs for every subject at the same time, rather than just at the earliest observation.}
 
@@ -129,10 +171,70 @@ connected CINT (recommended) or MANIFESTMEANS parameter.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit - for debugging}
 
-\item{backend}{estimation backend, either \code{"stan"} (default) or
-\code{"julia"}.}
+\item{backend}{Estimation backend: \code{"stan"} (the default), CoTiMA2's
+experimental \code{"julia"} backend, or ctsem's experimental native
+\code{"ctsemjulia"} backend for ML or Bayesian estimation.}
 
-\item{backendArgs}{named list of controls for the selected backend.}
+\item{backendArgs}{Named list of controls for the selected backend. CoTiMA2
+Julia controls follow \code{\link{ctmaJuliaFit}}. For
+\code{backend="ctsemjulia"}, use \code{inits}, \code{optimcontrol},
+\code{priors}, and \code{verbose}. For Bayesian estimation, use
+\code{backendArgs$sampleControl} and choose \code{sampler="nuts"},
+\code{"saem"}, \code{"map"}, or \code{"smc"}, or omit sampler for
+ctsem's automatic choice. Set \code{backendArgs$intoverpop} explicitly
+to choose joint (\code{"none"}) or marginal (\code{"laplace"} or
+\code{"augmented"}) sampling, or keep \code{"auto"}. Common controls include \code{chains},
+\code{warmup}, \code{draws}, \code{maxDraws}, \code{processes}, and
+\code{seed}. SMC instead uses \code{particles} and \code{coreset}; omit
+chains and warmup. Placement is delegated to ctsem unless explicitly
+supplied. Primary studies are processed
+sequentially with either Julia backend. Calling
+\code{ctmaBackendDefaults()} without arguments displays Stan defaults;
+use \code{ctmaBackendDefaults("ctsemjulia", "ML", "ctmaInit")} for this
+workflow or replace \code{"ML"} by \code{"Bayes"} for sampler controls.
+workflow. It explicitly returns
+\code{optimcontrol$uncertainty = "hessian"}, matching ctsem's native Julia
+ML default and providing standard errors and intervals. Fast development
+diagnostics can skip this post-fit work with
+\code{backendArgs = list(optimcontrol = list(estonly = TRUE))}. Stan has
+no separate \code{uncertainty} entry in its backend-default list.}
+
+\item{stationary}{Logical, default FALSE. Start the latent within-person
+process in its stationary distribution. This forwards ctsem's stationary
+initialization option; it does not fix observed or within-person variances
+to one. In CoTiMA2 use the native \code{backend="ctsemjulia"} or a
+compatible Stan ctsem version; the bundled Julia backend is not supported.
+If omitted, an explicitly supplied legacy/backend stationary setting is
+retained. Conflicting explicit settings are errors.}
+
+\item{stationaryVariance}{Optional fixed positive stationary process variance for a univariate Gaussian model. Requires \code{stationary=TRUE}, \code{determinedDiffusions=TRUE}, \code{backend="ctsemjulia"} with ML or Bayesian estimation. Set to 1 for a unit-variance process. Diffusion follows each study DRIFT; do not select independent DIFFUSION/T0VAR study effects.}
+
+\item{determinedDiffusions}{Logical, default FALSE. Experimental ML/Bayesian
+stable parameterization deriving diffusion covariance as
+\eqn{Q=-(A\Sigma+\Sigma A^T)} from drift and an estimated stationary
+within-person covariance. Currently requires \code{stationary=TRUE},
+one or two unrestricted
+Gaussian latent processes. Use ctmaFit for native study random DRIFT effects.
+Random manifest intercepts are allowed with \code{indVaryingT0=FALSE}.
+Their native z covariance construction and correlation safeguards are
+preserved; unsupported legacy covariance constructions are rejected.
+Fixed/equal/custom process constraints, phantom factors, old raw inits,
+and prior equivalence to unrestricted diffusion coordinates are not supported. The free
+parameter count is not reduced merely by changing parameterization.
+The original drift parameters and their exact transforms are retained,
+including the usual negative-diagonal constraints. Covariance coordinates
+describe total stationary within-person variance and admissible shape.
+Under identical stationarity assumptions this preserves the model domain;
+numerical optimization can nevertheless reach different solutions.
+For pooled common processes, use \code{allInvModel=TRUE} or, in
+CoTiMA2, explicitly choose compatible \code{studyVarying}. Unsupported
+restrictions are rejected instead of being silently dropped.
+Published ctsem 3.11.1 disables its stationary switch. For the supported
+determined model with CINT fixed to zero, an exact compatibility path
+explicitly sets the estimated initial covariance and zero mean instead.
+Binary/ordinal measurements, random CINT and person-level process random effects
+are not yet supported by the determined option.
+Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.}
 }
 \value{
 ctmaFit returns a list containing some arguments supplied, the fitted models, different elements summarizing the main results,
@@ -147,9 +249,32 @@ CINT=model_Cint_Coef), and the paramter names internally used. The summary list,
 returned object, comprises "estimates" (the aggregated effects), possible randomIntercepts,confidenceIntervals, the
 minus2ll value and its n.parameters, and possible warning messages (message). Plot type is plot.type=c("drift") and model.type="stanct"
 ("omx" was deprecated).
+With \code{fit=FALSE}, \code{ctModelText} contains executable R code that
+reconstructs the returned \code{ctModel}, including its exact parameter
+table, binary/ordinal manifest types, individual-variation settings, and TI
+predictor effects. Evaluate it with \code{eval(parse(text = x$ctModelText))}
+or copy it into an R script.
 }
 \description{
 Fits ctsem models to each primary study in the supplied list of primary studies prepared by \code{\link{ctmaPrep}}.
+}
+\details{
+Random-intercept models with at most two observed waves per person receive
+a design warning: unrestricted within-person dynamics and random-intercept
+covariance generally require additional identifying constraints. Unequal
+intervals and model restrictions can change identification; the warning
+does not alter the model. Native ctsem no-width uncertainty flags are
+retained as NA in primary-study parameter tables and combined summaries.
+
+The returned \code{studyDesign} records original study numbers, observed
+wave-count ranges and subject counts. \code{studyLists$twoWaves} and
+\code{studyLists$threeOrMoreWaves} are ctmaPrep-compatible subsets of the
+input, preserving order and metadata. Empty groups are NULL. Grouping uses
+the maximum observed waves per person; mixed observation counts are shown
+in \code{minWaves} and \code{maxWaves}. Fewer-than-two-wave or unknown
+designs remain in the complete result and are identified in the overview.
+No study is excluded from estimation. Cached subset Excel workbooks contain
+only the available subset summary.
 }
 \examples{
 # Fit a ctsem model to all three primary studies summarized in
@@ -161,5 +286,6 @@ CoTiMAInitFit_3 <- ctmaInit(primaryStudies=CoTiMAstudyList_3,
                             activeDirectory="/Users/tmp/") # adapt!
 summary(CoTiMAInitFit_3)
 }
+
 
 }

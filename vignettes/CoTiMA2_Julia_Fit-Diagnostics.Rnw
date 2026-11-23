@@ -1,0 +1,1460 @@
+% !Rnw weave = knitr
+%\VignetteIndexEntry{Diagnosing Julia Fits in CoTiMA2}
+%\VignetteEngine{knitr::knitr}
+%\VignetteEncoding{UTF-8}
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{booktabs,longtable,array,tabularx}
+\usepackage{bm}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{url}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\setlength{\emergencystretch}{3em}
+\hbadness=3000
+
+\newcommand{\code}[1]{\url{#1}}
+\newcommand{\important}[1]{\par\medskip\noindent
+  \fcolorbox{blue!45!black}{blue!4}{\parbox{0.94\linewidth}{#1}}\par\medskip}
+\newcommand{\warningbox}[1]{\par\medskip\noindent
+  \fcolorbox{orange!70!black}{orange!6}{\parbox{0.94\linewidth}{#1}}\par\medskip}
+
+\title{Diagnosing Julia-Based Fits in CoTiMA2:\\
+  A Systematic Workflow for Speed, Convergence, and Identification}
+\author{C. Dormann, \& $\widehat{\textnormal{C}}$. G. Petee}
+\date{CoTiMA2 0.14.59 --- 6 November 2026}
+
+\begin{document}
+\maketitle
+
+<<setup, include=FALSE, purl=FALSE>>=
+knitr::opts_chunk$set(
+  echo = TRUE, eval = FALSE, purl = FALSE, warning = FALSE, message = FALSE,
+  comment = "#>", tidy = FALSE, size = "small"
+)
+options(width = 92)
+library(CoTiMA2)
+@
+
+\begin{abstract}
+This guide provides a reproducible diagnostic workflow for maximum-likelihood
+models fitted with the Julia backend of CoTiMA2. It separates computational
+problems from optimization and statistical-identification problems. It also
+explains why a small improvement in the objective, a non-zero raw gradient,
+or a large change in an unconstrained parameter need not have the same
+interpretation. The examples are templates: replace object names and model
+arguments with those used in the analysis being diagnosed.
+\end{abstract}
+
+\tableofcontents
+
+\section{The three questions that should not be mixed}
+
+A slow or non-converged fit can arise for very different reasons:
+\begin{enumerate}
+  \item \textbf{Computational:} Julia parallelism is unavailable, unsafe, or
+    configured inefficiently.
+  \item \textbf{Numerical:} the optimizer uses poor starting values, an
+    unsuitable step size, or a difficult raw parameter scale.
+  \item \textbf{Statistical:} some parameters are weakly identified, close to
+    a boundary, or lie on a nearly flat likelihood ridge.
+\end{enumerate}
+Changing thread counts cannot repair weak identification, and increasing the
+iteration limit cannot repair an incorrect parallel likelihood. Diagnose in
+the order used below.
+
+\section{Decision tree}
+
+\begin{center}
+\resizebox{0.98\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=7mm and 12mm,
+  every node/.style={font=\small,align=center},
+  action/.style={rectangle,rounded corners,draw=blue!55!black,fill=blue!4,
+    text width=4.1cm,minimum height=9mm},
+  decision/.style={diamond,aspect=2.2,draw=black!70,fill=gray!7,
+    text width=3.1cm,inner sep=1.5pt},
+  arrow/.style={-{Latex[length=2mm]},thick}
+]
+\node[action] (start) {Record version, model arguments, starts, and timings};
+\node[decision,below=of start] (valid) {Parallel checks safe?};
+\node[action,left=of valid,xshift=-22mm] (serial) {Use the safe serial path; investigate backend consistency before tuning};
+\node[decision,below=of valid] (conv) {Raw-gradient criterion met?};
+\node[action,right=of conv,xshift=22mm] (done) {Proceed to uncertainty and transformed summaries};
+\node[decision,below=of conv] (progress) {Objective and gradient still improve materially?};
+\node[action,left=of progress,xshift=-22mm] (refine) {Continue once from saved estimates with a smaller step};
+\node[decision,below=of progress] (stable) {Substantive transformed estimates stable?};
+\node[action,right=of stable,xshift=22mm] (report) {Document practical stability and remaining raw-scale warning};
+\node[action,left=of stable,xshift=-22mm] (identify) {Inspect study information, local parameters, Hessian, and model restrictions};
+\draw[arrow] (start)--(valid);
+\draw[arrow] (valid)--node[above]{no}(serial);
+\draw[arrow] (valid)--node[right]{yes}(conv);
+\draw[arrow] (conv)--node[above]{yes}(done);
+\draw[arrow] (conv)--node[right]{no}(progress);
+\draw[arrow] (progress)--node[above]{yes}(refine);
+\draw[arrow] (progress)--node[right]{no}(stable);
+\draw[arrow] (stable)--node[above]{yes}(report);
+\draw[arrow] (stable)--node[above]{no}(identify);
+\end{tikzpicture}
+}
+\end{center}
+
+\section{Step 1: preserve a reproducible diagnostic record}
+
+Record the installed version and preserve every expensive fit before further
+experimentation.
+
+<<record-fit, purl=FALSE>>=
+packageVersion("CoTiMA2")
+saveRDS(fit_julia, "fit_julia.rds")
+
+fit_julia$optimization
+fit_julia$optimization_timing
+fit_julia$likelihood_timing
+fit_julia$threads
+fit_julia$optimizer_controls
+fit_julia$warm_start
+@
+
+The most useful convergence fields are the termination code, the maximum
+absolute raw gradient, the objective, the number of iterations, and the change
+from the starting point. A termination such as \code{Iterations} means that
+the iteration limit was reached; it does not by itself establish that the
+solution is poor. Conversely, a stable objective does not establish that all
+parameters are identified.
+
+\section{Step 2: verify the parallel backend before benchmarking}
+
+Use \code{ctmaFitConfig()} with exactly the same model-defining arguments that
+will be supplied to \code{ctmaFit()}. Binary-variable and random-intercept
+arguments belong at the top level, whereas computational controls belong in
+\code{backendArgs}.
+
+<<fit-config, purl=FALSE>>=
+fit_config <- ctmaFitConfig(
+  ctmaInitFit = initFit,
+  backend = "julia",
+  binaries = c(1, 0),
+  randomIntercepts = "CINT",
+  scaleTime = 1/12
+)
+
+fit_config$parallel_backend_check
+fit_config$benchmarks
+fit_config$optimizer_pilots
+fit_config$recommended
+@
+
+Interpret the consistency check before interpreting speed:
+\begin{itemize}
+  \item If likelihood and gradient are both safe, parallel subject processing
+    may be used for optimization.
+  \item If either check fails, CoTiMA2 retains the deterministic safe path.
+    Increasing \code{subject\_threads} then cannot accelerate the affected
+    calculation.
+  \item The choice is made for the fit and retained. It is not repeatedly
+    switched during optimization.
+\end{itemize}
+
+\important{A recommended thread configuration is a performance recommendation,
+not a guarantee of convergence. The benchmark measures a small number of
+likelihood and gradient evaluations; the full optimizer may visit much more
+difficult parameter regions.}
+
+\section{Step 3: inspect optimizer progress}
+
+Use the complete optimization record rather than only the last console line.
+
+<<optimizer-record, purl=FALSE>>=
+list(
+  objective = -fit_julia$optimization$loglik,
+  iterations = fit_julia$optimization$iterations,
+  stage_iterations = fit_julia$optimization$stage_iterations,
+  stage_objectives = fit_julia$optimization$stage_objectives,
+  stage_gradients =
+    fit_julia$optimization$stage_maximum_absolute_gradients,
+  maximum_raw_gradient =
+    fit_julia$optimization$maximum_absolute_gradient,
+  termination = fit_julia$optimization$termination_code,
+  converged = fit_julia$optimization$converged
+)
+@
+
+With \code{carefulFit=TRUE}, the three stages are:
+\begin{enumerate}
+  \item population parameters while TI effects are held fixed;
+  \item population and TI-effect parameters together;
+  \item a jointly rescaled refinement.
+\end{enumerate}
+When valid estimates are explicitly supplied through \code{inits}, CoTiMA2 can
+avoid unnecessarily rebuilding early starting values. Always ensure that the
+new model has exactly the same raw parameterization and parameter ordering.
+
+\section{Step 4: compare a refinement with its starting fit}
+
+A refinement should be judged by objective improvement, gradient reduction,
+and parameter stability together.
+
+<<compare-fits, purl=FALSE>>=
+old_raw <- fit_previous$coefficients$raw
+new_raw <- fit_refined$coefficients$raw
+raw_names <- names(coef(fit_refined, type = "raw"))
+if (is.null(raw_names)) raw_names <- paste0("raw", seq_along(new_raw))
+
+final_gradient <- as.numeric(fit_refined$optimization$gradient)
+parameter_change <- new_raw - old_raw
+
+gradient_diagnostics <- data.frame(
+  index = seq_along(new_raw),
+  parameter = raw_names,
+  estimate = new_raw,
+  change = parameter_change,
+  gradient = final_gradient,
+  absolute_gradient = abs(final_gradient),
+  absolute_change = abs(parameter_change)
+)
+
+head(
+  gradient_diagnostics[
+    order(gradient_diagnostics$absolute_gradient, decreasing = TRUE),
+  ],
+  25
+)
+
+head(
+  gradient_diagnostics[
+    order(gradient_diagnostics$absolute_change, decreasing = TRUE),
+  ],
+  25
+)
+@
+
+Large gradients with small parameter changes indicate a stiff direction.
+Large parameter changes with tiny gradients indicate a flat direction. Large
+raw changes may also cancel between a population parameter and its TI effect,
+or may correspond to small changes after nonlinear constraints are applied.
+
+\section{Step 5: diagnose the study design}
+
+\subsection{Rank and conditioning of study indicators}
+
+<<study-design, purl=FALSE>>=
+standata <- prepared_diagnostic$fit$standata
+tipreds <- as.matrix(standata$tipredsdata)
+colnames(tipreds) <- paste0("TI", seq_len(ncol(tipreds)))
+
+weighted_design <- cbind(Intercept = 1, tipreds)
+unique_design <- unique(weighted_design)
+
+list(
+  subject_level_rank = qr(weighted_design)$rank,
+  subject_level_columns = ncol(weighted_design),
+  subject_level_condition_number = kappa(weighted_design, exact = TRUE),
+  study_level_rank = qr(unique_design)$rank,
+  study_level_columns = ncol(unique_design),
+  study_level_condition_number = kappa(unique_design, exact = TRUE),
+  study_level_singular_values = svd(unique_design, nu = 0, nv = 0)$d
+)
+@
+
+Full rank establishes algebraic estimability of the indicator design. It does
+not guarantee that every study provides enough longitudinal information for
+every dynamic, diffusion, initial-condition, or random-intercept parameter.
+
+\subsection{Persons, rows, and measurement occasions}
+
+<<study-information, purl=FALSE>>=
+subject_rows <- tabulate(
+  as.integer(standata$subject),
+  nbins = nrow(tipreds)
+)
+
+study_label <- ifelse(
+  rowSums(tipreds) == 0,
+  "reference",
+  paste0("TI", max.col(tipreds, ties.method = "first"))
+)
+
+study_information <- do.call(
+  rbind,
+  lapply(split(subject_rows, study_label), function(x) {
+    data.frame(
+      n_subjects = length(x),
+      n_rows = sum(x),
+      minimum_waves = min(x),
+      median_waves = median(x),
+      mean_waves = mean(x),
+      maximum_waves = max(x)
+    )
+  })
+)
+
+study_information
+@
+
+The number of persons is not the only relevant quantity. A study with many
+persons but only two or three occasions may weakly identify diffusion or
+dynamic covariance parameters. Binary outcomes additionally require adequate
+numbers in both categories.
+
+\section{Step 6: reconstruct the parameters actually used by each study}
+
+Under dummy coding, a raw study parameter is generally the population or
+reference parameter plus the corresponding TI effect. Inspecting TI effects
+alone can therefore exaggerate movement when the two components cancel.
+
+<<study-specific-raw, purl=FALSE>>=
+nbase <- as.integer(standata$nparams)
+neffects <- length(raw_names) - nbase
+effect_setup <- as.matrix(standata$TIPREDEFFECTsetup)
+
+study_specific_raw <- function(raw) {
+  base <- raw[seq_len(nbase)]
+  effects <- raw[nbase + seq_len(neffects)]
+  designs <- unique(tipreds)
+  result <- matrix(
+    rep(base, times = nrow(designs)),
+    nrow = nrow(designs), byrow = TRUE
+  )
+  for (s in seq_len(nrow(designs))) {
+    for (p in seq_len(nbase)) {
+      for (j in seq_len(ncol(designs))) {
+        effect_index <- effect_setup[p, j]
+        if (effect_index > 0 && designs[s, j] != 0) {
+          result[s, p] <- result[s, p] +
+            effects[effect_index] * designs[s, j]
+        }
+      }
+    }
+  }
+  rownames(result) <- ifelse(
+    rowSums(designs) == 0,
+    "reference",
+    paste0("TI", max.col(designs, ties.method = "first"))
+  )
+  colnames(result) <- raw_names[seq_len(nbase)]
+  result
+}
+
+local_previous <- study_specific_raw(old_raw)
+local_current <- study_specific_raw(new_raw)
+local_change <- local_current - local_previous
+
+local_change_diagnostics <- data.frame(
+  study = rep(rownames(local_change), ncol(local_change)),
+  parameter = rep(colnames(local_change), each = nrow(local_change)),
+  previous = as.vector(local_previous),
+  current = as.vector(local_current),
+  change = as.vector(local_change)
+)
+local_change_diagnostics$absolute_change <-
+  abs(local_change_diagnostics$change)
+
+head(
+  local_change_diagnostics[
+    order(local_change_diagnostics$absolute_change, decreasing = TRUE),
+  ],
+  30
+)
+@
+
+\section{Step 7: compare constrained point estimates without a Hessian}
+
+Raw ctsem parameters may be unconstrained optimization coordinates. Apply
+ctsem's transformations without re-optimizing or calculating uncertainty by
+using \code{ctmaTransformJuliaFit()}.
+
+<<point-transform, purl=FALSE>>=
+previous_transformed <- ctmaTransformJuliaFit(
+  fit_previous,
+  setup = prepared_diagnostic
+)
+
+refined_transformed <- ctmaTransformJuliaFit(
+  fit_refined,
+  setup = prepared_diagnostic
+)
+
+previous_transformed$coefficients$matrices
+refined_transformed$coefficients$matrices
+
+previous_transformed$coefficients$study
+refined_transformed$coefficients$study
+@
+
+\warningbox{This function returns point transformations only. It does not
+create standard errors, confidence intervals, a covariance matrix, or evidence
+of convergence. Use \code{ctAddJuliaSamples()} only after reliable uncertainty
+information is available.}
+
+If the constrained matrices and scientifically relevant effects are stable
+while a few raw coordinates continue to move, the remaining problem is likely
+to be raw-scale curvature or weak identification. If the constrained effects
+also change materially, the fit should not yet be interpreted.
+
+\section{Step 8: use the Hessian only after point diagnostics}
+
+The observed Hessian is useful for locating flat and boundary directions, but
+it can be expensive and should not be calculated merely because optimization
+stopped. Inspect its symmetric eigenvalues and condition number when the point
+diagnostics remain ambiguous.
+
+<<hessian-diagnostics, purl=FALSE>>=
+hessian_symmetric <- (raw_hessian + t(raw_hessian)) / 2
+eigenvalues <- eigen(hessian_symmetric, symmetric = TRUE)$values
+positive <- eigenvalues[eigenvalues > 0]
+
+list(
+  minimum = min(eigenvalues),
+  maximum = max(eigenvalues),
+  nonpositive = sum(eigenvalues <= 0),
+  near_zero = sum(abs(eigenvalues) < 1e-6),
+  positive_condition_number = max(positive) / min(positive),
+  smallest = head(sort(eigenvalues), 10)
+)
+@
+
+A few very small negative eigenvalues can reflect numerical error near a flat
+optimum. Substantial negative curvature, many near-zero eigenvalues, or an
+extreme condition number require closer model inspection. Regularizing a
+Hessian can make inversion possible, but does not create information that the
+data do not contain.
+
+\section{Reference studies, dummy coding, and WEC}
+
+Changing the reference study does not change the likelihood surface in exact
+arithmetic when the models are algebraically equivalent. It does change the
+raw coordinates, starting values, scaling, and optimizer path. Consequently,
+a different reference study can genuinely make numerical optimization easier
+even though it cannot solve structural non-identification.
+
+A useful reference study is usually reasonably large, has many informative
+measurement occasions, contains both categories of every binary outcome, and
+is not close to a variance or correlation boundary. A very small or atypical
+reference study places the common raw intercept at a poorly determined point
+and forces many large study deviations.
+
+Weighted effect coding can reduce dependence on one arbitrary reference and
+place the population parameter closer to a weighted average study. This may
+improve scaling. It does not add information and cannot remove a likelihood
+ridge. CoTiMA now separates the contrast basis from the parameter families:
+
+\begin{verbatim}
+studyCoding = "weighted"
+studyVarying = c("CINT", "DIFFUSION", "T0VAR")
+\end{verbatim}
+
+Add \code{"DRIFT"} only when study-specific drift parameters are intended.
+The older \code{WEC=TRUE} interface is deprecated and maps to the weighted,
+parameter-selective specification above. This coding is constructed by
+\code{ctmaFit()} and is therefore identical for Stan and Julia backends.
+
+\section{Reproducible validation of the native ctsem Julia backend}
+
+\subsection{Bayesian NUTS and SAEM diagnostics}
+
+From CoTiMA2 0.14.29, \code{ctmaInit()} and \code{ctmaFit()} accept native
+Bayesian sampling with \code{backend="ctsemjulia"},
+\code{optimize=FALSE}, and \code{priors=TRUE}. Since 0.14.33, omit sampler
+and placement for native automatic selection, or select \code{"nuts"},
+\code{"saem"}, \code{"map"} or \code{"smc"} through
+\code{backendArgs\$sampleControl\$sampler}. Set the integration target
+separately through \code{backendArgs\$intoverpop}. The mode records the
+resolved target (\code{"joint"}, \code{"laplace"}, \code{"augmented"},
+or \code{"direct"}). Inspect divergences and other kernel diagnostics where
+the native sampler reports them; SAEM can itself use NUTS updates, so its
+name does not imply the absence of Hamiltonian sampling diagnostics.
+
+For either sampler, inspect chain agreement, effective sample sizes, trace
+plots, and Monte Carlo error for the substantive parameters and random-effect
+standard deviations. Use the native \code{summary(fit)} and available plot
+methods. Record \code{chains}, \code{warmup}, \code{draws},
+\code{maxDraws}, the seed, and the actual number of retained draws.
+\code{maxDraws} allows extension towards diagnostic targets, so completing
+the requested initial draw count need not end sampling. Reaching the maximum
+budget also does not establish convergence.
+
+For NUTS, additionally inspect divergences and maximum-tree-depth events.
+The ML validation suite below checks optimizer convergence and Laplace
+accuracy; it does not establish posterior convergence for a Bayesian run.
+For SAEM joint sampling, a Laplace correction check is not the primary
+sampling diagnostic. Compare runtime using effective samples per second,
+and state explicitly when the compared fits use different integration targets.
+
+The package source contains a separate engineering validation suite for the
+experimental \code{backend="ctsemjulia"}.  It simulates known subject- and
+study-level heterogeneity. Random-effect distributions are generated on
+ctsem's unconstrained raw scale, whereas \code{popsd.study} reports the induced
+standard deviation after the parameter transformation. The suite therefore
+stores both targets and compares the reported estimate with the corresponding
+reported-scale truth. For diagonal T0VAR, the transformed value is the
+initial-state standard-deviation factor, not the variance itself. The full suite
+tests CINT, DRIFT, DIFFUSION, and T0VAR and follows each fit with adaptive
+quadrature through \code{ctLaplaceCheck()}.
+
+The same backend can also fit models without random effects.  In that case,
+\code{fit$ctsemjulia_mode} is \code{"direct"} and Laplace diagnostics are
+neither required nor meaningful.  A controlled Ryzen smoke test with 800
+persons and 9,600 rows gave the same log likelihood (rounded to $-13000.3$)
+for CoTiMA2's Julia engine and native ctsem Julia; both converged.  With
+post-fit Hessian work disabled in both paths, the end-to-end times were about
+32.6 and 17.9 seconds, respectively.  This small test includes different
+startup and safety-check overhead and must not be generalized as a universal
+speed ratio.  Benchmark the intended model shape and inspect both estimates
+and convergence, not elapsed time alone.
+
+Current ctsem development versions store optimizer diagnostics in
+\code{fit\$optim} and parameter estimates and uncertainty in
+\code{fit\$estimate}. CoTiMA2 preserves these native components and adds a
+stable compact view in \code{fit\$ctsemjulia\_diagnostics}. In particular,
+\code{fit\$laplace\$inner\_converged} is a single overall flag; it is not the
+number of groups. The final and expected counts are available as
+\code{fit\$ctsemjulia\_diagnostics\$inner\_modes\$converged} and
+\code{expected}.
+
+For study-level Laplace models, the native \code{subject\_loglik} vector is
+not necessarily a personwise decomposition of the marginal likelihood. It
+must not be supplied to LOO or WAIC when
+\code{fit\$ctsemjulia\_diagnostics\$casewise\_loglik\$usable\_for\_loo} is
+false. CoTiMA2 retains the original vector but prints a note and records the
+reason in the diagnostic component.
+
+After a successful fit, save an immutable reference result before conducting
+sensitivity analyses:
+
+<<native-reference-fit, purl=FALSE>>=
+saveRDS(fit_random_drift, "fit_random_drift_reference.rds")
+
+fit_random_drift$ctsemjulia_diagnostics
+fit_random_drift$identifiability
+fit_random_drift$intervalcheck
+@
+
+An inner-mode tolerance sensitivity fit should reuse the converged raw
+estimates, change only the inner solver controls, and then compare the
+substantive estimates and marginal log likelihood. For example:
+
+<<native-inner-sensitivity, purl=FALSE>>=
+sensitivity_args <- CoTiMA2::ctmaBackendDefaults("ctsemjulia")
+sensitivity_args$study_random_effects <- "DRIFT"
+sensitivity_args$inits <- fit_random_drift$estimate$raw
+sensitivity_args$optimcontrol <- list(
+  laplace_inner_maxiter = 500L,
+  laplace_inner_tol = 1e-5,
+  uncertainty = "hessian"
+)
+
+fit_random_drift_sensitivity <- CoTiMA2::ctmaFit(
+  ctmaInitFit = initFit,
+  backend = "ctsemjulia",
+  coresToUse = 4L,
+  backendArgs = sensitivity_args
+)
+
+c(
+  reference_loglik = fit_random_drift$estimate$loglik,
+  sensitivity_loglik = fit_random_drift_sensitivity$estimate$loglik,
+  maximum_raw_change = max(abs(
+    fit_random_drift$estimate$raw -
+      fit_random_drift_sensitivity$estimate$raw
+  ))
+)
+@
+
+The sensitivity fit supports the reference result when both fits converge,
+all inner modes converge, and the log likelihood and transformed substantive
+estimates remain practically unchanged. A stricter inner tolerance that fails
+to converge is not evidence against the reference fit; it indicates that the
+inner solver needs more iterations or that the requested tolerance is too
+strict for the current parameterization.
+
+The single-run suite defaults to fixed standardized normal quantiles for the
+study effects. This deterministic design is useful as a regression test. The
+Monte Carlo controller instead defaults to independently sampled study
+effects in every replication (\code{--study-effects=random}), which is
+required when interpreting bias, RMSE, and interval coverage across simulated
+study populations. Either behavior can be selected explicitly with
+\code{--study-effects=quantiles} or \code{--study-effects=random}.
+
+Open Terminal, change to the CoTiMA2 project directory, and execute:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-validation-suite.R --mode=quick --cores=4
+\end{verbatim}
+
+The more informative full run is started with:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-validation-suite.R --mode=full --cores=4
+\end{verbatim}
+
+The same commands work under macOS and Ubuntu.  If a separate R library
+contains the required ctsem development version, add
+\code{--development-library=/path/to/library}.  If Julia is not discovered,
+add \code{--julia-bindir=/path/to/julia/bin}.  Complete instructions are in
+\code{tools/CTSEMJULIA\_VALIDATION.md}.
+
+The run creates \code{REPORT.md}, \code{summary.csv}, and
+\code{validation-results.rds} under
+\code{~/CoTiMA\_Benchmark/ctsemjulia-validation/}.  A PASS is an engineering
+screen, not proof of unbiasedness or correct interval coverage.  Replication
+over multiple seeds and model dimensions remains necessary.
+
+For a resumable Monte Carlo validation, use the separate controller.  Each
+replication runs in an independent R/Julia process, and completed scenario
+files are reused after an interruption only when their scenario, seed, and
+design dimensions match:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-monte-carlo.R \
+  --mode=full --replications=10 \
+  --workers=4 --cores-per-fit=4
+\end{verbatim}
+
+The aggregate report includes convergence rates, bias, relative bias, RMSE,
+absolute error, Laplace/quadrature gaps, execution times, and 95\% interval
+coverage when ctsem exposes finite interval limits.  Use one worker on a
+laptop initially.  On a many-core workstation, first benchmark a small batch
+and ensure that \code{workers * cores-per-fit} leaves at least one physical
+core free.  Full details, output files, and restart options are described in
+\code{tools/CTSEMJULIA\_VALIDATION.md}.
+
+The first completed reference experiment used 50 independently simulated data
+sets for each of CINT, DRIFT, DIFFUSION, and T0VAR.  All 200 fits converged;
+the transformed-scale targets, bias, RMSE, coverage, and limitations are
+recorded in
+\code{tools/CTSEMJULIA\_MONTE\_CARLO\_RESULTS\_0.14.15.md}.
+
+After these single-family checks, the script
+\code{tools/ctsemjulia-joint-validation.R} estimates study-level variation in
+CINT, DRIFT, DIFFUSION, and T0VAR simultaneously, together with a person-level
+CINT random effect.  It simulates mutually independent study effects.  The
+current native ctsem Laplace implementation nevertheless estimates a full
+raw-scale correlation matrix, so the joint test also checks whether the six
+freely estimated correlations remain close to their true value of zero.  A
+quick run should precede the full design; \code{--simulate-only=true} checks
+data generation without fitting.
+
+The completed quick and full joint experiments are summarized in
+\code{tools/CTSEMJULIA\_JOINT\_RESULTS\_0.14.15.md}.  Both optimizations
+converged with gradient norms below $6\times10^{-9}$, and the full design
+recovered all four study SDs within approximately 11 percent.  Nevertheless,
+the adaptive-quadrature comparison gave Laplace gaps of 0.0398 and 0.0316 per
+person, respectively.  Thus increasing the number of studies stabilized the
+SD and correlation estimates but did not eliminate the approximation warning.
+
+The option \code{--components=} selects a nested subset of the four study
+random-effect families, while \code{--check-nodes=} controls the diagnostic
+quadrature.  The resumable script
+\code{tools/ctsemjulia-dimensional-validation.R} compares all six pairwise
+combinations, CINT+DRIFT+DIFFUSION, and all four families in fresh R/Julia
+processes.  The complete pairwise design identifies parameter-specific
+interactions, while the three- and four-dimensional fits reveal a more general
+dimensionality effect.
+
+Do not treat a non-hierarchical Stan or CoTiMA2-Julia fit as a numerical gold
+standard for this validation.  Such a model estimates study fixed effects or
+a pooled fixed effect, whereas the native Laplace model integrates Gaussian
+random effects.  Their likelihoods and estimands are therefore different.  A
+speed comparison is meaningful only after the competing backends express the
+same hierarchical model.
+
+\subsection{A standardized covariance-stationary validation}
+
+The preceding engineering experiments deliberately treat DRIFT, DIFFUSION,
+and T0VAR as separate random-effect families.  A complementary validation is
+needed for the stronger, idealized assumption that the \emph{latent} process
+covariance is standardized and stationary.  The script
+\code{tools/ctsemjulia-standardized-validation.R} fixes marginal latent
+variances at one and derives process noise from
+\[
+  \bm Q_s=-(\bm A_s\bm P_s+\bm P_s\bm A_s^\top).
+\]
+DIFFUSION consequently has no independent study random effect.  The quick and
+full modes test a univariate study-varying drift, a bivariate model with two
+study-varying diagonal drift parameters and a fixed zero T0 correlation, and a
+bivariate model in which a third raw study effect defines a bounded T0
+correlation while both marginal T0 variances remain exactly one.
+
+This restriction is stronger than merely standardizing the observed variables
+at every occasion.  Measurement error, finite-sample standardization, and
+nonstationarity can all make the latent covariance differ from the observed
+unit-variance covariance.  The validation must therefore be interpreted as a
+test of a particular stationary latent data-generating model, not as an
+automatic property of every CoTiMA correlation input.
+
+The native Julia backend previously rejected parameter-dependent expressions
+in T0VAR.  The \code{juliaFit} development branch now resolves composed static
+T0VAR expressions over multiple PARS coordinates and differentiates them.  A
+smoke test and the standardized validation therefore use
+\code{rho = 0.3 * tanh(rho\_raw)} in the off-diagonal T0VAR cell, keep both
+diagonal entries fixed at one, and derive the complete DIFFUSION factor from
+DRIFT and this target covariance.  This support applies to static initial-state
+expressions.  Time-dependent predictors and latent-state references do not
+define one initial covariance and remain outside the supported scope.
+
+In the full design, all six start configurations converged to the same
+solution.  Two independent simulation seeds recovered the generating raw
+study SDs $(0.20,0.16)$ as $(0.159,0.169)$ and $(0.214,0.185)$; their
+95-percent intervals covered both generating values.  The corresponding
+Laplace--quadrature gaps were $2.78\times10^{-4}$ and
+$3.47\times10^{-4}$ per person.  Direct numerical checks reproduced the
+Lyapunov covariance to within $4.44\times10^{-16}$.
+
+The extended full validation also converged when the T0 correlation varied by
+study.  It estimated the generating raw study SDs $(0.20,0.16,0.18)$ as
+$(0.196,0.150,0.244)$ and showed a Laplace--quadrature discrepancy of
+$1.81\times10^{-4}$ per person.  A reporting bug initially displayed the third
+SD as \code{NA}: the validator had reduced the truth label
+\code{rho\_raw\_sd} to \code{rho} instead of matching \code{rho\_raw}.  The
+corrected full fit had no unidentified Hessian direction
+(\code{nweak=0}), no negative direction, and an identifiability condition
+number of 30,699.  A separate eight-study diagnostic did contain flat
+correlation directions, but it had only eight outer-level units for nine free
+population parameters and was therefore rank-limited by construction.  It
+must not be used to diagnose the 16-study fit.
+
+Six independent repetitions of the 16-study correlation design all
+converged, with a maximum gradient norm of $8.35\times10^{-9}$ and a maximum
+Laplace--quadrature gap of $2.12\times10^{-4}$ per person.  Across repetitions,
+the generating study SDs $(0.20,0.16,0.18)$ had mean estimates
+$(0.188,0.189,0.183)$, median estimates $(0.182,0.200,0.187)$, and RMSEs
+$(0.052,0.066,0.026)$.  Thus, recovery was best for the raw T0-correlation SD
+and most variable for the second drift SD.  Three of the six fits flagged one
+weak random-effect-correlation direction: twice the correlation between the
+two drift effects and once the correlation between the T0-correlation effect
+and the first drift effect.  These warnings varied by simulated data set and
+did not prevent convergence, but they show that a formally adequate number of
+studies does not guarantee stable estimation of every element of a fully
+unstructured random-effect covariance matrix.
+
+The current native multilevel API constructs a full covariance among all
+study-varying parameters.  CoTiMA2's \code{covariance="independent"},
+\code{"equicorrelated"}, and block specifications belong to the separate
+\code{ctmaRePrep()} workflow and are not yet transmitted to
+\code{backend="ctsemjulia"}.  A structured-covariance API would permit more
+parsimonious models, but the full 16-study covariance was identified in this
+validation.  Users should nevertheless inspect
+\code{fit$identifiability} and the random-effect-correlation section of
+\code{summary(fit)}.  A marginal study SD can be estimable even when one or
+more correlations involving that effect are not.
+
+For focused repetitions, \code{--scenarios=} accepts a comma-separated subset
+of \code{univariate\_drift}, \code{bivariate\_drift}, and
+\code{bivariate\_drift\_correlation}.  For example, a new seed can repeat only
+the correlation scenario:
+
+\begin{verbatim}
+Rscript tools/ctsemjulia-standardized-validation.R \
+  --mode=full \
+  --scenarios=bivariate_drift_correlation \
+  --seed=20260920 \
+  --cores=4
+\end{verbatim}
+
+Independent seed directories can subsequently be combined with
+\code{tools/summarize-ctsemjulia-standardized-multiseed.R}.  Its report keeps
+scenarios separate and summarizes mean and median recovery, empirical spread,
+RMSE, convergence, gradient norms, identifiability, and Laplace gaps.
+
+\section{A concise stopping rule}
+
+Do not continue merely because the raw gradient exceeds a conventional target.
+Continue a refinement when the objective, gradient, and constrained estimates
+are still improving materially. Stop and investigate identification when:
+\begin{itemize}
+  \item additional hours produce negligible objective improvement;
+  \item large raw movements occur in directions with very small gradients;
+  \item population and TI effects cancel in the study-specific parameters;
+  \item constrained estimates are stable but raw coordinates drift; or
+  \item the Hessian has near-zero directions or extreme conditioning.
+\end{itemize}
+
+When reporting a practically stable but formally non-converged solution,
+retain the warning, document the tolerance and termination code, report the
+refinement comparison, and avoid presenting Hessian-based uncertainty as
+routine inferential output.
+
+\section{Observed native validation outcomes, 27 October 2026}
+
+Eighteen small real-fit tests of CoTiMA2 0.14.33 with ctsem revision
+\code{57a9758d} completed on Ubuntu/Ryzen: five ML, five MAP and eight Bayesian
+runs. Every optimizer reported convergence, but the study-only ML case warned
+that \code{popsd\_c.study} was unidentified, and the mixed binary/continuous
+ML case warned that a binary-process drift was unidentified. This demonstrates
+why convergence, identification and posterior diagnostics must be separate
+decisions. The warnings were preserved; no artificial SE was substituted.
+
+The Bayesian smoke tests reported no divergences. Their short two-chain runs
+used relaxed diagnostic targets; finite worst R-hat values around
+1.023--1.065 are not sufficient for a final analysis. Inspect all substantive
+parameters with longer sampling and appropriate diagnostics. SMC uses particle
+diagnostics, so an absent conventional R-hat is not evidence of a failure.
+
+Study-level fits also retained the adapter's warning that a personwise
+\code{subject\_loglik} decomposition may not be valid for shared study
+effects. Do not use such values for personwise LOO or WAIC; inspect
+\code{ctsemjulia\_diagnostics\$casewise\_loglik}. These tests validate the
+real native dispatcher, including summary generation and joint/marginal route
+selection; they are not a parameter-recovery study or an end-to-end test of
+every public model-construction option.
+
+\section{Drift-scaled coordinates: a limited comparison}
+
+An additional Ryzen test of ctsem revision \code{57a9758d} compared standard
+coordinates, drift-scaled DIFFUSION, and drift-scaled DIFFUSION plus CINT.
+Eighteen ML/MAP fits used 96 people with six dense, coarse or irregular
+observations, explicitly disabling individual random effects. Matched initial
+likelihoods agreed within $1.3\times10^{-6}$.
+Dense and irregular ML fits reached the same likelihood in ten reported
+iterations with every parameterization. Coarse ML fits retained identification
+warnings despite reported convergence. No consistent numerical benefit was
+demonstrated, and subsecond timings do not establish a general speedup.
+
+\code{driftScaled} is a reparameterization, not a constraint imposing
+stationarity or unit variance. For MAP or Bayesian estimation, changing the
+coordinates without consistently transforming the priors changes the physical
+prior. These tests do not justify automatically enabling this option and do
+not validate binary or random-effects models.
+
+\section{Binary-process identification: a small paired pilot}
+
+A Ryzen pilot with ctsem revision \code{57a9758d} compared 48 ML fits:
+100 or 400 people, eight irregular waves, balanced or approximately 10\%
+positive binary responses, three datasets per condition, free or fixed
+diffusion, and CINT or MANIFESTMEANS. There were no random or cross-lag
+effects. The continuous companion process did not anchor the binary latent
+scale. Fitted initial means and variances were free; stationarity was not
+imposed. Fixed diffusion used its known generating value, not a value inferred
+from the binary observations.
+
+All optimizers reported convergence, but ten runs warned about identification
+or saturated transforms. Free diffusion could approach zero or become
+extremely large. Fixing it at the truth helped in some conditions, but did not
+guarantee drift recovery. Only three replications were used per condition;
+these results do not establish bias, interval coverage or a universal remedy.
+
+Two of 24 CINT/MANIFESTMEANS pairs reached different local solutions. Mapping
+the estimates between equivalent models reproduced their likelihoods within
+$8\times10^{-11}$; both solution families existed in both parameterizations.
+Switching intercepts therefore did not remove the problem. Check likelihood
+profiles, multiple starting solutions, identification warnings and extreme
+parameter values. Numerical accuracy of extreme-variance solutions also
+requires independent checking. These results do not prove structural
+nonidentification of diffusion in every binary model.
+
+Do not automatically fix diffusion or interpret a fixed parameter's zero
+conditional SE as high precision. A fixed value requires an explicit modelling
+or scale assumption and sensitivity analysis. Native identification warnings
+take precedence over finite Hessian-derived SEs.
+
+\subsection{Independent verification of extreme binary solutions}
+
+A follow-up to the preceding pilot independently integrated the scalar binary
+latent process on grids up to 6401 cells, retaining its non-Gaussian filtering
+density, and checked the results by Monte Carlo integration of complete latent
+trajectories. For two extreme diffusion solutions, native ctsem revision
+\code{57a9758d} reported log likelihoods about 55.83 and 16.35 points higher
+than the reference. Final grid refinements changed these values by less than
+0.00007. The two methods agreed within Monte Carlo uncertainty, and the
+reference reversed the native ranking of the paired solutions in both cases.
+Fresh ctsem models reproduced the native values without the CoTiMA2 adapter.
+
+Numerical likelihood approximation is therefore materially involved in these
+particular extreme solutions; the pilot cannot be interpreted solely as weak
+statistical identification. The separate effects of scalar quadrature and
+Gaussian posterior projection have not been isolated. Stable control cases
+had much smaller discrepancies. Do not interpret these extreme estimates or
+their Hessian SEs as validated results merely because the optimizer converged.
+This finding concerns the pinned native ctsem revision, not all Julia engines
+or future versions. No implementation or default was changed, and the
+reference was evaluated at fitted points rather than independently optimized.
+
+\section{Separate fit checks in CoTiMA2 0.14.34}
+
+New native Julia fits retain their ctsem classes and add a CoTiMA2 summary
+footer separating optimizer convergence, stored identification problems,
+transform saturation and posterior diagnostics. For Bayesian fits the optimizer
+line refers only to placement, not MCMC convergence. Primary-study reports
+retain study numbers. Missing fields are reported as unknown rather than
+interpreted as successful checks.
+
+<<separate-fit-checks, eval=FALSE, purl=FALSE>>=
+checks <- ctmaFitDiagnostics(fit, print = FALSE)
+ctmaFitDiagnostics(fit)  # also works with older stored fits
+summary(fit)            # automatic footer for new native fits
+@
+
+New native fits cache population matrices while Julia is already running.
+Later diagnostic reports do not start Julia. A binary linear-predictor SD above
+10 at Time 0 or at the population stationary covariance is labelled a heuristic
+scale flag. It is invariant to reciprocal changes of latent units and loadings;
+it is not an identification test, a validated error threshold or a reason to
+automatically fix diffusion. Older fits without these matrices report the scale
+check as unavailable. Convergence does not certify identification, reliable SEs
+or likelihood accuracy. No estimates or standard errors are altered.
+
+
+\section{ctsem 4 compatibility and stored sampling diagnostics}
+
+CoTiMA2 0.14.42 implements ctsem 4's \code{covmattransform = "z"}
+in its bundled \code{backend = "julia"} covariance converter. This is a
+normalised matrix exponential of symmetric off-diagonal coordinates, scaled by
+marginal standard deviations; these cells must not be read as a Cholesky factor.
+Older bundled-engine fits made from ctsem 4 setup with nonzero covariance cells
+should be re-fitted. The native \code{backend = "ctsemjulia"} uses ctsem's own
+converter and was not affected by this CoTiMA2 conversion defect. Diagonal-only
+checks cannot detect this difference. Unknown future covariance codes are
+rejected before starting the bundled engine.
+
+For native Bayesian fitting, \code{iter} inside the \code{sampleControl}
+list in \code{backendArgs} is now accepted and forwarded alongside ctsem's existing \code{warmup}, \code{draws}
+and \code{maxDraws} controls. Their meanings and precedence remain ctsem's;
+\code{iter} is not silently renamed to retained draws. Automatic sampler
+selection remains delegated to ctsem. In particular, \code{sampler = "map"}
+means learned-map posterior sampling, not MAP estimation. MAP estimation uses
+optimisation with priors.
+
+\code{ctmaFitDiagnostics(fit)} reads stored information without calculating a
+new summary or starting Julia. It handles both a native pooled model stored
+directly in \code{studyFitList} and ctmaInit's list of primary fits. Placement
+optimizer convergence and reported posterior convergence are separate. Raw
+coordinate R-hat and the worst available retained transformed-summary R-hat
+are labelled separately, with their effective sample size diagnostics retaining
+the source definitions. Missing transformed diagnostics are unknown. SMC does
+not have the usual between-chain R-hat; this is reported as not applicable,
+with its available ESS retained. A clean report does not certify likelihood
+accuracy or statistical identification.
+
+CoTiMA2 explicitly retains \code{uncertainty = "hessian"} within
+\code{optimcontrol} for native optimized fits. Current ctsem 4 defaults to \code{"checked"}; users may
+request that explicitly. This compatibility repair does not change the chosen
+uncertainty method automatically. Use \code{ctJuliaInstall()} to select ctsem's
+supported Julia runtime rather than hard-coding an old Juliaup version path.
+
+
+\section{Optimization targets and posterior uncertainty (version 0.14.43)}
+
+The bundled \code{backend="julia"} optimizer maximizes the likelihood.
+It does not implement MAP optimization. In \code{ctmaInit()}, \code{ctmaFit()}
+and \code{ctmaFitConfig()}, requesting \code{optimize=TRUE, priors=TRUE}
+with this backend now raises an error before fitting. Earlier versions could
+silently return an ML fit for that request; such results must not be interpreted
+as MAP estimates. Use \code{backend="ctsemjulia"} or \code{backend="stan"}
+with \code{optimize=TRUE, priors=TRUE} for MAP. This restriction does not remove
+bundled Julia Bayesian NUTS sampling with \code{optimize=FALSE}.
+
+Uncertainty from bundled NUTS sampling is based on retained joint posterior
+draws. It does not require a positive-definite likelihood Hessian at the initial
+parameter vector. ML uncertainty still requires adequate optimization convergence
+and valid curvature; a failed convergence or curvature check must be inspected,
+not bypassed. Short pilot chains may execute successfully and still have poor
+R-hat, low effective sample sizes, or divergences. Completion is not evidence of
+posterior convergence.
+
+The ctsem 4 interface also removes two historical inert Stan optimizer defaults
+and renames the internal matrix registry. CoTiMA2 filters the removed defaults
+only if the installed ctsem rejects them and their historical values were used;
+unsupported non-default requests raise an error. Older compatible ctsem versions
+retain their controls.
+
+
+\section{Binary offsets and mixed mean specifications (version 0.14.44)}
+
+The vector \code{manifestMeans=c("mmV1", 0)} freely estimates the first
+manifest mean and fixes the second to zero. Scalar \code{0} fixes all manifest
+means; \code{"auto"} requests automatic free labels. Explicit vectors retain
+both parameter labels and numeric fixed values.
+
+A binary measurement offset and a continuous-time process intercept have
+different roles. If data are generated as a Bernoulli response with probability
+\code{plogis(eta1 - 0.8)} from a centered latent process, a matching reference
+uses a binary manifest offset of -0.8, centered initial latent means and zero
+process intercepts. One may estimate the offset with the following specification:
+\begin{verbatim}
+# Relevant arguments for a two-variable binary/continuous reference model:
+binaries = c(1, 0),
+manifestMeans = c("mmV1", 0),
+cint = 0,
+T0means = 0
+\end{verbatim}
+This is appropriate for that generating model, not a universal recommendation
+to fix all process intercepts. A free CINT changes the state mean after elapsed
+time; it cannot supply a missing initial mean at time zero. Under a centered
+symmetric initial Gaussian latent and a fixed symmetric logistic link with zero
+manifest offset, the marginal initial binary probability is 0.5. A skewed
+observed binary distribution alone does not imply any particular latent variance.
+
+Switching from free CINTs to manifest offsets changes model constraints and
+usually the induced prior distribution; it is not merely a harmless numerical
+reparameterization. Check the generated model before fitting. A completed fit,
+a plausible point estimate or inclusion of a true value in one simulated interval
+does not establish posterior convergence or general parameter recovery.
+
+
+\section{Optimizer convergence and Laplace accuracy}
+
+For native study-level random-effects fits, optimizer convergence and the
+accuracy of Laplace integration are separate questions. The optimizer can
+converge to the optimum of its approximated objective while a stored comparison
+with a more accurate integration method remains unresolved.
+
+\code{ctmaFitDiagnostics(fit)} and the native summary footer now report the
+cached Laplace accuracy status independently. \code{ctmaTables()} includes the
+same information in table notes. When available, the report includes the stored
+integration gap, maximum standardized parameter shift and whether a correction
+was applied. These quantities retain their upstream definitions; the total gap
+is not silently divided by the number of persons or studies.
+
+A status of \code{unresolved} is neither an accuracy pass nor proof of failure.
+A status of \code{checked} without an accompanying verdict says only that an
+operation was performed. Missing verdicts remain unassessed. A curvature-based
+certification of optimizer convergence does not resolve these integration
+questions. Diagnostic reports and table generation read stored metadata only:
+they do not rerun \code{ctLaplaceCheck()}, start Julia for this metadata, change
+estimates or automatically increase computational budgets.
+
+<<laplace-status-separate, eval=FALSE, purl=FALSE>>=
+checks <- ctmaFitDiagnostics(fit, print = FALSE)
+checks$optimizer_converged
+checks$laplace_accuracy
+ctmaTables(fit, parameters = "drift", statistics = c("mean", "2.5", "97.5"),
+           format = "none", interactive = FALSE)$notes
+@
+
+
+\section{Reproducible initialization and batch-safe file handling}
+
+Automatic initialization for the Stan study-level random-effects workflow
+\code{ctmaReFit()} follows the fitting \code{seed}, including an explicit
+override of \code{seed} in the fitting-control list. Chain-specific initialization streams differ,
+but repeated calls with the same seed and chain are reproducible. Each
+initialization callback restores its caller's random-number state, including
+when initialization fails. This concerns initialization; it does not promise
+that an entire stochastic fitting call leaves the RNG state unchanged.
+
+\code{ctmaOptimizeInit()} validates its required inputs before running retries.
+On Unix systems parallel retries use workers owned by that call; on Windows
+retries are sequential. The function does not replace a user's registered
+\code{foreach} backend. In \code{ctmaGenData()}, cluster cleanup no longer
+replaces restoration of the \code{scipen} option on exit.
+
+When an output file already exists, noninteractive saving now stops with a
+clear message unless \code{silentOverwrite = TRUE} was explicitly requested.
+Use a new filename or directory to keep both results. Interactive saving still
+offers overwrite, skip, rename and cancel; a renamed target is checked again
+before an existing file can be replaced. Blank input cancels rather than
+waiting indefinitely. These changes do not authorize overwriting user files
+by default.
+
+<<safe-study-re-and-saving, eval=FALSE, purl=FALSE>>=
+# Reproducible automatic initialization for the Stan study-RE workflow:
+fit <- ctmaReFit(prepared, estimation = "bayes", seed = 1234,
+                 cores = 2, chains = 2)
+# For scripted ctmaInit calls, explicitly choose whether saved files may change:
+init <- ctmaInit(primaryStudies = studyList, n.latent = 2,
+                 activeDirectory = outputDirectory, silentOverwrite = TRUE)
+@
+
+
+\subsection*{Native quadrature refinement and stored diagnostics}
+With a compatible recent experimental ctsem, request
+\code{backendArgs = list(intoverpop = "quadrature")} to refine an optimized
+Laplace fit with random effects. This option requires \code{optimize = TRUE};
+it is not a sampler and is not needed for a model without random effects.
+The returned mode records \code{"quadrature"}. Earlier ctsem versions may
+not support this explicit route.
+
+\code{ctmaFitDiagnostics(fit)} reports stored likelihood definitions separately:
+\code{loglik} with its source method and reported \code{loglik_se}, and
+\code{loglik_laplace}. A checked likelihood must not be substituted for the
+optimized Laplace objective when comparing optimization results. Optimizer
+predicted gain, resolution, convergence tolerance and convergence floor are
+shown when stored. These are source-reported diagnostics, not a new common
+convergence threshold. Optimizer convergence does not establish posterior
+convergence or Laplace accuracy; an unresolved integration check remains
+unresolved. Reading these diagnostics starts neither Julia nor a new fit.
+
+
+\section*{CPU budgets and writable Julia projects (0.14.48)}
+\code{coresToUse} is resolved against CPU availability reported by parallelly,
+including affinity and scheduler/check restrictions. Negative values retain
+available cores minus the requested reserve, with a minimum of one. Automatic
+bundled Julia allocation uses this resolved budget; explicit Julia worker,
+thread and BLAS combinations that exceed it fail before initialization.
+The maximum of the main-process and parallel-worker phases is budgeted, because
+these fitting phases run sequentially. Transformation workers are bounded too.
+The native \code{ctsemjulia} backend receives the resolved \code{cores} budget;
+its internal sampler allocation remains ctsem's responsibility.
+
+Owned child processes inherit single-thread BLAS/OpenMP environment limits;
+the caller's environment is restored even after errors. This does not change
+the threading of an R BLAS library already loaded by the caller. External
+processes and computations in other R sessions are outside this budget.
+
+The bundled \code{julia} backend uses a content-keyed project copy under R's
+CoTiMA2 user cache. Installed package files are read-only templates. Project
+instantiation may update the cached manifest, while fitting does not install
+missing dependencies. An explicit custom Julia source/project remains the
+user's responsibility. This policy does not change ctsem's independently
+managed native engine cache.
+
+Inspect \code{ctmaJuliaSetup(dry_run = TRUE)} without creating project files
+or running Julia. For setup, explicitly run
+\code{ctmaJuliaSetup(agree = TRUE)}; batch sessions otherwise stop and
+interactive sessions ask for consent. JuliaCall bootstrap can also update
+Julia's default user environment. Restart R after bootstrap as instructed.
+
+
+\section{Systematic optimization and study sensitivity checks}
+\label{sec:systematic-optimization}
+The historical \code{ctmaOptimizeFit()} search is retained with
+\code{gambling = TRUE} (the default). It can try random starts, study orders
+and selected settings as before. Set \code{gambling = FALSE} to use a planned
+pooled maximum-likelihood workflow instead. This mode retains the saved backend,
+observations and time scaling. It currently supports \code{stan} and
+\code{ctsemjulia}, dummy study coding and no hierarchical study random effects;
+MAP/Bayesian searches and weighted recoding are not supported in this mode.
+
+First check a new reference with all studies retained. The current reference is
+the last study in the saved list. A large study is a reasonable numerical first
+choice, but is not guaranteed to be the best reference. Changing the reference
+must preserve the same model; partially constrained study-effect families that
+cannot be safely rebased are rejected. No study is excluded automatically.
+\begin{lstlisting}[language=R]
+# pooledFit is a saved pooled ctmaFit() ML result, with dummy coding.
+# Install callr and ps beforehand if they are not available.
+reference_check <- ctmaOptimizeFit(
+  ctmaFitFit = pooledFit,
+  gambling = FALSE,
+  referenceStudy = "largestN",
+  quickCheck = TRUE,
+  quickControl = list(maxiter = 100, maxSeconds = 120),
+  coresToUse = 4, timeBudget = 600,
+  checkpointDirectory = file.path(activeDirectory, "reference_check")
+)
+summary(reference_check)
+\end{lstlisting}
+A pilot is a bounded screening calculation. A finite likelihood, a smaller
+gradient or a disappearing warning does not establish identification or validate
+standard errors. A timeout (including setup time) is inconclusive. All warnings,
+errors and available convergence/curvature diagnostics remain in the returned
+object and checkpoint directory. Published ctsem versions that expose no Stan
+iteration limit use the subprocess wall-time cap instead, with a recorded
+warning. Older Stan APIs may also require their usual uncertainty
+postprocessing to return a complete fit with TI predictors. Such pilots retain
+only 20 approximate draws and remain inconclusive. The function does not claim a calibrated
+probability of successful fitting from these quick checks.
+
+If independent diagnostics and the scientific question justify sensitivity
+analyses, nominate studies by their \emph{original study IDs}, not list positions:
+\begin{lstlisting}[language=R]
+# Replace these illustrative IDs with actual originalStudyNo values.
+sensitivity <- ctmaOptimizeFit(
+  ctmaFitFit = pooledFit, gambling = FALSE,
+  candidateStudies = c(9, 10),
+  exclusion = c("single", "all"),
+  referenceStudy = "largestN",
+  quickCheck = TRUE,
+  quickControl = list(maxiter = 100, maxSeconds = 120,
+                      maxFullChecks = 1, fullMaxSeconds = 600),
+  iter = 2000, coresToUse = 4, timeBudget = 1800,
+  checkpointDirectory = file.path(activeDirectory, "sensitivity_check")
+)
+sensitivity$caseDiagnostics
+sensitivity$warnings
+sensitivity$errors
+# Individual pilot/full fits and their plans:
+sensitivity$sensitivity$cases
+\end{lstlisting}
+Use \code{exclusion = "blocks"} with \code{studyBlocks = list(c(9, 10), c(20, 22))}
+for nominated blocks. At least two studies must remain. If the selected reference
+is removed, the largest retained study becomes the reference. The full-data
+current-reference case is always included; duplicate cases are removed.
+
+Full follow-ups occur only when requested through \code{maxFullChecks}, after
+all pilots, in planned order. Alternatively, use \code{quickCheck = FALSE} for
+bounded fuller checks of every case. The best pilot start is selected only within
+the same case. Likelihoods from different study subsets are not comparable for
+choosing a winner. \code{bestFit} retains the best full-data attempt, including
+the supplied baseline; subset fits never silently replace it. Report exclusions
+and effect stability as sensitivity analyses, not evidence that an inconvenient
+study should be deleted.
+
+Use \code{resume = TRUE} and the same checkpoint directory and settings to reuse
+completed cases. Data, plan or recorded package-version changes invalidate a
+resume. Time budgets apply to each call; requesting a resume is an explicit new
+budget. A checkpoint retains fit objects and therefore may contain research
+data: choose its location accordingly.
+
+
+\subsection*{Automatic candidate nominations}
+Set \code{referenceCandidates = "auto"} to nominate up to three largest
+unflagged alternative reference studies. Ties use the median number of distinct
+observation times, then the original study order. Set
+\code{candidateStudies = "auto"} to nominate up to ten studies from stored
+study-local weak-direction diagnostics, or from retained primary fits with
+explicit nonconvergence or weak-direction flags. Supply \code{ctmaInitFit} if
+these primary fits are in a separate initial fit object; their original IDs
+must verify the alignment.
+
+Study-local evidence means a reported weak direction with at most four mapped
+study-TI coordinates and no shared or unmapped coefficients. Shared drift
+weakness is not assigned to individual studies. Small N or only two occasions
+alone do not nominate exclusions. These are descriptive, reference-dependent
+flags, not proof that a particular study causes nonidentification. At least two
+studies must remain. Inspect all reasons before requesting exclusions:
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language=R]
+auto_check <- ctmaOptimizeFit(
+  ctmaFitFit = pooledFit, gambling = FALSE,
+  referenceCandidates = "auto",
+  candidateStudies = "auto", exclusion = "single",
+  planOnly = TRUE, # Review the plan without fitting
+  quickCheck = TRUE,
+  quickControl = list(maxSeconds = 120),
+  coresToUse = 4, timeBudget = 600,
+  checkpointDirectory = file.path(activeDirectory, "auto_check")
+)
+auto_check$automaticSelection$studyDiagnostics
+auto_check$automaticSelection$notes
+# After scientific review, exclusion="single" requests nominated leave-one-out
+# checks; exclusion="all" removes the nominated set together.
+\end{lstlisting}
+\end{minipage}\par\medskip
+\code{planOnly = TRUE} returns \code{casePlan} and the nomination report without starting workers, fitting, likelihood evaluation or checkpoint writes. Set it to \code{FALSE} to run the reviewed plan. Nomination alone never requests exclusion. With no eligible automatic flags,
+single/all exclusion cases are skipped and the reason is reported. Block
+exclusions still require explicit study IDs. The checkpoint directory contains
+\code{automaticStudyDiagnostics.csv}, and \code{maxCases} still limits the plan.
+
+
+\paragraph{Unassessed curvature.}
+The systematic diagnostic table records \code{curvature\_assessed} separately.
+When no usable saved Hessian is available, \code{weak\_directions} is
+\code{NA}; an engine-initialized zero is not interpreted as a successful
+identification check. Legacy zeroes without recorded assessment provenance are
+also displayed as unknown. A finite Hessian or zero weak-direction count alone
+does not certify optimizer convergence or trustworthy uncertainty.
+
+
+\section{Stationary initialization and determined diffusion}
+The optional arguments \texttt{stationary=FALSE} and
+\texttt{determinedDiffusions=FALSE} preserve existing behavior by default.
+The experimental determined-diffusion option estimates the stationary
+within-person covariance; it does not fix it to the unit covariance of
+standardized observed data. It currently supports ML for one or two
+unrestricted processes with \texttt{stationary=TRUE}; unsupported process
+constraints and study-effect mappings cause explicit errors.
+For the supported combinations and model-preparation example, see
+\texttt{CoTiMA2\_Stationary\_Processes\_0.14.59.Rnw}.
+
+
+\subsection{Randomly alternating stationary covariance parametrizations}
+For a difficult pooled stationary ML fit, an additional opt-in search can
+alternate between estimating diffusion and estimating the stationary within-person
+covariance. This does not randomly impose stationarity: the baseline must already
+specify \texttt{stationary = TRUE}. The model, studies and scales remain fixed.
+The default \texttt{randomDeterminedDiffusions = FALSE} preserves the existing search.
+\begin{lstlisting}[language=R]
+# initFit must be the initialization object used for stationaryFit.
+# A common process structure is required for this first implementation.
+stationaryFit <- ctmaFit(
+  ctmaInitFit = initFit, backend = "ctsemjulia",
+  optimize = TRUE, priors = FALSE,
+  allInvModel = TRUE, stationary = TRUE
+)
+search <- ctmaOptimizeFit(
+  ctmaFitFit = stationaryFit, ctmaInitFit = initFit,
+  gambling = TRUE, randomDeterminedDiffusions = TRUE,
+  backend = "ctsemjulia", reFits = 6, seed = 42,
+  coresToUse = 2
+)
+search$attempts
+bestFit <- search$bestFit
+\end{lstlisting}
+Both parametrizations are checked with \texttt{fit = FALSE} before any refit.
+Only supported one/two-process Gaussian ML models are accepted; fixed/custom
+process constraints and incompatible study effects are rejected. Raw starting
+vectors are discarded because the covariance coordinates differ.
+This option currently supports pooled \texttt{ctmaFit()} models, not primary-study
+or raw ctsem searches, and cannot be combined with the other random model,
+scale or study-order switches. \texttt{seed} controls variant choices and R seeds;
+the caller's R random-number state is restored. Independent choices may select
+only one variant in a short search. \texttt{attempts} records choices, failures,
+objective values and available convergence diagnostics. The best finite objective
+is not a certification of convergence, identification or valid uncertainty.
+
+\section{Two-wave random intercepts and unavailable uncertainty}
+Before fitting each primary study, \texttt{ctmaInit()} checks the number of
+observed occasions per person when random intercepts are requested. With at
+most two waves, an unrestricted dynamic within-person process and a
+random-intercept covariance cannot generally be separated without additional
+identifying constraints. A larger sample does not supply additional time
+points. Unequal observation intervals and substantive model restrictions can
+change identification, so this is a design warning rather than a universal
+claim about all two-wave models. Three waves do not guarantee identification.
+
+Optimizer convergence, identification, and interval reliability are separate
+checks. A random-intercept variance near zero makes its correlations
+uninterpretable, but need not make all drift effects unidentifiable. When
+native ctsem explicitly flags a coordinate as having no estimable uncertainty,
+CoTiMA2 retains its point estimate and reports the affected standard errors
+and intervals as \texttt{NA}, rather than treating a projected numerical
+covariance as evidence of precision. Derived covariance uncertainty is also
+withheld when its source has no estimable width. Combined summaries retain
+study-labelled identification notes. Calling \texttt{summary()} on an older
+saved primary-study fit collection refreshes these reporting flags using
+stored diagnostics; it does not refit models or start Julia.
+
+Do not automatically exclude a study because it has two waves or a warning.
+Inspect the design and fitted diagnostics, and compare substantively justified
+simplifications. Reducing random-intercept variation changes the model and
+must be reported as such.
+
+
+\section{Study lists grouped by observed waves}
+\texttt{ctmaInit()} returns two additional study lists and a design overview,
+including when \texttt{fit=FALSE}. These preserve the input preparation format,
+original study identifiers, order, data and study-level metadata. No study is
+excluded from the full fit.
+\begin{lstlisting}[language=R]
+initFit$studyDesign
+studyList_two <- initFit$studyLists$twoWaves
+studyList_three_plus <- initFit$studyLists$threeOrMoreWaves
+# Each nonempty list can be supplied as primaryStudies to ctmaInit().
+# This is an optional sensitivity analysis, not an exclusion recommendation.
+if (!is.null(studyList_three_plus)) {
+  setup_three_plus <- ctmaInit(
+    primaryStudies = studyList_three_plus,
+    n.latent = 2, fit = FALSE,
+    activeDirectory = activeDirectory)
+}
+\end{lstlisting}
+
+An empty group is \texttt{NULL}. Grouping uses the maximum observed occasions
+per person; \texttt{minWaves}, \texttt{maxWaves},
+\texttt{nSubjectsTwoWaves} and \texttt{nSubjectsThreeOrMoreWaves} expose
+mixed observation counts. Rows with all outcomes missing and repeated records
+at the same time are not extra occasions. Studies with fewer than two
+observed waves or unknown counts are labelled in the overview and remain in
+the full result. Cached Excel workbooks are not copied with stale full-study
+contents: an available subset summary is rebuilt in a new workbook.
+
+The interpretation depends on the fitting scope. In \texttt{ctmaInit()}, each
+primary study has its own random-intercept covariance, whether requested by
+\texttt{indVarying} or \texttt{randomIntercepts}. Unrestricted dynamics and
+random-intercept covariance generally cannot be separated from a common
+single-lag two-wave design without additional restrictions. Unequal intervals
+or model restrictions can change identification; three waves alone are not
+a guarantee either.
+
+In \texttt{ctmaFit()}, \texttt{indVarying} requests a common population
+covariance across the pooled studies. Two-wave studies are therefore not
+subjected to the separate-study warning: identification must be assessed
+jointly, using information shared across studies. In contrast,
+\texttt{randomIntercepts} requests study-specific covariance matrices unless
+explicitly restricted to a pooled covariance. The corresponding two-wave
+studies receive a labelled warning, but all studies remain included and no
+constraints are changed. The design risk flag in \texttt{studyDesign} refers
+to the separate-primary-study model, not to identification of a subsequent
+pooled model.
+
+
+\section{Common drift with study-specific stationary covariance}
+With CoTiMA2's native \texttt{backend="ctsemjulia"}, a pooled ML model may
+retain common drift while every study has its own stationary within-person
+covariance. Saturated dummy and weighted study coding are supported. All
+free diffusion covariance coordinates must be allowed to vary across all
+study contrasts. These contrasts are moved to the auxiliary stationary
+covariance coordinates. The derived diffusion then varies by study as well:
+\[
+ Q_s=-(A\Sigma_s+\Sigma_s A^\top).
+\]
+This neither fixes the within-person variances to one nor turns the
+population random-intercept covariance into a study-specific covariance.
+Stationary initialization uses the same within covariance; there is no
+additional independent Time-0 process covariance. The free parameter count
+is preserved, but raw covariance contrast coefficients have new meanings.
+Old raw starting vectors cannot be reused.
+
+\begin{lstlisting}[language=R]
+FullFit_ML2 <- ctmaFit(
+  ctmaInitFit = InitFit_ML,
+  activeDirectory = activeDirectory,
+  backend = "ctsemjulia",
+  optimize = TRUE, priors = FALSE,
+  indVarying = "MANIFEST", indVaryingT0 = FALSE,
+  stationary = TRUE, determinedDiffusions = TRUE,
+  studyCoding = "dummy", # "weighted" is also supported
+  studyVarying = c("CINT", "DIFFUSION", "T0VAR"),
+  coresToUse = 8, scaleTime = 1/48
+)
+\end{lstlisting}
+
+The example retains the default study-varying families. General moderators
+on the process covariance, study-varying drift, random process effects,
+partial covariance invariance, binary outcomes, phantom intercept factors
+and Bayesian estimation remain outside this supported path. A shared raw
+diffusion coordinate cannot simply be replaced by a shared stationary
+covariance coordinate: those restrictions generally define different models.
+Unsupported restrictions cause an error rather than being silently relaxed.
+The common-process \texttt{ctmaOptimizeFit(randomDeterminedDiffusions=TRUE)}
+search retains its existing restrictions; this extension concerns direct
+pooled \texttt{ctmaFit()} calls.
+
+
+\section{Long-expression setup error corrected in 0.14.57}
+The message \texttt{variable names are limited to 10000 bytes} during
+\texttt{.ctModelMatSetup()} can arise before estimation when a generated
+covariance expression is too long for R's internal name storage. Version
+0.14.57 constructs the same process covariance directly from its marginal
+standard deviations and Fisher-transformed correlations, avoiding repeated
+expansion of Cholesky expressions. Parameter labels, study contrasts,
+random-intercept safeguards and the scientific model are retained. This is
+an implementation repair, not a reason to remove studies or alter covariance
+constraints. Install the corrected release and rerun the original model
+specification. This repair does not require changing the ctsem installation.
+
+
+\section{CoTiMA2 0.14.58: retired controls and study-order safety}
+The \code{experimental} and \code{activateRPB} arguments have been removed;
+omit them from older calls, even when their value was \code{FALSE}.
+Their former default statistical behavior is retained. Pushbullet
+notifications are no longer provided.
+
+\code{ctmaFit(primaryStudyList=...)} now preserves the exact requested
+original-study order as well as membership. Initialization fits, cached
+data and metadata are matched together. Raw starting values still require
+the same model, study order and parameter layout. A saved six-study RI
+solution was reproduced by one corrected Stan refit to within approximately
+\(4\times10^{-8}\) in \(-2\ell\). Six projected weak directions remained;
+this verifies the handoff, not the standard errors or confidence intervals.
+Older installed packages do not acquire this correction automatically.
+
+
+\section*{CoTiMA2 0.14.59: compact initialization notes}
+Identification and uncertainty notes now display one row per affected study,
+with the recorded weak-direction count, the number of coordinates with
+unavailable uncertainty, and flags. The flag explanations are printed once:
+T denotes the two-wave design warning, S a saturated transformation, B a
+boundary random-effect correlation, and I unstable curvature-based interval
+widths. Unknown messages remain visible in full under O. NA means that a
+quantity was not recorded in these notes, not that the study is unaffected.
+The original full messages and parameter names are retained; use
+\code{print(fit$summary$identification_notes, details=TRUE)} or
+\code{as.character(fit$summary$identification_notes)} to inspect them.
+No study is excluded by this display. During each \code{ctmaInit()} call,
+only the first two-wave warning includes the full explanation; later warnings
+retain the study label and reference that explanation. Existing saved fits
+can be reformatted with \code{summary(fit)} without re-estimation once the
+updated package is installed. This development change is not in the original
+0.14.58 archive.
+
+\end{document}

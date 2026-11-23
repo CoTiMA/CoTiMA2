@@ -8,7 +8,7 @@
 An object of class \code{character} of length 6.
 }
 \usage{
-targetVariables313
+data(targetVariables313)
 }
 \description{
 targetVariables313 example vector

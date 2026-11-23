@@ -3,16 +3,20 @@
 #' `ctmaFitConfig()` accepts the model-building arguments of [ctmaFit()] via
 #' `...`, creates the identical unfitted setup, and performs a bounded backend
 #' pilot. For Julia ML it benchmarks subject concurrency and ForwardDiff chunk
-#' sizes at one common raw starting vector. For Stan it validates and returns
-#' the resolved Stan controls and reports setup cost; ctsem's pooled Stan fit
-#' does not expose the corresponding subject/chunk tuning grid.
+#' sizes at one common raw starting vector. For Stan and ctsem's native Julia
+#' backend (`"ctsemjulia"`) it validates and returns the resolved controls and
+#' reports setup cost; neither path exposes CoTiMA2's subject/chunk tuning grid.
 #'
 #' @param ctmaInitFit Object accepted by `ctmaFit(ctmaInitFit=...)`.
 #' @param ... Model-building arguments accepted by [ctmaFit()]. Do not supply
-#'   `fit`; configuration always uses `fit=FALSE`.
-#' @param backend Estimation backend, `"julia"` or `"stan"`.
+#'   `fit`; configuration always uses `fit=FALSE`. coresToUse also bounds
+#'   the bundled Julia pilot; the pilot does not re-detect a larger pool.
+#' @param backend Estimation backend: `"julia"`, `"stan"`, or experimental
+#'   `"ctsemjulia"`. The latter requires Charles Driver's compatible ctsem
+#'   `juliaFit` development version and currently supports ML only.
 #' @param backendArgs Named backend controls. Explicit values are retained as
-#'   constraints and the recommended values are merged into this list.
+#'   constraints and the recommended values are merged into this list. Calling
+#'   [ctmaBackendDefaults()] without arguments returns Stan defaults only.
 #' @param time_limit Approximate pilot budget in seconds. An individual Julia
 #'   likelihood or gradient evaluation cannot be interrupted midway.
 #' @param candidate_subject_threads Optional positive integer candidates.
@@ -32,7 +36,7 @@
 ctmaFitConfig <- function(
     ctmaInitFit = NULL,
     ...,
-    backend = c("julia", "stan"),
+    backend = c("julia", "stan", "ctsemjulia"),
     backendArgs = list(),
     time_limit = 600,
     candidate_subject_threads = NULL,
@@ -46,7 +50,13 @@ ctmaFitConfig <- function(
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaFitConfig")
   on.exit(.ctma_timer(), add = TRUE)
 
-  backend <- match.arg(tolower(backend), c("julia", "stan"))
+  .ctmaCheckCtsemJuliaRequest(
+    backend, "ctmaFitConfig", supported = TRUE
+  )
+
+  backend <- match.arg(
+    tolower(backend), c("julia", "stan", "ctsemjulia")
+  )
   time_limit <- as.numeric(time_limit)[1L]
   if (!is.finite(time_limit) || time_limit <= 0) {
     stop("'time_limit' must be a positive number of seconds.", call. = FALSE)
@@ -99,12 +109,32 @@ ctmaFitConfig <- function(
   estimation <- if (!is.null(dots$optimize) && !isTRUE(dots$optimize)) {
     "Bayes"
   } else "ML"
+  .ctmaCheckBundledPriorRequest(backend,
+    if (is.null(dots$optimize)) TRUE else dots$optimize, dots$priors)
   resolved <- .ctmaResolveFitBackend(
     backend = backend, backendArgs = backendArgs,
     estimation = estimation, workflow = "ctmaFit"
   )$backend_args
+  if (backend %in% c("stan", "ctsemjulia") && !is.null(dots$stationary)) {
+    resolved$stationary <- dots$stationary
+  }
 
-  if (identical(backend, "stan")) {
+  if (backend %in% c("stan", "ctsemjulia")) {
+    note <- if (identical(backend, "stan")) {
+      paste0(
+        "The pooled Stan/ctsem backend does not expose Julia-style subject ",
+        "concurrency or ForwardDiff chunk controls. The supplied Stan controls ",
+        "were validated and retained; setup time is reported separately."
+      )
+    } else {
+      paste0(
+        "The native ctsem Julia/Laplace backend does not expose CoTiMA2's ",
+        "subject-thread or ForwardDiff-chunk benchmarking interface. Its ",
+        "backendArgs were validated and retained; setup time is reported ",
+        "separately. Control worker capacity with ctmaFit's top-level ",
+        "coresToUse argument."
+      )
+    }
     out <- list(
       call = match.call(), backend = backend, setup = setup,
       setup_timing = setup_timing, time_limit = time_limit,
@@ -112,12 +142,14 @@ ctmaFitConfig <- function(
       benchmarks = data.frame(), resolved_backend_args = resolved,
       optimizer_pilots = data.frame(),
       recommended = resolved,
-      note = paste0(
-        "The pooled Stan/ctsem backend does not expose Julia-style subject ",
-        "concurrency or ForwardDiff chunk controls. The supplied Stan controls ",
-        "were validated and retained; setup time is reported separately."
-      )
+      note = note
     )
+    if (!is.null(setup$stationary_specification)) {
+      out$model_arguments <- setup$stationary_specification[
+        c("stationary","determinedDiffusions")]
+      out$note <- paste(out$note,
+        "Repeat model_arguments in ctmaFit(); recommended contains backend controls only.")
+    }
     class(out) <- "ctmaFitConfig"
     if (isTRUE(verbose)) print(out)
     return(out)
@@ -129,6 +161,13 @@ ctmaFitConfig <- function(
     "threads_per_chain.", call. = FALSE
   )
 
+  requested_cores <- if (is.null(dots$coresToUse)) {
+    eval(formals(ctmaFit)$coresToUse)
+  } else dots$coresToUse
+  budget <- .ctmaResolveCores(requested_cores, backend = "julia",
+    announce = FALSE, workflow = "ctmaFitConfig")$resolved
+  resolved <- .ctmaInitJuliaResources(budget, "ML", backendArgs, resolved,
+    announce = isTRUE(verbose), workflow = "ctmaFitConfig")$backend_args
   pool <- .ctmaResolveJuliaThreads(resolved$julia_threads)
   initial_subjects <- .ctmaResolveSubjectThreads(
     resolved$subject_threads, pool

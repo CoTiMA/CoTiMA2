@@ -53,15 +53,11 @@ ctmaSV <- function(
   ################################################# Check Cores To Use ##################################################
   #######################################################################################################################
   {
-    if  (length(coresToUse) > 0) {
-      if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-    }
+    coresToUse <- .ctmaResolveCores(coresToUse, backend = "stan",
+      workflow = "ctmaSV")$resolved
+    .ctma_restore_threads <- .ctmaLimitThreadEnvironment()
+    on.exit(.ctma_restore_threads(), add = TRUE)
 
-    if (coresToUse >= parallel::detectCores()) {
-      coresToUse <- parallel::detectCores() - 1
-      Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash. \n"
-      message(Msg)
-    }
   }
 
   #######################################################################################################################

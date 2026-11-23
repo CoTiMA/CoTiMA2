@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 1.
 }
 \usage{
-ageM201
+data(ageM201)
 }
 \description{
 ageM201 example vector

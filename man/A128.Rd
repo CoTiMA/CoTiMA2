@@ -8,7 +8,7 @@
 An object of class \code{matrix} (inherits from \code{array}) with 2 rows and 2 columns.
 }
 \usage{
-A128
+data(A128)
 }
 \description{
 A128 example matrix

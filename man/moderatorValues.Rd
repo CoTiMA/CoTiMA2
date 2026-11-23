@@ -8,7 +8,7 @@
 An object of class \code{list} of length 2.
 }
 \usage{
-moderatorValues
+data(moderatorValues)
 }
 \description{
 moderatorValues example vector

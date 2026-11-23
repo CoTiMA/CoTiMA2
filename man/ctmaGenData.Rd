@@ -27,13 +27,13 @@ ctmaGenData(
   n.latent = NULL,
   n.manifest = NULL,
   randomIntercepts = NULL,
-  resultName = NULL,
   T0means = 0,
   T0var = NULL,
   TIpreds = NULL,
   tpoints = 10,
   tpointTargets = NULL,
-  useRawData = NULL
+  useRawData = NULL,
+  resultName = NULL
 )
 }
 \arguments{
@@ -93,7 +93,10 @@ ctmaGenData(
 
 \item{useRawData}{if TRUE (or FALSE) and ctmaExtract is also TRUE, creates rawData (or empcov) objects required for CoTiMA into the environment specified using the argument envir.}
 
-\item{resultName}{optional character name assigned by the user to the returned value.}
+\item{resultName}{optional character name assigned by the user to the value
+returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
+is inserted into the printed follow-up command. R functions cannot discover
+the left-hand side of an assignment automatically.}
 }
 \value{
 ctmaGenData returns a list containing ...

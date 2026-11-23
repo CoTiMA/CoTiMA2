@@ -41,7 +41,9 @@ one core; use \code{\link{ctmaReMLFit}} for parallel ML starts.}
 \item{iter}{Total sampling iterations per chain or maximum optimizer
 iterations.}
 
-\item{seed}{Random-number seed.}
+\item{seed}{Random-number seed. Automatic study-RE initialization uses this
+seed (or a \code{fit_args$seed} override) with distinct chain streams,
+restoring the caller's RNG state after each initialization callback.}
 
 \item{init}{Optional fitting-stage initialization override.}
 
@@ -65,7 +67,12 @@ experimental \code{"julia"} backend.}
 \item{backendArgs}{Named overrides for Julia controls such as
 \code{julia_threads}, \code{warmup}, \code{samples}, \code{metric},
 \code{target_accept}, \code{max_depth}, \code{parallel_chains}, and
-\code{threads_per_chain}.}
+\code{threads_per_chain}. Set \code{nuts_progress = TRUE} to report
+aggregate progress across chains and \code{progress_every} to control
+the number of NUTS iterations between worker updates (default 25).
+Calling \code{ctmaBackendDefaults()} without arguments returns Stan
+defaults; request \code{backend = "julia"}, Bayesian estimation, and the
+\code{"ctmaReFit"} workflow to inspect this function's Julia defaults.}
 }
 \value{
 A \code{"CoTiMAFit"} object with subtype

@@ -5,7 +5,6 @@
 \title{ctmaSaveFile}
 \usage{
 ctmaSaveFile(
-  activateRPB,
   activeDirectory = activeDirectory,
   SaveObject,
   FileName,
@@ -14,7 +13,6 @@ ctmaSaveFile(
 )
 }
 \arguments{
-\item{activateRPB}{set TRUE to receive push messages with 'CoTiMA' notifications on your phone}
 
 \item{activeDirectory}{directory name}
 
@@ -24,7 +22,9 @@ ctmaSaveFile(
 
 \item{Directory}{directory to save file in}
 
-\item{silentOverwrite}{override old files without asking}
+\item{silentOverwrite}{Explicitly allow replacing an existing file. In
+noninteractive sessions, an existing file otherwise raises an error; no
+input is requested. Interactive users may overwrite, skip, rename or cancel.}
 }
 \value{
 No return value. Just saves files

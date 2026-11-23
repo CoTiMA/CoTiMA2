@@ -8,7 +8,7 @@
 An object of class \code{numeric} of length 2.
 }
 \usage{
-moderator313
+data(moderator313)
 }
 \description{
 moderator313 example vector

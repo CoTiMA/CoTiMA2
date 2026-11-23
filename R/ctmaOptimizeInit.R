@@ -12,7 +12,6 @@
 #' @param reFits how many reFits should be done
 #' @param n.latent number of latent variables of the model (hast to be specified)!
 #' @param coresToUse if neg., the value is subtracted from available cores, else value = cores to use
-#' @param activateRPB  set to TRUE to receive push messages with 'CoTiMA' notifications on your phone
 #' @param finishsamples number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).
 #' @param indVarying control for unobserved heterogeneity by having randomly (inter-individually) varying manifest means
 #' @param randomScaleTime lower and upper limit of uniform distribution from which timeScale argument for ctmaInit is uniformly shuffled (integer)
@@ -29,10 +28,11 @@
 #'
 #' @importFrom doParallel registerDoParallel
 #' @importFrom foreach %dopar%
-#' @importFrom RPushbullet pbPost
 #' @importFrom stats runif
 #'
-#' @note All but one of multiple cores are used on unix-type machines for parallel fitting
+#' @note Unix parallel retries use owned fork workers without registering a
+#'   global foreach backend; Windows uses sequential retries. Input errors and
+#'   retry failures leave the caller's foreach registration unchanged.
 #' @note During fitting, not output is generated. Be patient.
 #'
 #' @examples
@@ -51,6 +51,7 @@
 #' is printed if the summary function is applied to the returned object, and which shows the summary information of the ctsem model with the
 #' best fit.
 #'
+#' @param ... Reserved. Unknown arguments are rejected with a migration hint where applicable.
 ctmaOptimizeInit <- function(primaryStudies=NULL,
                              activeDirectory=NULL,
                              problemStudy=NULL,
@@ -60,38 +61,38 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
                              coresToUse=c(1),
                              indVarying=FALSE,
                              randomScaleTime=c(1,1),
-                             activateRPB=FALSE,
+
                              checkSingleStudyResults=FALSE,
                              customPar=FALSE,
                              T0means=0,
                              manifestMeans=0,
                              manifestVars=NULL,
                              CoTiMAStanctArgs=NULL,
-                             scaleTime=NULL)
+                             scaleTime=NULL, ...)
 {
+  .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaOptimizeInit")
+
+  # Reject missing/invalid inputs before touching resources or caller state.
+  if (is.null(primaryStudies) || is.null(problemStudy) || is.null(reFits) ||
+      is.null(activeDirectory) || is.null(n.latent)) stop("arguments are missing")
+  if (!is.numeric(reFits) || length(reFits) != 1L || !is.finite(reFits) ||
+      reFits < 1 || reFits != floor(reFits)) stop("reFits must be one positive integer.")
+  if (!is.numeric(randomScaleTime) || length(randomScaleTime) != 2L ||
+      any(!is.finite(randomScaleTime)) || randomScaleTime[2] < randomScaleTime[1])
+    stop("randomScaleTime must contain two finite ordered values.")
 
   #######################################################################################################################
   ################################################# Check Cores To Use ##################################################
   #######################################################################################################################
 
   {
-    if  (length(coresToUse) > 0) {
-      if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-    }
+    coresToUse <- .ctmaResolveCores(coresToUse, backend = "stan",
+      workflow = "ctmaOptimizeInit")$resolved
+    .ctma_restore_threads <- .ctmaLimitThreadEnvironment()
+    on.exit(.ctma_restore_threads(), add = TRUE)
 
-    if (coresToUse >= parallel::detectCores()) {
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
-      coresToUse <- parallel::detectCores() - 1
-      Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash. \n"
-      message(Msg)
-    }
   }
 
-  if (.Platform$OS.type == "unix") {
-    doParallel::registerDoParallel(coresToUse)
-  } else {
-    doParallel::registerDoParallel(1)
-  }
 
   if (!is.null(CoTiMAStanctArgs)) {
     .Deprecated("backendArgs", package = "CoTiMA2",
@@ -107,12 +108,11 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
 
   ########################################################################################################################
 
-  '%dopar%' <- foreach::'%dopar%'
   ErrorMsg <- "arguments are missing"
   if (is.null(primaryStudies) | is.null(problemStudy) | is.null(reFits) | is.null(activeDirectory) | is.null(n.latent)  ) stop(ErrorMsg)
 
   if (randomScaleTime[2] < randomScaleTime[1]) {
-    if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Attention!"))}
+
     ErrorMsg <- "\nrandomScaleTime[1] has to be <= randomScaleTime[2]! \nGood luck for the next try!"
     stop(ErrorMsg)
   }
@@ -152,7 +152,7 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
   #newStudyList
 
   # parallel re-fitting of problem study
-  allfits <- foreach::foreach(i=1:reFits) %dopar% {
+  allfits <- .ctmaOptimizeInitApply(seq_len(reFits), function(i) {
     scaleTime <- round(stats::runif(1, min=randomScaleTime[1], max=randomScaleTime[2]), 2)
     fits <- ctmaInit(primaryStudies=newStudyList,
                      coresToUse = 1, n.latent=n.latent,
@@ -164,8 +164,8 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
                      T0means=T0means,
                      manifestMeans=manifestMeans,
                      manifestVars=manifestVars)
-    return(fits)
-  }
+    fits
+  }, coresToUse)
   all_minus2ll <- lapply(allfits, function(x) x$summary$minus2ll)
   bestFit <- which(unlist(all_minus2ll) == min(unlist(all_minus2ll)))[1]; bestFit
   bestFit <- allfits[[bestFit]]
@@ -178,3 +178,20 @@ ctmaOptimizeInit <- function(primaryStudies=NULL,
   invisible(results)
 }
 
+
+# Use owned workers rather than replacing the user's global foreach backend.
+.ctmaOptimizeInitApply <- function(X, FUN, cores) {
+  worker <- function(i) tryCatch(list(ok = TRUE, value = FUN(i)),
+    error = function(e) list(ok = FALSE, error = conditionMessage(e)))
+  results <- if (.Platform$OS.type == "unix" && cores > 1L)
+    parallel::mclapply(X, worker, mc.cores = cores, mc.cleanup = TRUE,
+      mc.allow.recursive = FALSE) else lapply(X, worker)
+  failed <- which(vapply(results, function(x) !is.list(x) || !isTRUE(x$ok), logical(1)))
+  if (length(failed)) {
+    i <- failed[1L]; result <- results[[i]]
+    detail <- if (is.list(result) && is.character(result$error)) result$error else
+      "worker did not return a result"
+    stop("Initialization retry ", X[i], " failed: ", detail, call. = FALSE)
+  }
+  lapply(results, `[[`, "value")
+}

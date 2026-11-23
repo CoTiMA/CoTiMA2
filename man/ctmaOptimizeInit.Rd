@@ -14,17 +14,18 @@ ctmaOptimizeInit(
   coresToUse = c(1),
   indVarying = FALSE,
   randomScaleTime = c(1, 1),
-  activateRPB = FALSE,
   checkSingleStudyResults = FALSE,
   customPar = FALSE,
   T0means = 0,
   manifestMeans = 0,
   manifestVars = NULL,
   CoTiMAStanctArgs = NULL,
-  scaleTime = NULL
+  scaleTime = NULL, ...
 )
 }
 \arguments{
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
+
 \item{primaryStudies}{list of primary study information created with \code{\link{ctmaPrep}} or \code{\link{ctmaFitToPrep}}}
 
 \item{activeDirectory}{activeDirectory}
@@ -43,7 +44,6 @@ ctmaOptimizeInit(
 
 \item{randomScaleTime}{lower and upper limit of uniform distribution from which timeScale argument for ctmaInit is uniformly shuffled (integer)}
 
-\item{activateRPB}{set to TRUE to receive push messages with 'CoTiMA' notifications on your phone}
 
 \item{checkSingleStudyResults}{displays estimates from single study 'ctsem' models and waits for user input to continue.
 Useful to check estimates before they are saved.}
@@ -73,7 +73,9 @@ ctmaOptimizeInit is like gambling, hoping that at leas one set of starting value
 eneables finding the global optimal fit. On unix-like machines (e.g. MacOS), this could be done in parallel mode if coresToUse > 1.
 }
 \note{
-All but one of multiple cores are used on unix-type machines for parallel fitting
+Unix parallel retries use owned fork workers without registering a
+  global foreach backend; Windows uses sequential retries. Input errors and
+  retry failures leave the caller's foreach registration unchanged.
 
 During fitting, not output is generated. Be patient.
 }

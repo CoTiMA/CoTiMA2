@@ -8,7 +8,7 @@
 An object of class \code{logical} of length 1.
 }
 \usage{
-delta_t228
+data(delta_t228)
 }
 \description{
 delta_t228 example vector

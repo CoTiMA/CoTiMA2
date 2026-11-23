@@ -68,6 +68,8 @@ analysis: it does not refit a hierarchical model and does not shrink study
 estimates toward the population mean.
 }
 \details{
+Native Julia fits with saturated study contrasts and no random effects are supported for DRIFT summaries. Additional moderators are not supported on this path. Use \code{ctmaStudyEstimates()} for ML modes and joint delta-method covariance; the draw summaries here retain their existing meaning.
+
 For posterior draw \eqn{d}, study \eqn{s}, and parameter \eqn{p}, the
 function first calculates the raw study value
 \deqn{\eta_{sp}^{(d)}=\mu_p^{(d)}+\sum_j x_{sj}\beta_{pj}^{(d)}}

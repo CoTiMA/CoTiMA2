@@ -5,10 +5,8 @@
 #' @param ctmaInitFit fit object created with ctmaInti containing the fitted ctsem model of each primary study
 #' @param activeDirectory the directory where to save results (if not specified, it is taken from ctmaInitFit)
 #' @param PETPEESEalpha   # probability level (condition) below which to switch from PET to PEESE (Stanley, 2017, SPPS,p. 582, below Eq. 2; (default p = .10)
-#' @param activateRPB if TRUE, messages (warning, finishs) could be send to smart phone (default = FALSE)
 #' @param digits rounding (default = 4)
 #'
-#' @importFrom RPushbullet pbPost
 #' @importFrom crayon red
 #' @importFrom stats lm pnorm
 #' @importFrom OpenMx vec2diag diag2vec
@@ -21,7 +19,7 @@ ctmaBiGOMX <- function(
   ctmaInitFit=NULL,
   activeDirectory=NULL,
   PETPEESEalpha=.10,
-  activateRPB=FALSE,
+
   digits=4
 )
 
@@ -30,7 +28,7 @@ ctmaBiGOMX <- function(
   { ### CHECKS
     # check if fit object is specified
     if (is.null(ctmaInitFit)){
-      if (activateRPB==TRUE) {RPushbullet::pbPost("note", paste0("CoTiMA (",Sys.time(),")" ), paste0(Sys.info()[[4]], "\n","Data processing stopped.\nYour attention is required."))}
+
       ErrorMsg <- "\nA fitted CoTiMA (\"ctmaInitFit\") object has to be supplied to analyse something. \nGood luck for the next try!"
       stop(ErrorMsg)
     }

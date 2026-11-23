@@ -39,10 +39,6 @@
 #' @param n.latent number of latent variables of the model No default (all = NULL).
 #' @param n.manifest number of manifest variables of the model (if left empty it will assumed to be identical with n.latent).
 #' @param randomIntercepts list of (co-)variances matrices of TIpreds (traits). By default all are = 0.
-#' @param resultName optional character name assigned by the user to the value
-#' returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
-#' is inserted into the printed follow-up command. R functions cannot discover
-#' the left-hand side of an assignment automatically.
 #' @param T0means list of Time 0 mean levels. By default all are = 0.
 #' @param T0var list of Time 0 (co-)variance matrices. No default (all = NULL).
 #' @param TIpreds list of time-independent predictors, e.g., the moderators that were used to create the drift matrices. No default (all = NULL).
@@ -50,6 +46,10 @@
 #' @param tpointTargets list of vectors of tpoints to be selectd (default = burnin:tpoints).
 #' @param useRawData if TRUE (or FALSE) and ctmaExtract is also TRUE, creates rawData (or empcov) objects required for CoTiMA into the environment specified using the argument envir.
 #' @param ctmaExtract if TRUE (default = FALSE) uses ctmaExtract to extract objects required for CoTiMA into the environment specified using the argument envir. Requires the argument useRawData to be set to TRUE or FALSE.
+#' @param resultName optional character name assigned by the user to the value
+#' returned by \code{ctmaGenData()}. When \code{ctmaExtract = FALSE}, this name
+#' is inserted into the printed follow-up command. R functions cannot discover
+#' the left-hand side of an assignment automatically.
 #'
 #' @importFrom parallel detectCores makeCluster
 #' @importFrom ctsem ctDeintervalise ctLongToWide ctIntervalise ctWideToLong ctModel ctStanFit ctExtract ctCollapse
@@ -98,13 +98,13 @@ ctmaGenData <- function(
     n.latent = NULL,
     n.manifest = NULL,
     randomIntercepts = NULL,
-    resultName = NULL,
     T0means = 0,
     T0var = NULL,
     TIpreds = NULL,
     tpoints = 10,
     tpointTargets = NULL,
-    useRawData=NULL
+    useRawData=NULL,
+    resultName = NULL
 )
 {
 
@@ -117,7 +117,7 @@ ctmaGenData <- function(
 
   original.options <- getOption("scipen"); original.options
   options(scipen = 999); options("scipen") # turn scientific notation off.
-  on.exit(options(scipen = original.options))  # scientific notation as user's original
+  on.exit(options(scipen = original.options), add = TRUE)  # scientific notation as user's original
 
   # Check if not yet working arguments are set #####
   {
@@ -425,15 +425,11 @@ ctmaGenData <- function(
       stop(ErrorMsg)
     }
 
-    if  (length(coresToUse) > 0) {
-      if (coresToUse < 1)  coresToUse <- parallel::detectCores() + coresToUse
-    }
+    coresToUse <- .ctmaResolveCores(coresToUse, backend = "stan",
+      workflow = "ctmaGenData")$resolved
+    .ctma_restore_threads <- .ctmaLimitThreadEnvironment()
+    on.exit(.ctma_restore_threads(), add = TRUE)
 
-    if (coresToUse >= parallel::detectCores()) {
-      coresToUse <- parallel::detectCores() - 1
-      Msg <- "No of coresToUsed was set to >= all cores available. Reduced to max. no. of cores - 1 to prevent crash.\n"
-      message(Msg)
-    }
 
 
     skip <- FALSE
@@ -443,7 +439,7 @@ ctmaGenData <- function(
       } else {
         myCluster <- parallel::makeCluster(1)
       }
-      on.exit(parallel::stopCluster(myCluster))
+      on.exit(parallel::stopCluster(myCluster), add = TRUE)
       doParallel::registerDoParallel(myCluster)
       '%dopar%' <- foreach::'%dopar%'
     }
