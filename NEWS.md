@@ -1,3 +1,7 @@
+# CoTiMA2 0.14.70.9001
+
+- Original pooled-model conversion reuses saved long data even when the wide cache is unavailable.
+
 # CoTiMA2 0.14.70
 
 - Added ctmaFitToModel with original, init, fit and prep conversion targets.

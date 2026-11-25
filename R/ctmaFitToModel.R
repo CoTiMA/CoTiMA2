@@ -68,11 +68,20 @@ ctmaFitToModel <- function(ctmaFitObject, model = NULL,
   source <- ctmaFitObject
   if (is.null(source$studyList) && !is.null(source$source_object$studyList))
     source <- source$source_object
-  prep <- ctmaFitToPrep(source, reUseEmprawData, emprawLong)
+  # First recover definitions without requiring a redundant wide-data cache.
+  prep <- ctmaFitToPrep(source, reUseEmprawData = FALSE, emprawLong = FALSE)
   scale <- .ctmaSummaryTimeFactor(ctmaFitObject)
   fits <- ctmaFitObject$studyFitList
   native <- inherits(fits, c("ctJuliaFit", "ctStanFit", "ctmaJuliaFit"))
   is_init <- is.list(fits) && !native && length(fits) == prep$n.studies
+  if (target == "original" && !is_init && !emprawLong) {
+    # Exact pooled refits use the original long data below. They never synthesize
+    # observations, even if a historical fit omitted its wide-data cache.
+    prep$emprawList <- source$emprawList
+    if (is.null(prep$emprawList)) prep$emprawList <- source$source_object$emprawList
+  } else {
+    prep <- ctmaFitToPrep(source, reUseEmprawData, emprawLong)
+  }
   kind <- if (target == "original") if (is_init) "init" else "fit" else target
   get_model <- function(f) {
     m <- f$ctstanmodelbase
