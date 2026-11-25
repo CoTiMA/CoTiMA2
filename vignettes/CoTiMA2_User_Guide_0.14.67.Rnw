@@ -64,11 +64,11 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.67\par}
+\vspace{1.0cm}{Version 0.14.70\par}
 
 \vspace{1.0cm}{Christian Dormann\par}
 
-{November 13, 2026\par}
+{November 25, 2026\par}
 
 \vfill{Chair of Business Education \& Management, Johannes Gutenberg University\par}
 
@@ -5043,5 +5043,83 @@ study variances. Full pooling also uses the covariances between
 studies. The reported Wald intervals treat estimated heterogeneity
 as fixed.
 \end{description}
+
+
+\clearpage
+\section{Reusing a fit with ctmaFitToModel}
+The converter accepts a complete initialization or pooled CoTiMA fit.
+Its target is case-insensitive. Omit \code{model} to retain the fitted
+specification. Use \code{model = "init"} for separate standard models,
+\code{model = "fit"} for a pooled standard model, or
+\code{model = "prep"} for the ctmaFitToPrep output. The longer names
+\code{"ctmaInit"}, \code{"ctmaFit"}, and \code{"ctmaPrep"} also work.
+
+\begin{verbatim}
+m <- ctmaFitToModel(f)
+f_new <- ctmaFit(model = m, backend = "ctsemjulia",
+                 optimize = TRUE, priors = FALSE, coresToUse = 4L)
+
+m_init <- ctmaFitToModel(f, model = "INIT", emprawLong = TRUE)
+i_new <- ctmaInit(model = m_init, backend = "ctsemjulia")
+# Explicit settings override inherited defaults:
+i_ri <- ctmaInit(model = m_init, indVarying = "MANIFEST",
+                backend = "ctsemjulia")
+
+m_fit <- ctmaFitToModel(i_new, model = "ctmaFit")
+f_default <- ctmaFit(model = m_fit, backend = "stan")
+studies <- ctmaFitToModel(f, model = "PREP")
+\end{verbatim}
+
+The original-model target keeps the separate-study or pooled structure.
+Change that structure explicitly with the init or fit target. Standard
+conversion resets original constraints, study moderators and study random
+effects, and records the changes in \code{m\$adjustments}. For separate
+standard models, two-wave studies produce an informational message about
+person-level random intercepts. Explicit \code{indVarying} restores the
+requested setting; identification warnings still apply.
+
+Cached empirical data are reused by default. Missing caches cause a clear
+error. Setting \code{reUseEmprawData = FALSE} permits separate-study
+regeneration from covariance matrices and sample sizes. This can generate
+different data and therefore different estimates. The pooled constructor requires empirical wide data. Prepared-study input
+generates these data once during conversion using ctmaInit(fit=FALSE),
+without estimating the primaries. Set the R seed before conversion to make
+regeneration reproducible. \code{emprawLong = TRUE} additionally returns
+cached long data in their original time units.
+
+Stored pooled long times are divided by the source time factor. The
+requested factor is applied once when refitting. Its value is inherited
+unless explicitly overridden, including an explicit NULL to select the
+ordinary unit-time default. Keep the original units of the time intervals
+when interpreting priors. Old raw starting vectors are discarded. Changing
+backends can require different prior or sampler controls.
+
+The model object stores \code{timeScale}, \code{argumentList}, and
+\code{primaryStudies}. For preserved pooled models, explicit
+\code{indVarying} and \code{indVaryingT0} can update person-level variation.
+Other pooled construction changes require the standard fit target so
+constraints are not silently reconstructed.
+
+\clearpage
+\subsection{Directly from prepared studies}
+\begin{verbatim}
+set.seed(20261125)
+m <- ctmaFitToModel(studyList, model = "FIT", emprawLong = TRUE)
+f <- ctmaFit(model = m, backend = "ctsemjulia", coresToUse = 4L)
+\end{verbatim}
+The converter infers the manifest dimension from the prepared covariance
+matrices and the number of occasions. Ambiguous dimensions produce an error.
+The empirical data are retained in the model object, so repeated fitting of
+that object uses the same data.
+
+\subsection{WEC-centred baseline drift matrix}
+The WEC-centred baseline drift matrix is evaluated at zero study contrasts.
+Weighted effect coding centres deviations on the raw parameter scale before
+transformation. It generally differs from the weighted average of the
+transformed study-specific drift matrices. With \code{WECnt = FALSE}, label
+it ``WEC-centred baseline drift matrix (sample-size weighting)''. With
+\code{WECnt = TRUE}, use ``WEC-centred baseline drift matrix
+(person--occasion weighting)''. The latter counts retained long-data rows.
+With complete data this is sample size times measurement occasions.
 
 \end{document}

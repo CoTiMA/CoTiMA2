@@ -80,8 +80,8 @@
 #' @param transfMod more general option to change moderator values. A vector as long as number of moderators analyzed (e.g., c("mean(x)", "x - median(x)"))
 #' @param useSampleFraction to speed up debugging. Provided as fraction (e.g., 1/10).
 #' @param verbose integer from 0 to 2. Higher values print more information during model fit – for debugging
-#' @param WEC (default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
-#' @param WECnt (default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.
+#' @param WEC (default = FALSE) Use weighted effect coding for the study indicators. The drift matrix evaluated at zero study contrasts is the WEC-centred baseline drift matrix. With WECnt = FALSE, it uses sample-size weighting. Study contrasts are centred on the raw parameter scale before transformation to the drift scale; the transformed baseline generally differs from the weighted average of the study-specific drift matrices.
+#' @param WECnt (default = TRUE) When weighted effect coding is used, use person--occasion weighting for the WEC-centred baseline drift matrix. Weights are based on retained person--occasion rows; with complete data they correspond to sample size times number of measurement occasions.
 #' @param studyCoding Coding of the primary-study indicators. The default,
 #'   \code{"dummy"}, uses one reference study. \code{"weighted"} uses
 #'   sample-size weighted effect coding and defines the population coefficient
@@ -99,6 +99,20 @@
 #'   \code{"none"} (joint), \code{"laplace"}, or \code{"augmented"}. This route
 #'   requires the compatible ctsem API detected by CoTiMA2 at run time.
 #' @param compute Optional execution plan from \code{ctmaCompute()}.
+#' @param model A reusable model from \code{ctmaFitToModel()}, or an existing pooled model, supplied as a list with
+#'   \code{data} (the pooled long-format data) and \code{ctModel} (the ctsem
+#'   model specification). \code{argumentList} retains original settings such
+#'   as stationarity and initial-time handling; \code{studyList} retains study
+#'   metadata. See the example for constructing this list from an old fit.
+#'   Used instead of \code{ctmaInitFit} with any backend. Construction arguments
+#'   such as \code{indVarying}, \code{scaleTime}, and moderator selections must
+#'   not also be supplied: the stored model and data already encode them.
+#'   Stan and bundled Julia study effects automatically use \code{ctmaRePrep()}
+#'   and \code{ctmaReFit()}; additional controls use \code{backendArgs$rePrep}
+#'   and \code{backendArgs$reFit}. With \code{fit=FALSE}, preparation returns
+#'   without estimation. Bundled Julia RE supports only independent,
+#'   noncentered Bayesian effects and needs a compatible fitted ctsem object
+#'   in \code{model$initialFit}. Existing standalone RE functions remain available.
 #' @param backendArgs named backend-specific controls. With the default Stan
 #'   backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 #'   completed from \code{ctmaBackendDefaults("stan")}. With the Julia
@@ -110,6 +124,9 @@
 #'   to Bayesian estimation. Julia-specific controls in \code{backendArgs}
 #'   remain the preferred way to configure the engine. For
 #'   \code{backend = "ctsemjulia"}, select study-level random effects with
+#'   \code{study_covariance="independent"} fixes between-study covariances
+#'   to zero; the default \code{"full"} retains correlated study effects.
+#'   This leaves the person-level covariance structure unchanged. Select
 #'   \code{study_random_effects} (matrix names such as \code{"CINT"} or
 #'   \code{"DRIFT"}) or exact raw \code{study_parameters}. Optional
 #'   \code{subject_random_effects} and \code{subject_parameters} add
@@ -248,6 +265,49 @@
 #'
 #'   Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.
 #' @param ... Reserved. Unknown arguments are rejected with a migration hint where applicable.
+#' @examples
+#' \dontrun{
+#' # f is an existing pooled fit returned by ctmaFit().
+#' # Reuse its data, model, settings, and study metadata:
+#' base_model <- list(
+#'   data = f$data,
+#'   ctModel = f$studyFitList$ctstanmodelbase,
+#'   argumentList = f$argumentList,
+#'   studyList = f$studyList
+#' )
+#'
+#' # Prepare a Bayesian model with four independent study-level drift effects.
+#' # Person-level variation already specified in f is retained.
+#' re_args <- list(
+#'   study_random_effects = "DRIFT",
+#'   study_covariance = "independent",
+#'   study_dummy_ti = base_model$ctModel$TIpredNames[
+#'     seq_len(length(f$studyList) - 1L)]
+#' )
+#' check <- ctmaFit(
+#'   model = base_model, backend = "stan",
+#'   optimize = FALSE, priors = TRUE,
+#'   backendArgs = re_args, fit = FALSE
+#' )
+#' # Fit directly, with preparation handled internally:
+#' result <- ctmaFit(
+#'   model = base_model, backend = "stan",
+#'   optimize = FALSE, priors = TRUE, chains = 4, iter = 2000,
+#'   backendArgs = re_args
+#' )
+#'
+#' # Native ctsem Julia uses the same model and selections:
+#' re_args$intoverpop <- "none"
+#' re_args$sampleControl <- list(sampler = "nuts", seed = 1234)
+#' result_native <- ctmaFit(
+#'   model = base_model, backend = "ctsemjulia",
+#'   optimize = FALSE, priors = TRUE, chains = 4, iter = 2000,
+#'   backendArgs = re_args
+#' )
+#' # Bundled Julia is a different engine: independent/noncentered Bayes only.
+#' # It additionally needs base_model$initialFit = a compatible fitted ctsem
+#' # pooled object. Do not pass native sampleControl/intoverpop to that engine.
+#' }
 ctmaFit <- function(
 
     activeDirectory=NULL,
@@ -308,9 +368,26 @@ ctmaFit <- function(
     stationary=FALSE,
     determinedDiffusions=FALSE,
     stationaryVariance=NULL,
-    compute=NULL, ...)
+    compute=NULL, model=NULL, ...)
 {  # begin function definition (until end of file)
   .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaFit")
+  if (inherits(model, "CoTiMAModel")) return(.ctmaRunConvertedModel(
+    model, match.call(expand.dots = TRUE), parent.frame(), "fit"))
+  if (!is.null(model)) return(.ctmaFitExistingModel(
+    model, match.call(expand.dots = FALSE), backend, backendArgs,
+    optimize, priors, fit, coresToUse, chains, iter, inits, verbose))
+  re_backend_args <- NULL
+  re_selectors <- c("study_random_effects", "study_parameters", "reDRIFT", "reDIFFUSION", "reT0VAR")
+  if (!identical(tolower(backend[1L]), "ctsemjulia") &&
+      is.list(backendArgs) && any(vapply(backendArgs[intersect(names(backendArgs),re_selectors)],
+        function(x) length(x) > 0L && any(as.character(x) %in% c("TRUE","1") |
+          !as.character(x) %in% c("FALSE","0","")), logical(1)))) {
+    re_backend_args <- backendArgs
+    # These controls are consumed by the hierarchical adapter after construction.
+    backendArgs <- list()
+    if (!is.null(re_backend_args$stationary)) backendArgs$stationary <- re_backend_args$stationary
+    if (!is.null(compute)) stop("Study-RE fitting on this backend does not support compute plans.",call.=FALSE)
+  }
   .ctma_job <- .ctmaComputeEntry(compute, "ctmaFit", match.call(), parent.frame(), backend)
   if (!is.null(.ctma_job)) return(.ctma_job)
   backendArgs <- .ctmaComputeBind(compute, backend, backendArgs, "ctmaFit")
@@ -390,7 +467,7 @@ ctmaFit <- function(
   }
   julia_fit_requested <- identical(backend, "julia") && requested_fit
   ctsemjulia_fit_requested <- identical(backend, "ctsemjulia") && requested_fit
-  backend_fit_requested <- julia_fit_requested || ctsemjulia_fit_requested
+  backend_fit_requested <- julia_fit_requested || ctsemjulia_fit_requested || !is.null(re_backend_args)
   if (backend_fit_requested) fit <- FALSE
 
   catchWarnings <- FALSE
@@ -2576,6 +2653,10 @@ ctmaFit <- function(
 
     results$excelSheets <- wb
   } #end if (fit == TRUE) {
+
+  if (!is.null(re_backend_args)) return(invisible(.ctmaFitExistingOtherBackend(
+    results, NULL, backend, re_backend_args, optimize, priors, requested_fit,
+    coresToUse, chains, iter, inits, verbose, cotima_call)))
 
   if (julia_fit_requested) {
     if (!is.null(inits)) resolved_backend_args$inits <- inits

@@ -511,7 +511,10 @@
 
 .ctmaFitCtsemJuliaBackend <- function(
     setup, backend_args, cores, cotima_call = NULL,
-    inits = NULL, priors = FALSE, verbose = 0, estimation = "ML", compute = NULL) {
+    inits = NULL, priors = FALSE, verbose = 0, estimation = "ML", compute = NULL, fit = TRUE) {
+  study_covariance <- backend_args$study_covariance
+  if (is.null(study_covariance)) study_covariance <- "full"
+  study_covariance <- match.arg(study_covariance, c("full", "independent"))
   prepare_names <- c(
     "study_id", "study_id_ti", "study_dummy_ti", "reDRIFT",
     "reDIFFUSION", "reT0VAR", "subject_random_effects",
@@ -519,6 +522,8 @@
     "remove_study_fixed_effects", "sdscale_study"
   )
   fit_args <- list()
+  if (!isTRUE(fit)) fit_args$fit <- FALSE
+  fit_args$sameInitialTimes <- isTRUE(setup$argumentList$sameInitialTimes)
   fit_args$inits <- if (!is.null(backend_args$inits)) {
     backend_args$inits
   } else inits
@@ -561,17 +566,34 @@
       .ctmaPrepareCtsemJuliaLaplace,
       c(list(object = setup), prepare_args)
     )
+    if (identical(study_covariance, "independent")) {
+      if (!length(prepared$selected_parameters)) stop(
+        "study_covariance='independent' requires study-level random effects.", call. = FALSE)
+      if (!"popblocks" %in% names(formals(ctsem::ctFit))) stop(
+        "Independent study effects require a ctsem version supporting popblocks.", call. = FALSE)
+      fit_args$popblocks <- list(study = lapply(prepared$selected_parameters,
+        function(parameter) list(rank = 1L, effects = parameter)))
+    }
     result <- do.call(
       .ctmaFitCtsemJuliaLaplace,
       c(list(prepared = prepared, cores = cores), fit_args)
     )
   } else {
+    if (identical(study_covariance, "independent")) stop(
+      "study_covariance='independent' requires study-level random effects.", call. = FALSE)
     prepared <- NULL
     result <- do.call(
       .ctmaFitCtsemJuliaDirect,
       c(list(setup = setup, cores = cores), fit_args)
     )
   }
+  if (!isTRUE(fit)) {
+    result$source_object <- setup
+    result$ctsemjulia_prepared <- prepared
+    result$study_covariance <- study_covariance
+    return(result)
+  }
+  result$study_covariance <- study_covariance
   result$source_object <- setup
   result$ctsemjulia_prepared <- prepared
   result$ctsemjulia_mode <- .ctmaCtsemJuliaMode(

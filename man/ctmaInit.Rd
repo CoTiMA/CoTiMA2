@@ -47,10 +47,11 @@ ctmaInit(
   stationary = FALSE,
   determinedDiffusions = FALSE,
   stationaryVariance = NULL,
-  compute = NULL, ...
+  compute = NULL, model = NULL, ...
 )
 }
 \arguments{
+\item{model}{A reusable model from ctmaFitToModel. Explicit arguments override inherited settings.}
 \item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
 
 \item{compute}{Optional execution plan from \code{\link{ctmaCompute}}.}

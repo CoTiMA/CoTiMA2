@@ -1,3 +1,11 @@
+# CoTiMA2 0.14.70
+
+- Added ctmaFitToModel with original, init, fit and prep conversion targets.
+- Added ctmaInit(model=) and reusable-model support in ctmaFit(model=).
+- Original long-data times are reconstructed and the requested time factor is applied once.
+- Explicit arguments override inherited settings, including NULL and FALSE.
+- Clarified WEC-centred baseline drift matrix terminology.
+
 # CoTiMA2 0.14.69.9001
 
 - Fix ctmaRePrep compatibility with ctsem 4 additive T0 covariance and its Julia-default setup routing. Preserve legacy Stan templates.

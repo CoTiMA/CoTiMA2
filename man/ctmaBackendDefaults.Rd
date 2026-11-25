@@ -44,6 +44,8 @@ Julia defaults are grouped by the public
 workflow and estimation method that uses them.
 }
 \details{
+For native Julia study effects, \code{study_covariance="independent"} fixes between-study covariances to zero; \code{"full"} is the default.
+
 Model-construction controls such as time scaling and TI-predictor scaling
 remain top-level CoTiMA arguments. \code{backendArgs} is intended only for
 controls of the selected estimation engine.

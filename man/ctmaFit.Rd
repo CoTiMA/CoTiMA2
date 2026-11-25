@@ -186,9 +186,9 @@ separate-study warning.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit – for debugging}
 
-\item{WEC}{(default = FALSE) Experimental. Uses sample-size weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
+\item{WEC}{Use weighted effect coding for the study indicators. The drift matrix evaluated at zero study contrasts is the WEC-centred baseline drift matrix. With WECnt = FALSE, it uses sample-size weighting. Study contrasts are centred on the raw parameter scale before transformation to the drift scale; the transformed baseline generally differs from the weighted average of the study-specific drift matrices.}
 
-\item{WECnt}{(default = TRUE) Experimental. Applies only if WEC = TRUE. Uses sample-size x time points weighted effect coding of TIpred representing the dummies of the primary studies. Returns drift matrices for all primary studies.}
+\item{WECnt}{When weighted effect coding is used, use person--occasion weighting for the WEC-centred baseline drift matrix. Weights are based on retained person--occasion rows; with complete data they correspond to sample size times number of measurement occasions.}
 
 \item{studyCoding}{Coding of the primary-study indicators. The default,
 \code{"dummy"}, uses one reference study. \code{"weighted"} uses
@@ -209,7 +209,21 @@ Set \code{backendArgs$intoverpop} to \code{"auto"} (default),
 \code{"none"} (joint), \code{"laplace"}, or \code{"augmented"}. This route
 requires the compatible ctsem API detected by CoTiMA2 at run time.}
 
-\item{backendArgs}{named backend-specific controls. With the default Stan
+\item{model}{Optional list describing an existing pooled model:
+\code{data} contains pooled long-format data; \code{ctModel} contains the ctsem
+model specification; \code{argumentList} retains original settings such as
+stationarity and initial-time handling; \code{studyList} retains study metadata.
+See the example for construction from an old fit. Used instead of
+\code{ctmaInitFit}, with any backend. Do not additionally supply model-construction
+arguments such as \code{indVarying}, \code{scaleTime}, or moderator selections.
+Stan and bundled Julia study effects automatically call \code{ctmaRePrep} and
+\code{ctmaReFit}; extra controls use \code{backendArgs$rePrep} and
+\code{backendArgs$reFit}. \code{fit=FALSE} prepares without estimation.
+Bundled Julia requires independent, noncentered Bayesian effects and a compatible
+fitted ctsem object in \code{model$initialFit}. Optimized Stan RE fits are
+joint/conditional ML or MAP, not marginal ML. Standalone RE functions remain available.}
+
+\item{backendArgs}{For native Julia, \code{study_covariance="independent"} fixes study-effect covariances to zero; the default \code{"full"} retains correlated effects. Person-level variation is retained. named backend-specific controls. With the default Stan
 backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 completed from \code{ctmaBackendDefaults("stan")}. With the Julia
 backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
@@ -323,6 +337,49 @@ the same type, either "cont" or "cat"), and possible cluster (e.g., countries wh
 \code{"quadrature"} explicitly refines an optimized native Laplace fit with random effects. It is not a posterior sampler. Support requires a compatible recent ctsem version.
 }
 \examples{
+\dontrun{
+# f is an existing pooled fit returned by ctmaFit().
+# Reuse its data, model, settings, and study metadata:
+base_model <- list(
+  data = f$data,
+  ctModel = f$studyFitList$ctstanmodelbase,
+  argumentList = f$argumentList,
+  studyList = f$studyList
+)
+
+# Prepare a Bayesian model with four independent study-level drift effects.
+# Person-level variation already specified in f is retained.
+re_args <- list(
+  study_random_effects = "DRIFT",
+  study_covariance = "independent",
+  study_dummy_ti = base_model$ctModel$TIpredNames[
+    seq_len(length(f$studyList) - 1L)]
+)
+check <- ctmaFit(
+  model = base_model, backend = "stan",
+  optimize = FALSE, priors = TRUE,
+  backendArgs = re_args, fit = FALSE
+)
+# Fit directly, with preparation handled internally:
+result <- ctmaFit(
+  model = base_model, backend = "stan",
+  optimize = FALSE, priors = TRUE, chains = 4, iter = 2000,
+  backendArgs = re_args
+)
+
+# Native ctsem Julia uses the same model and selections:
+re_args$intoverpop <- "none"
+re_args$sampleControl <- list(sampler = "nuts", seed = 1234)
+result_native <- ctmaFit(
+  model = base_model, backend = "ctsemjulia",
+  optimize = FALSE, priors = TRUE, chains = 4, iter = 2000,
+  backendArgs = re_args
+)
+# Bundled Julia is a different engine: independent/noncentered Bayes only.
+# It additionally needs base_model$initialFit = a compatible fitted ctsem
+# pooled object. Do not pass native sampleControl/intoverpop to that engine.
+}
+
 \dontrun{
 # Example 1. Fit a CoTiMA to all primary studies previously fitted one by one
 # with the fits assigned to CoTiMAInitFit_6

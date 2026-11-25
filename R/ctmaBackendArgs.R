@@ -116,6 +116,7 @@ ctmaBackendDefaults <- function(
       study_id_ti = NULL,
       study_dummy_ti = NULL,
       study_random_effects = NULL,
+      study_covariance = "full",
       subject_random_effects = NULL,
       study_parameters = NULL,
       subject_parameters = NULL,

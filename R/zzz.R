@@ -1,5 +1,5 @@
 .ctma_package_name <- "CoTiMA2"
-.ctma_package_version <- "0.14.69"
+.ctma_package_version <- "0.14.69.9003"
 .ctma_call_state <- new.env(parent = emptyenv())
 .ctma_call_state$depth <- 0L
 

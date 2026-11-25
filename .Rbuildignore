@@ -6,4 +6,5 @@
 ^Meta$
 ^docs$
 ^tools$
-^inst/doc$
+
+^releases$

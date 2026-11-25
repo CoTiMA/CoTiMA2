@@ -2,6 +2,7 @@
 #'
 #' @description Fits ctsem models to each primary study in the supplied list of primary studies prepared by \code{\link{ctmaPrep}}.
 #'
+#' @param model Optional reusable model from \code{ctmaFitToModel()}. Explicit arguments override inherited settings.
 #' @param activeDirectory defines another active directory than the one used in \code{\link{ctmaPrep}}
 #' @param binaries which manifest is a binary. Still experimental
 #' @param chains number of chains to sample, during HMC or post-optimization importance sampling.
@@ -256,10 +257,12 @@ ctmaInit <- function(
     stationary=FALSE,
     determinedDiffusions=FALSE,
     stationaryVariance=NULL,
-    compute=NULL, ...)
+    compute=NULL, model=NULL, ...)
 
 {  # begin function definition (until end of file)
   .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaInit")
+  if (!is.null(model)) return(.ctmaRunConvertedModel(model,
+    match.call(expand.dots = TRUE), parent.frame(), "init"))
   .ctma_job <- .ctmaComputeEntry(compute, "ctmaInit", match.call(), parent.frame(), backend)
   if (!is.null(.ctma_job)) return(.ctma_job)
   backendArgs <- .ctmaComputeBind(compute, backend, backendArgs, "ctmaInit")
@@ -1781,6 +1784,29 @@ ctmaInit <- function(
         currentModel <- .ctma_restore_manifesttype(currentModel, binaries)
         currentModel <- .ctmaApplyT0MeanVariation(currentModel, indVaryingT0)
         currentModel <- .ctmaDeterminedDiffusionModel(currentModel, determinedDiffusions, stationaryVariance = stationaryVariance)
+
+        saved_models <- attr(primaryStudies, "ctma_models")
+        if (!is.null(saved_models)) {
+          saved <- saved_models[[i]]
+          overrides <- attr(primaryStudies, "ctma_model_overrides")
+          columns <- character()
+          if ("indVarying" %in% overrides) columns <- c(columns, "indvarying")
+          if ("indVaryingT0" %in% overrides) columns <- c(columns, "indvarying")
+          families <- c(manifestMeans="MANIFESTMEANS", manifestVars="MANIFESTVAR",
+            cint="CINT", T0means="T0MEANS", T0var="T0VAR", drift="DRIFT",
+            diff="DIFFUSION", lambda="LAMBDA")
+          changed <- unname(families[intersect(names(families), overrides)])
+          key <- function(p) paste(p$matrix,p$row,p$col,sep="/")
+          match_rows <- match(key(saved$pars), key(currentModel$pars))
+          if (length(columns) || length(changed)) {
+            if (anyNA(match_rows)) stop("The requested override changes the model dimensions.",call.=FALSE)
+            for (column in unique(columns)) saved$pars[[column]] <- currentModel$pars[[column]][match_rows]
+            rows <- which(saved$pars$matrix %in% changed)
+            for (column in intersect(c("param","value","transform"),names(saved$pars)))
+              saved$pars[rows,column] <- currentModel$pars[match_rows[rows],column]
+          }
+          currentModel <- saved
+        }
 
         wave_note <- .ctmaInitWaveDiagnostic(emprawLong[[i]], currentModel, randomIntercepts)
         if (!is.null(wave_note)) {
