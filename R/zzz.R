@@ -7,7 +7,7 @@
   if (.ctma_call_state$depth == 0L) {
     .ctma_print_message(paste0(
       "This is the experimental CoTiMA 2.0 package (version ",
-      utils::packageVersion(.ctma_package_name), ")."
+      getNamespaceVersion(.ctma_package_name), ")."
     ))
   }
   invisible(NULL)
@@ -44,6 +44,6 @@
 .onAttach <- function(libname, pkgname) {
   packageStartupMessage(.ctmaFormatNote(paste0(
     "This is the experimental CoTiMA 2.0 package (version ",
-    utils::packageVersion(pkgname, lib.loc = libname), ")."
+    getNamespaceVersion(pkgname), ")."
   )))
 }

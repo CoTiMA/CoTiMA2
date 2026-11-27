@@ -284,8 +284,11 @@ ctmaFitDiagnostics <- function(object, print = TRUE) {
 }
 
 #' @export
-summary.ctmaCtsemJuliaFit <- function(object, ...) {
+summary.ctmaCtsemJuliaFit <- function(object, ..., pointEstimate = NULL) {
   answer <- NextMethod("summary")
+  if(is.null(pointEstimate)) pointEstimate <- object$argumentList$pointEstimate
+  if(is.null(pointEstimate)) pointEstimate <- "auto"
+  answer <- .ctmaPointSummary(answer,object,pointEstimate)
   attr(answer, "cotima_fit_checks") <- .ctmaFitChecks(object)
   class(answer) <- unique(c("summary.ctmaCtsemJuliaFit", class(answer)))
   answer
@@ -294,6 +297,7 @@ summary.ctmaCtsemJuliaFit <- function(object, ...) {
 #' @export
 print.summary.ctmaCtsemJuliaFit <- function(x, ...) {
   NextMethod("print")
+  .ctmaPrintPointNote(x)
   .ctmaPrintFitChecks(attr(x, "cotima_fit_checks"))
   invisible(x)
 }

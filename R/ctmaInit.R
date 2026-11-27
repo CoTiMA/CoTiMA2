@@ -3,6 +3,7 @@
 #' @description Fits ctsem models to each primary study in the supplied list of primary studies prepared by \code{\link{ctmaPrep}}.
 #'
 #' @param model Optional reusable model from \code{ctmaFitToModel()}. Explicit arguments override inherited settings.
+#' @param pointEstimate Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.
 #' @param activeDirectory defines another active directory than the one used in \code{\link{ctmaPrep}}
 #' @param binaries which manifest is a binary. Still experimental
 #' @param chains number of chains to sample, during HMC or post-optimization importance sampling.
@@ -257,9 +258,10 @@ ctmaInit <- function(
     stationary=FALSE,
     determinedDiffusions=FALSE,
     stationaryVariance=NULL,
-    compute=NULL, model=NULL, ...)
+    compute=NULL, model=NULL, pointEstimate="auto", ...)
 
 {  # begin function definition (until end of file)
+  pointEstimate <- .ctmaPointChoice(pointEstimate)
   .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaInit")
   if (!is.null(model)) return(.ctmaRunConvertedModel(model,
     match.call(expand.dots = TRUE), parent.frame(), "init"))
@@ -1215,8 +1217,12 @@ ctmaInit <- function(
       }
 
       if (fit == TRUE) {
+        studyFit[[i]]$argumentList$pointEstimate <- pointEstimate
         studyFit[[i]]$resultsSummary <- .ctmaInitMaskNativeSummary(studyFit[[i]])
-        resultsSummary <- studyFit[[i]]$resultsSummary; resultsSummary
+        resultsSummary <- .ctmaPointSummary(studyFit[[i]]$resultsSummary,
+          studyFit[[i]], pointEstimate, optimize, priors)
+        point_column <- .ctmaPointColumn(resultsSummary$parmatrices,pointEstimate,optimize)
+        studyFit[[i]]$resultsSummary <- resultsSummary
         if (!(exists("currenModel"))) currentModel <- studyFit[[i]]$ctstanmodelbase
 
         studyFit_Minus2LogLikelihood[[i]] <- -2 * resultsSummary$loglik
@@ -1224,10 +1230,10 @@ ctmaInit <- function(
 
         # Subsequent if ... else ... became necessary with ctsem 3.4.1 where the namens of the rows (rownames) were moved into a column named "matrix"
         tmp <- grep("toV", rownames(resultsSummary$popmeans)); tmp
-        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", "Mean"]) == 0)) {
-          model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", "Mean"], n.latent)); model_Drift_Coef[[i]]
+        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", point_column]) == 0)) {
+          model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DRIFT", point_column], n.latent)); model_Drift_Coef[[i]]
         } else { # new version of ctsem
-          model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", "Mean"], n.latent)); model_Drift_Coef[[i]]
+          model_Drift_Coef[[i]] <- c(matrix(resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DRIFT", point_column], n.latent)); model_Drift_Coef[[i]]
         }
         names(model_Drift_Coef[[i]]) <- driftFullNames; model_Drift_Coef[[i]]
 
@@ -1265,12 +1271,12 @@ ctmaInit <- function(
         names(model_Drift_CI[[i]]) <- tmp3; model_Drift_CI[[i]]
 
         tmp <- grep("diff", rownames(resultsSummary$popmeans)); tmp
-        #(!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", "Mean"]) == 0))
-        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", "Mean"]) == 0)) {
-          model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", "Mean"])
+        #(!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", point_column]) == 0))
+        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", point_column]) == 0)) {
+          model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "DIFFUSIONcov", point_column])
           names(model_Diffusion_Coef[[i]]) <- rownames(resultsSummary$popmeans)[tmp]
         } else {
-          model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "Mean"]); model_Diffusion_Coef[[i]]
+          model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", point_column]); model_Diffusion_Coef[[i]]
           # CHD 3.3.2026
           #(randomInterceptsSettings != FALSE)
           if (randomInterceptsSettings != FALSE) {
@@ -1278,7 +1284,7 @@ ctmaInit <- function(
             model_Diffusion_Coef[[i]] <- c(tmp9[1:n.latent, 1:n.latent]); model_Diffusion_Coef[[i]]
             names(model_Diffusion_Coef[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[grep("diff_", rownames(resultsSummary$popmeans))]))
           } else {
-            model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", "Mean"])
+            model_Diffusion_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "DIFFUSIONcov", point_column])
             names(model_Diffusion_Coef[[i]]) <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]))
           }
         }
@@ -1342,13 +1348,13 @@ ctmaInit <- function(
           T0covNames <- c(OpenMx::vech2full(rownames(resultsSummary$popmeans)[tmp]))
         }
 
-        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "T0VAR", "Mean"])) == 0 ) {
-          model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "T0VAR", "Mean"])
+        if (!(length(resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "T0VAR", point_column])) == 0 ) {
+          model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[rownames(resultsSummary$parmatrices) == "T0VAR", point_column])
           names(model_T0var_Coef[[i]]) <- rownames(resultsSummary$popmeans)[tmp]; model_T0var_Coef[[i]]
         }  else {
-          model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "Mean"]); model_T0var_Coef[[i]]
+          model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", point_column]); model_T0var_Coef[[i]]
           if (randomInterceptsSettings != FALSE) {
-            model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "Mean"]);  model_T0var_Coef[[i]]
+            model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", point_column]);  model_T0var_Coef[[i]]
             model_T0var_Coef[[i]] <- c(matrix(model_T0var_Coef[[i]], n.latent * 2L, n.latent * 2L)[1:n.latent, 1:n.latent]); model_T0var_Coef[[i]]
             names(model_T0var_Coef[[i]]) <- T0covNames
           } else {
@@ -1359,7 +1365,7 @@ ctmaInit <- function(
             }
           }
           #if ( (randomIntercepts == TRUE) | (randomIntercepts == "MANIFEST") )  {
-          #  model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", "Mean"]);  model_T0var_Coef[[i]]
+          #  model_T0var_Coef[[i]] <- (resultsSummary$parmatrices[resultsSummary$parmatrices[, "matrix"] == "T0cov", point_column]);  model_T0var_Coef[[i]]
           #  model_T0var_Coef[[i]] <- c(matrix(model_T0var_Coef[[i]], n.latent^2, n.latent^2)[1:n.latent, 1:n.latent]); model_T0var_Coef[[i]]
           #  names(model_T0var_Coef[[i]]) <- T0covNames
           #}
@@ -2440,6 +2446,14 @@ ctmaInit <- function(
     #}
   }
   class(results) <- "CoTiMAFit"
+  results$argumentList$pointEstimate <- pointEstimate
+  if (isTRUE(fit)) {
+    results$summary$parameterTables <- lapply(studyFit,function(f) f$resultsSummary$parmatrices)
+    results$summary$pointEstimateNote <- .ctmaPointNote(
+      .ctmaPointMethod(list(),optimize,priors),
+      any(vapply(results$summary$parameterTables,function(t) "mode" %in% colnames(t),logical(1))),
+      pointEstimate=="mean")
+  }
 
   ### prepare Excel Workbook with several sheets ################################################################
   if (fit == TRUE) {

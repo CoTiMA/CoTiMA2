@@ -8,6 +8,7 @@
 #' the same type, either "cont" or "cat"), and possible cluster (e.g., countries where primary studies were conducted).
 #'
 #' \code{"quadrature"} explicitly refines an optimized native Laplace fit with random effects. It is not a posterior sampler. Support requires a compatible recent ctsem version.
+#' @param pointEstimate Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.
 #' @param activeDirectory  defines another active directory than the one used in ctmaInitFit
 #' @param allInvModel estimates a model with all parameters invariant (DRIFT, DIFFUSION, T0VAR) if set TRUE (defautl = FALSE)
 #' @param binaries which manifest is a binary. Still experimental
@@ -368,14 +369,17 @@ ctmaFit <- function(
     stationary=FALSE,
     determinedDiffusions=FALSE,
     stationaryVariance=NULL,
-    compute=NULL, model=NULL, ...)
+    compute=NULL, model=NULL, pointEstimate="auto", ...)
 {  # begin function definition (until end of file)
+  if (!is.null(model) && missing(pointEstimate) && !is.null(model$argumentList$pointEstimate))
+    pointEstimate <- model$argumentList$pointEstimate
+  pointEstimate <- .ctmaPointChoice(pointEstimate)
   .ctmaCheckRetiredArguments(match.call(expand.dots = FALSE), "ctmaFit")
   if (inherits(model, "CoTiMAModel")) return(.ctmaRunConvertedModel(
     model, match.call(expand.dots = TRUE), parent.frame(), "fit"))
   if (!is.null(model)) return(.ctmaFitExistingModel(
     model, match.call(expand.dots = FALSE), backend, backendArgs,
-    optimize, priors, fit, coresToUse, chains, iter, inits, verbose))
+    optimize, priors, fit, coresToUse, chains, iter, inits, verbose, pointEstimate))
   re_backend_args <- NULL
   re_selectors <- c("study_random_effects", "study_parameters", "reDRIFT", "reDIFFUSION", "reT0VAR")
   if (!identical(tolower(backend[1L]), "ctsemjulia") &&
@@ -1846,11 +1850,13 @@ ctmaFit <- function(
       model_popcov_sd <- T0COVCoeffSD
     } # end if (randomIntercepts == TRUE)...
 
+    fitStanctModel_summary <- .ctmaPointSummary(fitStanctModel_summary,
+      fitStanctModel,pointEstimate,optimize,priors)
     # account for changes in ctsem 3.4.1
     if ("matrix" %in% colnames(fitStanctModel_summary$parmatrices)) ctsem341 <- TRUE else ctsem341 <- FALSE
-    tmpMean <- grep("ean", colnames(fitStanctModel_summary$parmatrices)); tmpMean
-    tmpSd <- tmpMean+1; tmpSd
-    Tvalues <- fitStanctModel_summary$parmatrices[,tmpMean]/fitStanctModel_summary$parmatrices[,tmpSd]; Tvalues
+    tmpMean <- match(.ctmaPointColumn(fitStanctModel_summary$parmatrices,pointEstimate,optimize),colnames(fitStanctModel_summary$parmatrices)); tmpMean
+    tmpSd <- match(.ctmaStatColumn(fitStanctModel_summary$parmatrices,"sd"),colnames(fitStanctModel_summary$parmatrices)); tmpSd
+    Tvalues <- .ctmaPointQuotient(fitStanctModel_summary$parmatrices,pointEstimate); Tvalues
     invariantDrift_Coeff <- cbind(fitStanctModel_summary$parmatrices, Tvalues); invariantDrift_Coeff
     invariantDrift_Coeff[, tmpMean:(dim(invariantDrift_Coeff)[2])] <- round(invariantDrift_Coeff[, tmpMean:(dim(invariantDrift_Coeff)[2])], digits); invariantDrift_Coeff
 
@@ -1951,7 +1957,7 @@ ctmaFit <- function(
     if (n.moderators > 0) {
       rows <- .ctmaTipredSummaryRows(rownames(fitStanctModel_summary$tipreds), modTIs)
       modTI_Coeff <- fitStanctModel_summary$tipreds[rows, , drop = FALSE]
-      Tvalues <- modTI_Coeff[, 6]
+      Tvalues <- .ctmaPointQuotient(modTI_Coeff,pointEstimate)
       modTI_Coeff <- round(cbind(modTI_Coeff, Tvalues), digits)
 
       # re-label
@@ -2002,7 +2008,7 @@ ctmaFit <- function(
       rownames(cluster.specific.effect) <- paste0("Cluster No. ", seq(1,clusCounter, 1)); cluster.specific.effect
       rows <- .ctmaTipredSummaryRows(rownames(fitStanctModel_summary$tipreds), clusTIs)
       clusTI_Coeff <- fitStanctModel_summary$tipreds[rows, , drop = FALSE]
-      Tvalues <- clusTI_Coeff[, 6]
+      Tvalues <- .ctmaPointQuotient(clusTI_Coeff,pointEstimate)
       clusTI_Coeff <- round(cbind(clusTI_Coeff, Tvalues), digits)
       # re-label
       targetCluster <- which(table(cluster) > 1); targetCluster
@@ -2551,6 +2557,9 @@ ctmaFit <- function(
 
   results$moderatorCoding <- moderatorCoding
   class(results) <- "CoTiMAFit"
+  results$argumentList$pointEstimate <- pointEstimate
+  if (isTRUE(fit) && is.list(results$summary))
+    results$summary <- .ctmaPointSummary(results$summary,results,pointEstimate,optimize,priors)
 
   #######################################################################################################################
   ####################################### Excel Workbook with several sheets ############################################

@@ -64,11 +64,11 @@
 
 \vspace{0.5cm}{\large A package for R to perform\\Continuous Time Meta-Analysis\par}
 
-\vspace{1.0cm}{Version 0.14.70\par}
+\vspace{1.0cm}{Version 0.15.0\par}
 
 \vspace{1.0cm}{Christian Dormann\par}
 
-{November 25, 2026\par}
+{November 27, 2026\par}
 
 \vfill{Chair of Business Education \& Management, Johannes Gutenberg University\par}
 
@@ -5121,5 +5121,81 @@ it ``WEC-centred baseline drift matrix (sample-size weighting)''. With
 \code{WECnt = TRUE}, use ``WEC-centred baseline drift matrix
 (person--occasion weighting)''. The latter counts retained long-data rows.
 With complete data this is sample size times measurement occasions.
+
+
+\clearpage
+\section{Point estimates and uncertainty from version 0.15.0}
+\label{sec:point-estimates}
+For ML fits, CoTiMA2 now selects the optimized point estimate when available.
+In parameter tables this is the \code{mode} column, placed before \code{Mean}
+and \code{sd}. With priors in an optimized fit it is the MAP estimate.
+For a derived quantity, the engine evaluates the quantity at the optimized
+parameter vector. This is generally different from the marginal mode of
+that quantity's distribution after a nonlinear transformation.
+
+\code{Mean}, \code{sd}, and the quantile columns continue to summarize the
+stored uncertainty draws after transformation. Under ML these draws may
+come from a Hessian-based normal approximation or another uncertainty
+procedure. The SD measures the spread of those draws. It is not
+necessarily the analytic standard error associated with the optimized
+point. With posterior sampling, these columns summarize posterior draws.
+The default point estimate for Bayesian fits remains the posterior mean.
+An optimization-based mode is not manufactured for NUTS or SAEM draws.
+
+\begin{verbatim}
+f_ml <- ctmaFit(model = m, backend = "ctsemjulia",
+                optimize = TRUE, priors = FALSE, pointEstimate = "auto")
+summary(f_ml)                         # mode before Mean and SD
+summary(f_ml, pointEstimate = "mean") # earlier reporting choice
+
+# Retain earlier coefficients when fitting an analysis for replication:
+f_legacy <- ctmaFit(model = m, pointEstimate = "mean")
+
+ctmaTables(f_ml, parameters = "drift",
+           statistics = c("estimate", "mean", "sd", "2.5", "97.5"))
+\end{verbatim}
+
+\code{pointEstimate} is available in \code{ctmaInit()}, \code{ctmaFit()},
+\code{ctmaAllInvFit()}, and their CoTiMA summary paths. \code{"auto"} selects
+optimized values for ML/MAP when available. \code{"mean"} explicitly
+selects the earlier draw means and Mean/SD ratios. \code{"mode"} requires
+optimized values. A historical fit without the necessary stored values or
+transformation information falls back to means under \code{"auto"}, with
+an explanatory note. \code{"mode"} produces an error when it is unavailable.
+
+The automatic policy does not form a mode/SD Wald test. Such a test needs
+an appropriate standard error on the same parameter scale and regularity
+conditions. Skewness, boundaries and weak identification can make a
+symmetric approximation unsuitable. The legacy Mean/SD ratio can still
+be requested explicitly; it has not become a mode-based test. A ratio of
+posterior mean to posterior SD is a descriptive summary and is not a
+general Bayesian significance test. The supplied intervals retain their
+source definitions and should be interpreted with their diagnostic notes.
+
+Older saved CoTiMA objects have no reporting-policy marker. On summary,
+tabulation or model conversion they receive a notice explaining the earlier
+mean convention and \code{pointEstimate = "mean"}. Reading an RDS file with
+base R is unchanged. Existing saved modelResults are historical values;
+summary regeneration provides the selected reporting view. New fits store
+the selected coefficients. Init summaries retain full per-study tables
+under \code{parameterTables} without printing all those tables by default.
+
+\code{ctmaTables()} automatically explains the mode and uncertainty columns
+in the table notes. The selector \code{"estimate"} resolves to the selected
+point-estimate column. \code{"mean"} and \code{"mode"} select those columns
+explicitly. If both are selected, mode is displayed first. These reporting
+choices do not alter the likelihood, priors, optimization or stored draws.
+
+
+Moderator profile tables also support \code{statistics = "mode"} for ML/MAP.
+The default estimate evaluates each profile at the optimized raw parameter
+vector when available. Its interval still uses joint uncertainty draws.
+Select \code{statistics = "mean"} to retain profile means. In a side-by-side
+comparison of ML and Bayesian models, a generic estimate column can therefore
+contain different point summaries, identified in each model's table notes.
+
+The reporting policy does not change the definitions of the post-hoc GLS
+and moment estimators. Their inputs remain the study estimates and draw
+summaries explicitly supplied to those procedures.
 
 \end{document}

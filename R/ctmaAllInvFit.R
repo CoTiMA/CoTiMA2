@@ -3,6 +3,7 @@
 #' @description Fit a CoTiMA model with all params (drift, T0var, diffusion) invariant across primary studies
 #'
 #' @param ctmaInitFit ctmaInitFit
+#' @param pointEstimate Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.
 #' @param activeDirectory activeDirectory
 #' @param digits digits
 #' @param coresToUse coresToUse
@@ -64,9 +65,11 @@ ctmaAllInvFit <- function(
   manifestVars=NULL,
   indVaryingT0=NULL,
   backend=c("stan", "julia"),
-  backendArgs=list()
+  backendArgs=list(),
+  pointEstimate="auto"
 )
 {
+  pointEstimate <- .ctmaPointChoice(pointEstimate)
   .ctmaVersionNote()
   .ctma_timer <- .ctmaRegisterExecutionTimer("ctmaAllInvFit")
   on.exit(.ctma_timer(), add = TRUE)
@@ -445,9 +448,11 @@ ctmaAllInvFit <- function(
   {
     if ("matrix" %in% colnames(allFixedModelFitSummary$parmatrices)) ctsem341 <- TRUE else ctsem341 <- FALSE
     #if (ctsem341) driftNamesTmp <-c(matrix(driftNames, n.latent, byrow=TRUE)) else driftNamesTmp <- driftNames
-    tmpMean <- grep("ean", colnames(allFixedModelFitSummary$parmatrices)); tmpMean
-    tmpSd <- tmpMean+1; tmpSd
-    Tvalues <- allFixedModelFitSummary$parmatrices[,tmpMean]/allFixedModelFitSummary$parmatrices[,tmpSd]; Tvalues
+    allFixedModelFitSummary <- .ctmaPointSummary(allFixedModelFitSummary,
+      allFixedModelFit,pointEstimate,optimize,priors)
+    tmpMean <- match(.ctmaPointColumn(allFixedModelFitSummary$parmatrices,pointEstimate,optimize),colnames(allFixedModelFitSummary$parmatrices)); tmpMean
+    tmpSd <- match(.ctmaStatColumn(allFixedModelFitSummary$parmatrices,"sd"),colnames(allFixedModelFitSummary$parmatrices)); tmpSd
+    Tvalues <- .ctmaPointQuotient(allFixedModelFitSummary$parmatrices,pointEstimate); Tvalues
     allFixedDrift_Coeff <- cbind(allFixedModelFitSummary$parmatrices, Tvalues); allFixedDrift_Coeff
     allFixedDrift_Coeff[, tmpMean:(dim(allFixedDrift_Coeff)[2])] <- round(allFixedDrift_Coeff[, tmpMean:(dim(allFixedDrift_Coeff)[2])], digits); allFixedDrift_Coeff
     # re-label
@@ -594,6 +599,8 @@ ctmaAllInvFit <- function(
                                minus2ll= homAll_Minus2LogLikelihood,
                                n.parameters = homAll_estimatedParameters))
   class(results) <- "CoTiMAFit"
+  results$argumentList$pointEstimate <- pointEstimate
+  results$summary <- .ctmaPointSummary(results$summary,results,pointEstimate,optimize,priors)
 
   results$argumentList$scaleTime <- CoTiMAStanctArgs$scaleTime
   results <- .ctmaStoreOriginalTime(results)

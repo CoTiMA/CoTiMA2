@@ -96,6 +96,12 @@
 #'   during this reconstruction.
 #' @param modelNames Optional unique comparison-model labels, otherwise list names;
 #'   for ctmaInit results, optional labels for all primary studies.
+#' @details For ML/MAP fits, estimate selects the optimized mode where available.
+#'   Mean and mode can be requested separately. Mode precedes Mean and SD in
+#'   ordinary parameter tables. Table notes explain that SD and intervals
+#'   summarize uncertainty draws. Moderator profiles also support mode; their
+#'   intervals still summarize joint draws.
+#'
 #' @details Table notes use explicit likelihood and parameter-count metadata;
 #'   log-posterior values are never substituted for log-likelihood. MAP interval
 #'   interpretation remains that of the stored approximation. Model comparisons
@@ -198,6 +204,14 @@ ctmaTables <- function(fit, summary=NULL, parameters=NULL, statistics=NULL,
   result <- tables[[1]]
   if(multi) {
     canonicalStats <- setdiff(names(tables[[1]]$data),c('matrix','row','col','parameter'))
+    mappings <- lapply(tables,function(t) setdiff(names(t$data),c('matrix','row','col','parameter')))
+    if(length(unique(lengths(mappings)))!=1L) .ctmaTablesStop(
+      "Requested statistics collapse differently across models. Select mode and mean explicitly with missing='note'.")
+    for(j in seq_along(canonicalStats)) {
+      sources <- unique(tolower(vapply(mappings,`[`,character(1),j)))
+      if(length(sources)>1L && all(sources%in%c("mean","mode")) &&
+          any(tolower(statistics)=="estimate")) canonicalStats[j] <- "estimate"
+    }
     for(i in seq_along(tables)) {
       old <- setdiff(names(tables[[i]]$data),c('matrix','row','col','parameter'))
       if(length(old)!=length(canonicalStats)) .ctmaTablesStop('Model statistics do not have a consistent mapping.')

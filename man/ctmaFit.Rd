@@ -61,14 +61,13 @@ ctmaFit(
   stationary = FALSE,
   determinedDiffusions = FALSE,
   stationaryVariance = NULL,
-  compute = NULL, ...
+  compute = NULL,
+  model = NULL,
+  pointEstimate = "auto",
+  ...
 )
 }
 \arguments{
-\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
-
-\item{compute}{Optional execution plan from \code{\link{ctmaCompute}}.}
-
 \item{activeDirectory}{defines another active directory than the one used in ctmaInitFit}
 
 \item{allInvModel}{estimates a model with all parameters invariant (DRIFT, DIFFUSION, T0VAR) if set TRUE (defautl = FALSE)}
@@ -100,7 +99,6 @@ for compatibility; use \code{backendArgs} in new code. Do not supply both.}
 
 \item{equalDrift}{Constrains all listed effects to be equal (e.g., equalDrift = c("V1toV2", "V2toV1")). Note that this is not required for testing the assumption that two effects are equal in the population. Use the invariantDrift argument and then \code{\link{ctmaEqual}})}
 
-
 \item{finishsamples}{number of samples to draw (either from hessian based covariance or posterior distribution) for final results computation (default = 1000).}
 
 \item{fit}{TRUE (default) fits the requested model. FALSE returns the generated
@@ -125,7 +123,10 @@ stationary determined-diffusion manifest-RI model requires FALSE.}
 
 \item{inits}{vector of start values}
 
-\item{invariantDrift}{drift labels for drift effects that are set invariant across primary studies. The legacy default is all drift effects; explicitly including DRIFT in studyVarying instead defaults to none. Explicit invariantDrift="all" conflicts with studyVarying="DRIFT". An explicit partial selection enables study variation in other drift effects when studyVarying is omitted. If supplied explicitly, studyVarying must include DRIFT for partial invariance; conflicting requests are rejected.}
+\item{invariantDrift}{drift labels for drift effects that are set invariant across primary studies. The legacy default is all; explicitly including DRIFT in studyVarying defaults to none. Explicit invariantDrift="all" conflicts with studyVarying="DRIFT".
+An explicit partial selection enables study variation in the other drift
+effects when studyVarying is omitted. If studyVarying is supplied explicitly,
+it must include DRIFT for partial invariance; conflicting requests are rejected.}
 
 \item{iter}{number of iterations (defaul = 1000). Sometimes larger values could be required fom Bayesian estimation}
 
@@ -186,9 +187,9 @@ separate-study warning.}
 
 \item{verbose}{integer from 0 to 2. Higher values print more information during model fit – for debugging}
 
-\item{WEC}{Use weighted effect coding for the study indicators. The drift matrix evaluated at zero study contrasts is the WEC-centred baseline drift matrix. With WECnt = FALSE, it uses sample-size weighting. Study contrasts are centred on the raw parameter scale before transformation to the drift scale; the transformed baseline generally differs from the weighted average of the study-specific drift matrices.}
+\item{WEC}{(default = FALSE) Use weighted effect coding for the study indicators. The drift matrix evaluated at zero study contrasts is the WEC-centred baseline drift matrix. With WECnt = FALSE, it uses sample-size weighting. Study contrasts are centred on the raw parameter scale before transformation to the drift scale; the transformed baseline generally differs from the weighted average of the study-specific drift matrices.}
 
-\item{WECnt}{When weighted effect coding is used, use person--occasion weighting for the WEC-centred baseline drift matrix. Weights are based on retained person--occasion rows; with complete data they correspond to sample size times number of measurement occasions.}
+\item{WECnt}{(default = TRUE) When weighted effect coding is used, use person--occasion weighting for the WEC-centred baseline drift matrix. Weights are based on retained person--occasion rows; with complete data they correspond to sample size times number of measurement occasions.}
 
 \item{studyCoding}{Coding of the primary-study indicators. The default,
 \code{"dummy"}, uses one reference study. \code{"weighted"} uses
@@ -209,21 +210,7 @@ Set \code{backendArgs$intoverpop} to \code{"auto"} (default),
 \code{"none"} (joint), \code{"laplace"}, or \code{"augmented"}. This route
 requires the compatible ctsem API detected by CoTiMA2 at run time.}
 
-\item{model}{Optional list describing an existing pooled model:
-\code{data} contains pooled long-format data; \code{ctModel} contains the ctsem
-model specification; \code{argumentList} retains original settings such as
-stationarity and initial-time handling; \code{studyList} retains study metadata.
-See the example for construction from an old fit. Used instead of
-\code{ctmaInitFit}, with any backend. Do not additionally supply model-construction
-arguments such as \code{indVarying}, \code{scaleTime}, or moderator selections.
-Stan and bundled Julia study effects automatically call \code{ctmaRePrep} and
-\code{ctmaReFit}; extra controls use \code{backendArgs$rePrep} and
-\code{backendArgs$reFit}. \code{fit=FALSE} prepares without estimation.
-Bundled Julia requires independent, noncentered Bayesian effects and a compatible
-fitted ctsem object in \code{model$initialFit}. Optimized Stan RE fits are
-joint/conditional ML or MAP, not marginal ML. Standalone RE functions remain available.}
-
-\item{backendArgs}{For native Julia, \code{study_covariance="independent"} fixes study-effect covariances to zero; the default \code{"full"} retains correlated effects. Person-level variation is retained. named backend-specific controls. With the default Stan
+\item{backendArgs}{named backend-specific controls. With the default Stan
 backend these replace \code{CoTiMAStanctArgs}; partial and nested lists are
 completed from \code{ctmaBackendDefaults("stan")}. With the Julia
 backend, defaults come from \code{ctmaBackendDefaults("julia", ...,
@@ -234,6 +221,9 @@ retained draws for Bayesian estimation; explicit \code{chains} is passed
 to Bayesian estimation. Julia-specific controls in \code{backendArgs}
 remain the preferred way to configure the engine. For
 \code{backend = "ctsemjulia"}, select study-level random effects with
+\code{study_covariance="independent"} fixes between-study covariances
+to zero; the default \code{"full"} retains correlated study effects.
+This leaves the person-level covariance structure unchanged. Select
 \code{study_random_effects} (matrix names such as \code{"CINT"} or
 \code{"DRIFT"}) or exact raw \code{study_parameters}. Optional
 \code{subject_random_effects} and \code{subject_parameters} add
@@ -274,41 +264,69 @@ compatible Stan ctsem version; the bundled Julia backend is not supported.
 If omitted, an explicitly supplied legacy/backend stationary setting is
 retained. Conflicting explicit settings are errors.}
 
-\item{stationaryVariance}{Optional fixed positive stationary process variance for a univariate Gaussian model. Requires \code{stationary=TRUE}, \code{determinedDiffusions=TRUE}, \code{backend="ctsemjulia"} with ML or Bayesian estimation. Set to 1 for a unit-variance process. Diffusion follows each study DRIFT; do not select independent DIFFUSION/T0VAR study effects.}
-
 \item{determinedDiffusions}{Logical, default FALSE. Experimental ML/Bayesian
-stable parameterization deriving diffusion covariance as
-\eqn{Q=-(A\Sigma+\Sigma A^T)} from drift and an estimated stationary
-within-person covariance. Currently requires \code{stationary=TRUE},
-one or two unrestricted
-Gaussian latent processes. Native study random DRIFT effects are supported.
-Native ctsemjulia additionally supports common drift and fully study-specific
-covariance using saturated dummy or weighted study contrasts. All free
-diffusion coordinates must vary across all study contrasts. The contrasts
-are transferred to stationary covariance coordinates, preserving the model
-parameter count but changing raw TI coefficient meanings. General process
-moderators, fixed study-contrast drift and partial covariance restrictions remain
-unsupported and are rejected explicitly.
-Random manifest intercepts are allowed with \code{indVaryingT0=FALSE}.
-Their native z covariance construction and correlation safeguards are
-preserved; unsupported legacy covariance constructions are rejected.
-Fixed/equal/custom process constraints, phantom factors, old raw inits,
-and prior equivalence to unrestricted diffusion coordinates are not supported. The free
-parameter count is not reduced merely by changing parameterization.
-The original drift parameters and their exact transforms are retained,
-including the usual negative-diagonal constraints. Covariance coordinates
-describe total stationary within-person variance and admissible shape.
-Under identical stationarity assumptions this preserves the model domain;
-numerical optimization can nevertheless reach different solutions.
-For pooled common processes, use \code{allInvModel=TRUE} or, in
-CoTiMA2, explicitly choose compatible \code{studyVarying}. Unsupported
-restrictions are rejected instead of being silently dropped.
-Published ctsem 3.11.1 disables its stationary switch. For the supported
-determined model with CINT fixed to zero, an exact compatibility path
-explicitly sets the estimated initial covariance and zero mean instead.
-Binary/ordinal measurements, random CINT and person-level process random effects
-are not yet supported by the determined option.
-Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.}
+  stable parameterization deriving diffusion covariance as
+  \eqn{Q=-(A\Sigma+\Sigma A^T)} from drift and an estimated stationary
+  within-person covariance. Currently requires \code{stationary=TRUE},
+  one or two unrestricted
+  Gaussian latent processes. Native study random DRIFT effects are supported.
+  Native ctsemjulia additionally supports common drift and fully study-specific
+  covariance using saturated dummy or weighted study contrasts. All free
+  diffusion coordinates must vary across all study contrasts. The contrasts
+  are transferred to stationary covariance coordinates, preserving the model
+  parameter count but changing raw TI coefficient meanings. General process
+  moderators, fixed study-contrast drift and partial covariance restrictions remain
+  unsupported and are rejected explicitly.
+  Random manifest intercepts are allowed with \code{indVaryingT0=FALSE}.
+  Their native z covariance construction and correlation safeguards are
+  preserved; unsupported legacy covariance constructions are rejected.
+  Fixed/equal/custom process constraints, phantom factors, old raw inits,
+  and prior equivalence to unrestricted diffusion coordinates are not supported. The free
+  parameter count is not reduced merely by changing parameterization.
+  The original drift parameters and their exact transforms are retained,
+  including the usual negative-diagonal constraints. Covariance coordinates
+  describe total stationary within-person variance and admissible shape.
+  Under identical stationarity assumptions this preserves the model domain;
+  numerical optimization can nevertheless reach different solutions.
+  For pooled common processes, use \code{allInvModel=TRUE} or, in
+  CoTiMA2, explicitly choose compatible \code{studyVarying}. Unsupported
+  restrictions are rejected instead of being silently dropped.
+  Published ctsem 3.11.1 disables its stationary switch. For the supported
+  determined model with CINT fixed to zero, an exact compatibility path
+  explicitly sets the estimated initial covariance and zero mean instead.
+  Binary/ordinal measurements, random CINT and person-level process random effects
+  are not yet supported by the determined option.
+
+  Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.}
+
+\item{stationaryVariance}{Optional fixed positive stationary process variance.
+Currently supports one Gaussian latent process with zero intercepts and no
+person-level random effects, using backend='ctsemjulia', stationary=TRUE,
+determinedDiffusions=TRUE. Set to 1 for a unit-variance
+process. Study-specific DRIFT is supported; diffusion is derived as
+Q=-2*DRIFT*stationaryVariance. This is distinct from the default estimated
+stationary covariance. Do not select separate DIFFUSION/T0VAR study effects.}
+
+\item{compute}{Optional execution plan from \code{ctmaCompute()}.}
+
+\item{model}{A reusable model from \code{ctmaFitToModel()}, or an existing pooled model, supplied as a list with
+\code{data} (the pooled long-format data) and \code{ctModel} (the ctsem
+model specification). \code{argumentList} retains original settings such
+as stationarity and initial-time handling; \code{studyList} retains study
+metadata. See the example for constructing this list from an old fit.
+Used instead of \code{ctmaInitFit} with any backend. Construction arguments
+such as \code{indVarying}, \code{scaleTime}, and moderator selections must
+not also be supplied: the stored model and data already encode them.
+Stan and bundled Julia study effects automatically use \code{ctmaRePrep()}
+and \code{ctmaReFit()}; additional controls use \code{backendArgs$rePrep}
+and \code{backendArgs$reFit}. With \code{fit=FALSE}, preparation returns
+without estimation. Bundled Julia RE supports only independent,
+noncentered Bayesian effects and needs a compatible fitted ctsem object
+in \code{model$initialFit}. Existing standalone RE functions remain available.}
+
+\item{pointEstimate}{Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.}
+
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
 }
 \value{
 ctmaFit returns a list containing somearguments supplied, the fitted model, different elements summarizing the main results,
@@ -337,6 +355,32 @@ the same type, either "cont" or "cat"), and possible cluster (e.g., countries wh
 \code{"quadrature"} explicitly refines an optimized native Laplace fit with random effects. It is not a posterior sampler. Support requires a compatible recent ctsem version.
 }
 \examples{
+\dontrun{
+# Example 1. Fit a CoTiMA to all primary studies previously fitted one by one
+# with the fits assigned to CoTiMAInitFit_6
+CoTiMAFullFit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6)
+summary(CoTiMAFullFit_6)
+}
+
+\dontrun{
+# Example 2. Fit a CoTiMA with only 2 cross effects invariant (not the auto
+# effects) to all primary studies previously fitted one by one with the fits
+# assigned to CoTiMAInitFit_6
+CoTiMAInitFit_6$activeDirectory <- "/Users/tmp/" # adapt!
+CoTiMAFullInv23Fit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6,
+                        invariantDrift=c("V1toV2", "V2toV1"))
+summary(CoTiMAFullInv23Fit_6)
+}
+
+\dontrun{
+# Example 3. Fit a moderated CoTiMA
+CoTiMAInitFit_6$activeDirectory <- "/Users/tmp/" # adapt!
+CoTiMAMod1onFullFit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6,
+                                 mod.number=1, mod.type="cont",
+                                 mod.names=c("Control"))
+summary(CoTiMAMod1onFullFit_6)
+}
+
 \dontrun{
 # f is an existing pooled fit returned by ctmaFit().
 # Reuse its data, model, settings, and study metadata:
@@ -379,32 +423,4 @@ result_native <- ctmaFit(
 # It additionally needs base_model$initialFit = a compatible fitted ctsem
 # pooled object. Do not pass native sampleControl/intoverpop to that engine.
 }
-
-\dontrun{
-# Example 1. Fit a CoTiMA to all primary studies previously fitted one by one
-# with the fits assigned to CoTiMAInitFit_6
-CoTiMAFullFit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6)
-summary(CoTiMAFullFit_6)
-}
-
-\dontrun{
-# Example 2. Fit a CoTiMA with only 2 cross effects invariant (not the auto
-# effects) to all primary studies previously fitted one by one with the fits
-# assigned to CoTiMAInitFit_6
-CoTiMAInitFit_6$activeDirectory <- "/Users/tmp/" # adapt!
-CoTiMAFullInv23Fit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6,
-                        invariantDrift=c("V1toV2", "V2toV1"))
-summary(CoTiMAFullInv23Fit_6)
-}
-
-\dontrun{
-# Example 3. Fit a moderated CoTiMA
-CoTiMAInitFit_6$activeDirectory <- "/Users/tmp/" # adapt!
-CoTiMAMod1onFullFit_6 <- ctmaFit(ctmaInitFit=CoTiMAInitFit_6,
-                                 mod.number=1, mod.type="cont",
-                                 mod.names=c("Control"))
-summary(CoTiMAMod1onFullFit_6)
-}
-
-
 }

@@ -65,6 +65,8 @@ ctmaFitToModel <- function(ctmaFitObject, model = NULL,
       sourceFunction="ctmaPrep", generateEmpirical=is.null(prep$emprawList),
       requestEmprawLong=emprawLong),class="CoTiMAModel"))
   }
+  legacy <- .ctmaLegacyPointNotice(ctmaFitObject)
+  if(length(legacy)) .ctma_print_message(legacy)
   source <- ctmaFitObject
   if (is.null(source$studyList) && !is.null(source$source_object$studyList))
     source <- source$source_object
@@ -225,7 +227,7 @@ ctmaFitToModel <- function(ctmaFitObject, model = NULL,
     if (is.list(setup$argumentList$CoTiMAStanctArgs))
       setup$argumentList$CoTiMAStanctArgs$scaleTime <- scale
     controls <- intersect(names(args), c("backend", "backendArgs", "optimize", "priors",
-      "fit", "coresToUse", "chains", "iter", "inits", "verbose"))
+      "fit", "coresToUse", "chains", "iter", "inits", "verbose", "pointEstimate"))
     args <- c(list(model = setup), args[controls])
     result <- do.call(ctmaFit, args)
     if (isFALSE(args$fit)) return(result)

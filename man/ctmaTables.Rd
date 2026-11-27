@@ -171,12 +171,17 @@ from conventional CoTiMA and native ctsem matrix-parameter summaries.
 It never fits a new model. Unsupported summary structures fail explicitly.
 }
 \details{
-Use the parameter family \code{ricor} for individual random-intercept
-correlations (CINT or MANIFESTMEANS). Add \code{rit0cor} for pairs involving
+Use the parameter family `ricor` for individual random-intercept
+correlations (CINT or MANIFESTMEANS). Add `rit0cor` for pairs involving
 random T0MEANS. These selectors require a pooled fit or a single native fit
 with an eligible saved correlation summary. Study-specific covariance-only
 summaries cannot be used.
 
+For ML/MAP fits, estimate selects the optimized mode where available.
+  Mean and mode can be requested separately. Mode precedes Mean and SD in
+  ordinary parameter tables. Table notes explain that SD and intervals
+  summarize uncertainty draws. Moderator profiles also support mode; their
+  intervals still summarize joint draws.
 
 Table notes use explicit likelihood and parameter-count metadata;
   log-posterior values are never substituted for log-likelihood. MAP interval
@@ -193,6 +198,7 @@ Table notes use explicit likelihood and parameter-count metadata;
   supported transformed summary or select the relevant native fit first.
 }
 \section{Moderator profiles}{
+
 A profile table shows conditional CT drift at each selected moderator value.
 The calculation applies the model transformation after adding the TI effects
 to the raw drift. Intervals and optional differences use the same joint raw

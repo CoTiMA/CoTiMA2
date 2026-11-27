@@ -7,11 +7,12 @@
 \title{Methods for pooled Julia CoTiMA fits}
 \usage{
 \method{print}{CoTiMAPooledJuliaFit}(x, ...)
-\method{summary}{CoTiMAPooledJuliaFit}(object, ...)
+\method{summary}{CoTiMAPooledJuliaFit}(object, ..., pointEstimate = NULL)
 \method{coef}{CoTiMAPooledJuliaFit}(object, ...)
 \method{vcov}{CoTiMAPooledJuliaFit}(object, ...)
 }
 \arguments{
+\item{pointEstimate}{NULL inherits the fit policy. auto selects mode for ML/MAP where available, mean selects the earlier draw means, and mode requires optimized values.}
 \item{x, object}{A pooled Julia CoTiMA fit.}
 \item{...}{Arguments forwarded to the corresponding native-fit method.}
 }

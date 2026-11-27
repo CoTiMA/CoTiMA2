@@ -1,8 +1,8 @@
 # Public ctmaFit(model=...) entry, sharing the standard native backend route.
 .ctmaFitExistingModel <- function(model, call, backend, backendArgs,
-    optimize, priors, fit, cores, chains, iter, inits, verbose) {
+    optimize, priors, fit, cores, chains, iter, inits, verbose, pointEstimate="auto") {
   allowed <- c("model", "backend", "backendArgs", "optimize", "priors", "fit",
-               "coresToUse", "chains", "iter", "inits", "verbose")
+               "coresToUse", "chains", "iter", "inits", "verbose", "pointEstimate")
   supplied <- setdiff(names(as.list(call)[-1L]), allowed)
   if (length(supplied)) stop(
     "With model=, construction settings come from the stored model. Remove: ",
@@ -21,6 +21,7 @@
   setup <- setup[!vapply(setup, is.null, logical(1))]
   class(setup) <- "CoTiMAFit"
   if (is.null(setup$argumentList)) setup$argumentList <- list()
+  setup$argumentList$pointEstimate <- .ctmaPointChoice(pointEstimate)
   if (!identical(backend, "ctsemjulia")) return(.ctmaFitExistingOtherBackend(
     setup, model$initialFit, backend, backendArgs, optimize, priors,
     fit, cores, chains, iter, inits, verbose, call))

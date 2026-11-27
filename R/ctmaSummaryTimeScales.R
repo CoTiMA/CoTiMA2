@@ -157,7 +157,8 @@ print.summary.ctmaTimeScales <- function(x, ...) {
   cat("Time scales: t_fitted = ", format(s, digits = 8), " * t_original.\n", sep = "")
   cat("CT rate estimates: fitted units; *_original_time_scale: original units.\n")
   view <- x
-  hidden <- c(reporting$added, "originalTime",
+  hidden <- c(reporting$added, "originalTime", "parameterTables", "pointEstimate",
+    "pointEstimateNote", "legacyPointEstimateNote",
     grep("_original_time_scale$|^opt\\.lag\\.orig\\.time$", names(view), value = TRUE))
   for (name in hidden) view[[name]] <- NULL
   class(view) <- setdiff(class(view), "summary.ctmaTimeScales")
@@ -167,7 +168,9 @@ print.summary.ctmaTimeScales <- function(x, ...) {
     names(view)[names(view) == "estimates"] <- "estimates_fitted_time_scale"
     names(view)[names(view) == "confidenceIntervals"] <- "confidenceIntervals_fitted_time_scale"
   }
+  # Native print methods receive the policy note through the outer wrapper.
   print(view, ...)
+  .ctmaPrintPointNote(x)
   if (!is.null(x$originalTime)) cat(
     "Original-time results are available in fit$summary$originalTime (new fits) ",
     "or in the summary() result under $originalTime.\n", sep = "")

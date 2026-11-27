@@ -698,8 +698,24 @@ ctmaMergeStanctArgs <- function(defaults, overrides = NULL) {
   )
 }
 
+# Frame informational engine notices; leave live progress and warnings alone.
+.ctmaWithNativeNotices <- function(expr) {
+  withCallingHandlers(expr, message = function(condition) {
+    text <- trimws(conditionMessage(condition))
+    notices <- c("^Bayesian estimation via ",
+      "^Maximum (likelihood|a posteriori) estimation requested",
+      "^T0VAR rows/columns for latents with individually varying T0MEANS disabled:",
+      "^Sampling: placing the sampler first,", "^Starting Julia [0-9]")
+    if (any(vapply(notices, grepl, logical(1), x = text))) {
+      .ctma_print_message(text)
+      invokeRestart("muffleMessage")
+    }
+  })
+}
+
 .ctmaNativeCtsemJuliaFit <- function(args) {
-  do.call(ctsem::ctFit, .ctmaBoundCtFitResources(args))
+  .ctmaWithNativeNotices(
+    do.call(ctsem::ctFit, .ctmaBoundCtFitResources(args)))
 }
 
 .ctmaNativeCtsemJuliaSummary <- function(fit, digits) {

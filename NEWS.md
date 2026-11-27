@@ -1,3 +1,15 @@
+# CoTiMA2 0.15.0
+
+- ML/MAP reporting defaults to optimized point estimates (mode) where available.
+  Means, SDs and quantiles remain summaries of uncertainty draws.
+- The mode column precedes Mean and SD. pointEstimate='mean' selects the earlier
+  coefficients and Mean/SD ratios. The automatic policy does not construct
+  mode/SD Wald tests.
+- Older CoTiMA objects receive a reporting-policy notice when summarized,
+  tabulated or converted. Missing optimized values are explicitly labelled.
+- Summary and ctmaTables notes explain the estimator and uncertainty source.
+- Native general notices use CoTiMA framing while live progress stays compact.
+
 # CoTiMA2 0.14.70.9001
 
 - Original pooled-model conversion reuses saved long data even when the wide cache is unavailable.

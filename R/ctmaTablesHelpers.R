@@ -23,6 +23,7 @@
 }
 .ctmaTablesSignature <- function(s) {
   d <- .ctmaTablesTable(s)
+  d <- d[,sort(setdiff(names(d),c("Tvalues","z","mean_over_sd"))),drop=FALSE]
   list(table=d, statistics=s[intersect(c('minus2ll','loglik','n.parameters','npars'),names(s))])
 }
 .ctmaTablesFingerprint <- function(x) {
@@ -143,6 +144,8 @@
   },character(1),USE.NAMES=FALSE)
 }
 .ctmaTablesMethod <- function(fit) {
+  method <- .ctmaPointMethod(fit)
+  if(method!="unknown") return(method)
   a <- fit$argumentList
   if (is.null(a$optimize)) a <- fit$args$resolved
   if (is.null(a$optimize)) a <- fit$args
@@ -192,6 +195,9 @@
   if(is.na(ll)) {v <- .ctmaTablesScalar(s$loglik,fit$loglik);if(!is.na(v)) ll <- -2*v}
   np <- .ctmaTablesScalar(s$n.parameters,s$npars,fit$n.parameters,fit$npars)
   notes <- paste0('Estimation: ',method,'.')
+  point_note <- .ctmaPointNote(method,any(tolower(names(d))=="mode"),
+    identical(s$pointEstimate$requested,"mean") || identical(fit$argumentList$pointEstimate,"mean"))
+  notes <- c(notes,point_note,.ctmaLegacyPointNotice(fit))
   if(is.finite(np)) notes <- c(notes,paste0('Number of estimated parameters = ',np,'.'))
   if(is.finite(ll)) notes <- c(notes,paste0('-2LL = ',format(ll,digits=12),' (minus twice the reported log likelihood).'))
   else notes <- c(notes,'-2LL is unavailable; no posterior objective was substituted for the log likelihood.')
@@ -232,6 +238,11 @@
   if(!is.numeric(digits)||length(digits)!=1L||is.na(digits)||digits<0||digits>12||digits!=floor(digits)) .ctmaTablesStop('digits must be an integer from 0 to 12.')
   if(!is.character(format)||!length(format)||anyNA(format)||any(!format %in% c('none','docx','xml','pdf','tex'))||('none' %in% format && length(format)>1L)) .ctmaTablesStop('Unsupported output format.')
   stored <- .ctmaTablesSummary(fit)
+  choice <- summary$pointEstimate$requested
+  if(is.null(choice)) choice <- fit$argumentList$pointEstimate
+  if(is.null(choice)) choice <- "auto"
+  stored <- .ctmaPointSummary(stored,fit,choice)
+  if(!is.null(summary)) summary <- .ctmaPointSummary(summary,fit,choice)
   if(!is.null(summary) && !isTRUE(all.equal(.ctmaTablesSignature(summary),.ctmaTablesSignature(stored),check.attributes=TRUE)))
     .ctmaTablesStop('The supplied summary does not agree with the fit. Use its stored summary or regenerate it with matching summary options.')
   validated <- if(is.null(summary)) stored else summary
@@ -245,12 +256,20 @@
   z <- .ctmaTablesSelect(d,parameters);d <- d[z,,drop=FALSE]
   if(defaultOrder) d <- d[.ctmaTablesOrder(d),,drop=FALSE]
   if(is.null(statistics)) statistics <- .ctmaTablesAsk(available,'statistics',interactive)
+  requested_point <- !is.null(statistics) && any(tolower(statistics)=="estimate")
+  if(requested_point) {
+    selected <- .ctmaPointColumn(d,choice,.ctmaTablesMethod(fit)!="Bayesian")
+    statistics[tolower(statistics)=="estimate"] <- selected
+  }
   stats <- unique(.ctmaTablesStats(statistics,available));bad <- setdiff(stats,available)
   if(length(bad)&&missing=='error') .ctmaTablesStop('Unavailable statistics: ',paste(bad,collapse=', '))
+  mode <- stats[tolower(stats)=="mode"]
+  if(length(mode)) stats <- c(mode,stats[tolower(stats)!="mode"])
   out <- d[,c('matrix','row','col','parameter',intersect(stats,available)),drop=FALSE]
   for(n in bad) out[[n]] <- NA_real_
   out <- out[,c('matrix','row','col','parameter',stats),drop=FALSE]
   notes <- .ctmaTablesNotes(fit,stored,d,stats,timeUnit,tableNote)
+  if(requested_point) notes$notes <- c(notes$notes,paste0("The requested estimate uses the ",selected," column."))
   if (any(d$matrix %in% c("RICOR", "RIT0COR")))
     notes$notes <- c(notes$notes, "Random-intercept rows report correlations between individual random effects. Pairs involving T0MEANS include only freely varying initial means.")
   if(length(bad)) notes$notes <- c(notes$notes,paste0('Unavailable statistics shown as blank: ',paste(bad,collapse=', '),'.'))

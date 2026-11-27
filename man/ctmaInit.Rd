@@ -47,15 +47,13 @@ ctmaInit(
   stationary = FALSE,
   determinedDiffusions = FALSE,
   stationaryVariance = NULL,
-  compute = NULL, model = NULL, ...
+  compute = NULL,
+  model = NULL,
+  pointEstimate = "auto",
+  ...
 )
 }
 \arguments{
-\item{model}{A reusable model from ctmaFitToModel. Explicit arguments override inherited settings.}
-\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
-
-\item{compute}{Optional execution plan from \code{\link{ctmaCompute}}.}
-
 \item{activeDirectory}{defines another active directory than the one used in \code{\link{ctmaPrep}}}
 
 \item{binaries}{which manifest is a binary. Still experimental}
@@ -91,7 +89,6 @@ lower triangle is parameterized.}
 \code{n.latent^2} entries. Character entries are freely estimated labels
 (identical labels impose equality constraints); numeric entries are fixed
 values, such as zero to exclude an effect.}
-
 
 \item{finishsamples}{number of samples to draw (either from Hessian-based
 covariance or the posterior distribution) for final results computation
@@ -208,34 +205,49 @@ compatible Stan ctsem version; the bundled Julia backend is not supported.
 If omitted, an explicitly supplied legacy/backend stationary setting is
 retained. Conflicting explicit settings are errors.}
 
-\item{stationaryVariance}{Optional fixed positive stationary process variance for a univariate Gaussian model. Requires \code{stationary=TRUE}, \code{determinedDiffusions=TRUE}, \code{backend="ctsemjulia"} with ML or Bayesian estimation. Set to 1 for a unit-variance process. Diffusion follows each study DRIFT; do not select independent DIFFUSION/T0VAR study effects.}
-
 \item{determinedDiffusions}{Logical, default FALSE. Experimental ML/Bayesian
-stable parameterization deriving diffusion covariance as
-\eqn{Q=-(A\Sigma+\Sigma A^T)} from drift and an estimated stationary
-within-person covariance. Currently requires \code{stationary=TRUE},
-one or two unrestricted
-Gaussian latent processes. Use ctmaFit for native study random DRIFT effects.
-Random manifest intercepts are allowed with \code{indVaryingT0=FALSE}.
-Their native z covariance construction and correlation safeguards are
-preserved; unsupported legacy covariance constructions are rejected.
-Fixed/equal/custom process constraints, phantom factors, old raw inits,
-and prior equivalence to unrestricted diffusion coordinates are not supported. The free
-parameter count is not reduced merely by changing parameterization.
-The original drift parameters and their exact transforms are retained,
-including the usual negative-diagonal constraints. Covariance coordinates
-describe total stationary within-person variance and admissible shape.
-Under identical stationarity assumptions this preserves the model domain;
-numerical optimization can nevertheless reach different solutions.
-For pooled common processes, use \code{allInvModel=TRUE} or, in
-CoTiMA2, explicitly choose compatible \code{studyVarying}. Unsupported
-restrictions are rejected instead of being silently dropped.
-Published ctsem 3.11.1 disables its stationary switch. For the supported
-determined model with CINT fixed to zero, an exact compatibility path
-explicitly sets the estimated initial covariance and zero mean instead.
-Binary/ordinal measurements, random CINT and person-level process random effects
-are not yet supported by the determined option.
-Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.}
+  stable parameterization deriving diffusion covariance as
+  \eqn{Q=-(A\Sigma+\Sigma A^T)} from drift and an estimated stationary
+  within-person covariance. Currently requires \code{stationary=TRUE},
+  one or two unrestricted
+  Gaussian latent processes. Use ctmaFit for native study random DRIFT effects.
+  Random manifest intercepts are allowed with \code{indVaryingT0=FALSE}.
+  Their native z covariance construction and correlation safeguards are
+  preserved; unsupported legacy covariance constructions are rejected.
+  Fixed/equal/custom process constraints, phantom factors, old raw inits,
+  and prior equivalence to unrestricted diffusion coordinates are not supported. The free
+  parameter count is not reduced merely by changing parameterization.
+  The original drift parameters and their exact transforms are retained,
+  including the usual negative-diagonal constraints. Covariance coordinates
+  describe total stationary within-person variance and admissible shape.
+  Under identical stationarity assumptions this preserves the model domain;
+  numerical optimization can nevertheless reach different solutions.
+  For pooled common processes, use \code{allInvModel=TRUE} or, in
+  CoTiMA2, explicitly choose compatible \code{studyVarying}. Unsupported
+  restrictions are rejected instead of being silently dropped.
+  Published ctsem 3.11.1 disables its stationary switch. For the supported
+  determined model with CINT fixed to zero, an exact compatibility path
+  explicitly sets the estimated initial covariance and zero mean instead.
+  Binary/ordinal measurements, random CINT and person-level process random effects
+  are not yet supported by the determined option.
+
+  Bayesian sampling is supported by \code{backend="ctsemjulia"} with \code{optimize=FALSE, priors=TRUE}. Native ctsem priors apply directly to raw drift, log stationary variance/shape and study-contrast coordinates. They are not the transformed priors of an unrestricted DIFFUSION model; no additional Jacobian is added. Native study-level random DRIFT effects are mapped to the shared auxiliary coordinates; derived DIFFUSION/T0VAR cannot have independent random effects. Joint NUTS is requested with \code{backendArgs=list(intoverpop="none", sampleControl=list(sampler="nuts"))}.}
+
+\item{stationaryVariance}{Optional fixed positive stationary process variance.
+Currently supports one Gaussian latent process with zero intercepts and no
+person-level random effects, using backend='ctsemjulia', stationary=TRUE,
+determinedDiffusions=TRUE. Set to 1 for a unit-variance
+process. Study-specific DRIFT is supported; diffusion is derived as
+Q=-2*DRIFT*stationaryVariance. This is distinct from the default estimated
+stationary covariance. Do not select separate DIFFUSION/T0VAR study effects.}
+
+\item{compute}{Optional execution plan from \code{ctmaCompute()}.}
+
+\item{model}{Optional reusable model from \code{ctmaFitToModel()}. Explicit arguments override inherited settings.}
+
+\item{pointEstimate}{Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.}
+
+\item{...}{Reserved. Unknown arguments are rejected with a migration hint where applicable.}
 }
 \value{
 ctmaFit returns a list containing some arguments supplied, the fitted models, different elements summarizing the main results,
@@ -287,6 +299,5 @@ CoTiMAInitFit_3 <- ctmaInit(primaryStudies=CoTiMAstudyList_3,
                             activeDirectory="/Users/tmp/") # adapt!
 summary(CoTiMAInitFit_3)
 }
-
 
 }

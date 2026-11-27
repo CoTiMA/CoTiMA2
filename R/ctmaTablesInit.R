@@ -33,6 +33,15 @@
   if(is.null(scale)) scale<-fit$argumentList$scaleTime
   if(is.null(scale)) scale<-1
   if(!is.numeric(scale)||length(scale)!=1L||!is.finite(scale)||scale<=0) .ctmaTablesStop('Invalid ctmaInit time multiplier.')
+  if(length(s$parameterTables)==ns && all(vapply(s$parameterTables,is.data.frame,logical(1)))) {
+    out <- lapply(seq_len(ns),function(i) {
+      t <- .ctmaTablesParameters(s$parameterTables[[i]],fit$studyFitList[[i]])
+      columns <- setdiff(names(t)[vapply(t,is.numeric,logical(1))],c("row","col"))
+      availability <- as.data.frame(lapply(t[columns],is.finite),check.names=FALSE)
+      list(table=t,available=availability)
+    })
+    return(list(studies=out,labels=ids,sources=as.character(wide[,1L]),scale=scale))
+  }
   fullCI<-s$confidenceIntervals
   if(!is.null(fullCI)) {
     fullCI<-as.matrix(fullCI)
@@ -102,6 +111,10 @@
     original<-s;attr(original,'ctmaTables_fingerprint')<-NULL
     if(!isTRUE(all.equal(candidate,original,check.attributes=TRUE))) .ctmaTablesStop('The supplied ctmaInit summary does not agree with the fitted object.')
   }
+  choice <- fit$argumentList$pointEstimate
+  if(is.null(choice)) choice <- "auto"
+  fit <- .ctmaPointInitSummary(fit,choice)
+  s <- fit$summary
   input<-.ctmaTablesInitTables(fit,s);ns<-length(input$studies)
   if(!is.null(studyNames)) {
     if(!is.character(studyNames)||length(studyNames)!=ns||anyNA(studyNames)||any(!nzchar(studyNames))||anyDuplicated(studyNames)) .ctmaTablesStop('modelNames must uniquely label every primary study.')

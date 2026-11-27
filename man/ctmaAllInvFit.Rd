@@ -30,14 +30,14 @@ ctmaAllInvFit(
   manifestVars = NULL,
   indVaryingT0 = NULL,
   backend = c("stan", "julia"),
-  backendArgs = list()
+  backendArgs = list(),
+  pointEstimate = "auto"
 )
 }
 \arguments{
 \item{ctmaInitFit}{ctmaInitFit}
 
 \item{activeDirectory}{activeDirectory}
-
 
 \item{digits}{digits}
 
@@ -88,6 +88,8 @@ ctmaAllInvFit(
 \item{backendArgs}{named list of controls for the selected backend. Calling
 \code{ctmaBackendDefaults()} without arguments returns Stan defaults;
 specify the backend and workflow to inspect another supported list.}
+
+\item{pointEstimate}{Point estimator: auto uses optimized mode for ML/MAP where available; mean selects historical draw means and Mean/SD ratios; mode requires optimized values.}
 }
 \value{
 returns a fitted CoTiMA object, in which all drift parameters, Time 0 variances and covariances, and diffusion parameters were set invariant across primary studies

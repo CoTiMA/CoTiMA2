@@ -41,8 +41,8 @@ test_that('unit scale, absent tables and invalid metadata are explicit', {
 test_that('printing labels both scales and does not expose duplicate aliases', {
  x<-.ctmaAddSummaryTimeScales(list(parmatrices=scale_table()),list(argumentList=list(scaleTime=.25)),interval=1)
  out<-capture.output(print(x))
- expect_match(paste(out,collapse='\n'),'original time scale')
- expect_match(paste(out,collapse='\n'),'original \\[4\\]')
+ expect_match(paste(out,collapse='\n'),'originalTime')
+ expect_equal(x$originalTime$timeinterval,4)
  expect_false(any(grepl('^\\$estimates_fitted_time_scale',out)))
  y<-.ctmaAddSummaryTimeScales(list(estimates=scale_table()),list(),'conventional')
  expect_true(any(grepl('^\\$estimates_fitted_time_scale',capture.output(print(y)))))

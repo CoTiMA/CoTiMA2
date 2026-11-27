@@ -52,6 +52,7 @@
 #' transformed DRIFT and DIFFUSIONcov estimates on the original time scale.
 #' Raw parameters and diagnostics are not rescaled. Other methods delegate
 #' to the unchanged engine object.
+#' @param pointEstimate NULL inherits the fit's policy; auto, mean or mode select the point estimator.
 #' @param x,object A pooled Julia CoTiMA fit.
 #' @param ... Arguments forwarded to the corresponding native-fit method.
 #' @return The native summary plus \code{estimates_fitted_time_scale},
@@ -73,10 +74,15 @@ print.CoTiMAPooledJuliaFit <- function(x, ...) {
 
 #' @rdname pooledJuliaFit
 #' @export
-summary.CoTiMAPooledJuliaFit <- function(object, ...) {
+summary.CoTiMAPooledJuliaFit <- function(object, ..., pointEstimate = NULL) {
   .ctmaSummaryTimeFactor(object) # Validate metadata before delegating.
   native <- .ctmaPooledJuliaNative(object)
+  if (is.null(pointEstimate)) pointEstimate <- object$argumentList$pointEstimate
+  if (is.null(pointEstimate)) pointEstimate <- "auto"
   answer <- summary(native, ...)
+  reporting <- native
+  reporting$argumentList <- object$argumentList
+  answer <- .ctmaPointSummary(answer,reporting,pointEstimate)
   args <- list(...)
   interval <- if (inherits(native, "ctJuliaFit")) {
     if (is.null(args$timeinterval)) 1 else args$timeinterval

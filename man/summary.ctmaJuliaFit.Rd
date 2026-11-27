@@ -12,6 +12,7 @@
   seed = NULL,
   digits = 4L,
   study_specific = FALSE,
+  pointEstimate = NULL,
   ...
 )
 }
@@ -36,6 +37,8 @@ and study-specific summary estimates.}
 \item{study_specific}{Whether to include study-specific parameter summaries
 evaluated at each study's observed TI-predictor profile. This supports
 dummy-coded and weighted-effect-coded predictors.}
+
+\item{pointEstimate}{NULL inherits the fit's reporting policy; auto uses optimized mode for ML when available, mean selects earlier draw means.}
 
 \item{...}{Reserved for method compatibility.}
 }

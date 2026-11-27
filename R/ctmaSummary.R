@@ -5,6 +5,7 @@
 #' redirects moment-based and hierarchical study-level random-effects fits to
 #' their corresponding summary methods.
 #'
+#' @param pointEstimate NULL inherits the fit's policy. auto selects optimized mode for ML/MAP where available; mean selects earlier draw-mean reporting; mode requires optimized values.
 #' @param object A fitted object inheriting from class \code{"CoTiMAFit"}.
 #' @param probs Numeric vector containing the lower, median, and upper
 #'   probabilities used for random-effects posterior summaries.
@@ -35,7 +36,7 @@
 summary.CoTiMAFit <- function(
     object,
     ...,
-    probs = c(.025, .5, .975)) {
+    probs = c(.025, .5, .975), pointEstimate = NULL) {
 
   if (!inherits(object, "CoTiMAFit")) {
     stop("Not a CoTiMAFit object!", call. = FALSE)
@@ -70,6 +71,11 @@ summary.CoTiMAFit <- function(
     )
   }
 
+  if(is.null(pointEstimate)) pointEstimate <- object$argumentList$pointEstimate
+  if(is.null(pointEstimate)) pointEstimate <- "auto"
+  pointEstimate <- .ctmaPointChoice(pointEstimate)
+  object <- .ctmaPointInitSummary(object,pointEstimate)
+  object$summary <- .ctmaPointSummary(object$summary,object,pointEstimate)
   # Refresh reporting from stored native tables only: no engine or refit.
   object <- .ctmaRefreshInitUncertainty(object)
   # Keep established fields; add consistently labelled time-scale aliases.
@@ -83,8 +89,8 @@ summary.CoTiMAFit <- function(
   }
   if (!is.null(object$summary$opt.lag.orig.time)) {
     message(
-      "Note: The reported optimal time lag (OTL) is based on the mean ",
-      "estimated drift matrix only. For draw-based median OTLs and ",
+      "Note: The reported optimal time lag (OTL) uses the stored point-estimate ",
+      "drift matrix. For draw-based median OTLs and ",
       "uncertainty intervals, use ctmaOTL(fit, CI = TRUE)."
     )
   }

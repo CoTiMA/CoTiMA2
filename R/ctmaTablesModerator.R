@@ -130,14 +130,20 @@
   if (!is.character(format)||!length(format)||anyNA(format)||
       any(!format %in% c("none","docx","xml","pdf","tex"))||
       ("none" %in% format && length(format)>1L)) .ctmaTablesStop("Unsupported output format.")
+  method <- .ctmaPointMethod(fit)
+  point_choice <- fit$argumentList$pointEstimate
+  if(is.null(point_choice)) point_choice <- "auto"
+  raw_point <- NULL
   if (inherits(engine,"ctJuliaFit")) {
+    raw_point <- engine$estimate$raw
     raw <- engine$estimate$rawposterior
     if (is.null(raw) || !length(raw)) raw <- matrix(engine$estimate$raw,nrow=1L)
     model <- engine$model_spec$model
-    evaluate <- function(x) getFromNamespace(".ctBackendPopArrays","ctsem")(
-      engine,samples=raw,tipreds=x)$pop_DRIFT
+    evaluate <- function(x,values=raw) getFromNamespace(".ctBackendPopArrays","ctsem")(
+      engine,samples=values,tipreds=x)$pop_DRIFT
   } else {
     if (inherits(engine,"ctmaJuliaFit")) {
+      raw_point <- engine$coefficients$raw
       raw <- engine$bayes$draws
       if (is.null(raw)) raw <- engine$transformed_draws
       if (is.null(raw) || !length(raw)) raw <- matrix(engine$coefficients$raw,nrow=1L)
@@ -145,13 +151,14 @@
       engine <- if (.ctmaJuliaIsUnfittedCoTiMA(source)) .ctmaJuliaGenerateSetup(source) else
         .ctmaJuliaExtractFit(source)
     } else {
+      raw_point <- engine$stanfit$rawest
       raw <- engine$stanfit$rawposterior
       if ((is.null(raw) || !length(raw)) && .ctmaTablesStanSampled(engine))
         raw <- getFromNamespace("ctStanRawSamples","ctsem")(engine)
       if (is.null(raw) || !length(raw)) raw <- matrix(engine$stanfit$rawest,nrow=1L)
     }
     model <- engine$ctstanmodelbase
-    evaluate <- function(x) .ctmaModeratorStanDrift(engine,raw,x)
+    evaluate <- function(x,values=raw) .ctmaModeratorStanDrift(engine,values,x)
   }
   if (!is.matrix(raw) || !is.numeric(raw) || !length(raw) || any(!is.finite(raw)))
     .ctmaTablesStop("The fit lacks usable joint raw parameter draws or a raw estimate.")
@@ -167,15 +174,23 @@
   d$parameter <- ifelse(is.na(d$param),paste0("DRIFT[",d$row,",",d$col,"]"),d$param)
   d <- d[.ctmaTablesSelect(d,if(is.null(parameters)) "drift" else parameters),,drop=FALSE]
   if (defaultOrder) d <- d[.ctmaTablesOrder(d),,drop=FALSE]
-  stat <- if(is.null(statistics)) "mean" else tolower(statistics)
-  if (length(stat)!=1L || !stat %in% c("mean","median","estimate"))
-    .ctmaTablesStop("For moderator profiles, select mean, median, or estimate.")
+  stat <- if(is.null(statistics)) "estimate" else tolower(statistics)
+  if (length(stat)!=1L || !stat %in% c("mean","median","estimate","mode"))
+    .ctmaTablesStop("For moderator profiles, select mean, median, mode, or estimate.")
+  point_available <- method%in%c("ML","MAP","optimized") &&
+    is.numeric(raw_point) && length(raw_point)==ncol(raw) && all(is.finite(raw_point))
+  if(stat=="estimate") stat <- if(point_choice!="mean" && point_available) "mode" else "mean"
+  if(stat=="mode" && !point_available) .ctmaTablesStop("Optimized raw values are unavailable for these moderator profiles.")
+  points <- if(stat=="mode") lapply(seq_len(nrow(p)),function(i)
+    evaluate(p[i,],matrix(as.numeric(raw_point),nrow=1L))) else NULL
+  if(length(points)) names(points)<-rownames(p)
   draws <- lapply(seq_len(nrow(p)),function(i) evaluate(p[i,]))
   names(draws) <- rownames(p)
   if (moderatorContrast) {
     contrast <- paste(rownames(p)[2L],"minus",rownames(p)[1L])
     if (contrast %in% names(draws)) .ctmaTablesStop("The contrast label matches a profile label.")
     draws[[contrast]] <- draws[[2L]] - draws[[1L]]
+    if(length(points)) points[[contrast]] <- points[[2L]] - points[[1L]]
   }
   display <- data.frame(Parameter=d$parameter)
   data <- lapply(names(draws),function(name) {
@@ -183,7 +198,9 @@
     m <- vapply(seq_len(nrow(d)),function(i) a[,d$row[i],d$col[i]],numeric(nrow(raw)))
     m <- matrix(m,nrow=nrow(raw))
     if (any(!is.finite(m))) .ctmaTablesStop("Nonfinite conditional DRIFT values in profile ",name,".")
-    estimate <- apply(m,2L,if(stat=="median") stats::median else mean)
+    estimate <- if(stat=="mode") vapply(seq_len(nrow(d)),function(i)
+      points[[name]][1L,d$row[i],d$col[i]],numeric(1)) else
+      apply(m,2L,if(stat=="median") stats::median else mean)
     bounds <- if(nrow(m)>1L) apply(m,2L,stats::quantile,probs=c(.025,.975),names=FALSE) else
       matrix(NA_real_,2L,ncol(m))
     f <- function(x) formatC(x,digits=digits,format="f")
@@ -196,6 +213,9 @@
              "DRIFT is reported in the fitted time units.",
              if(nrow(raw)>1L) "Brackets show 95% intervals from joint raw draws." else
                "The saved fit contains a raw point estimate for these profiles.",tableNote)
+  notes <- c(notes,if(stat=="mode") paste0("Profile estimates are ",method,
+    " point estimates evaluated at the optimized raw parameter vector. Intervals summarize joint uncertainty draws.") else
+    paste0("Profile estimates use the ",stat," of transformed joint draws."),.ctmaLegacyPointNotice(fit))
   files <- character()
   if (!identical(format,"none")) {
     if(is.null(activeDirectory)) activeDirectory <- if(is.null(fit$activeDirectory)) getwd() else fit$activeDirectory

@@ -1741,12 +1741,13 @@ ctmaTransformJuliaFit <- function(fit, setup, cores = 1L, digits = 4L) {
 #' @param study_specific Whether to include study-specific parameter summaries
 #'   evaluated at each study's observed TI-predictor profile. This supports
 #'   dummy-coded and weighted-effect-coded predictors.
+#' @param pointEstimate NULL inherits the fit's reporting policy; auto uses optimized mode for ML when available, mean selects earlier draw means.
 #' @param ... Reserved for method compatibility.
 #' @export
 summary.ctmaJuliaFit <- function(
     object, ctsem_fit = NULL, transformed_draws = 1000L,
     transformed_cores = 1L, seed = NULL, digits = 4L,
-    study_specific = FALSE, ...) {
+    study_specific = FALSE, pointEstimate = NULL, ...) {
   digits <- suppressWarnings(as.integer(digits)[1L])
   if (is.na(digits) || digits < 1L) {
     stop("'digits' must be a positive integer.", call. = FALSE)
@@ -1756,6 +1757,9 @@ summary.ctmaJuliaFit <- function(
     stop("'study_specific' must be TRUE or FALSE.", call. = FALSE)
   }
   add_study_specific <- function(summary_object, fit_object) {
+    if(is.null(pointEstimate)) pointEstimate <- fit_object$argumentList$pointEstimate
+    if(is.null(pointEstimate)) pointEstimate <- "auto"
+    summary_object <- .ctmaPointSummary(summary_object,fit_object,pointEstimate)
     if (isTRUE(study_specific)) {
       tables <- fit_object$coefficients$study
       if (is.null(tables)) {
@@ -1851,6 +1855,9 @@ print.summary.ctmaJuliaFitStudy <- function(
 
   regular_summary <- x
   regular_summary$study_specific <- NULL
+  regular_summary$pointEstimateNote <- NULL
+  regular_summary$legacyPointEstimateNote <- NULL
+  regular_summary$pointEstimate <- NULL
   class(regular_summary) <- setdiff(
     class(regular_summary),
     "summary.ctmaJuliaFitStudy"
@@ -1885,6 +1892,7 @@ print.summary.ctmaJuliaFitStudy <- function(
 
   checks <- attr(x, "cotima_fit_checks")
   if (!is.null(checks)) .ctmaPrintFitChecks(checks)
+  .ctmaPrintPointNote(x)
   invisible(x)
 }
 
@@ -2217,6 +2225,7 @@ print.summary.ctmaJuliaFitStudy <- function(
     }, add = TRUE)
   }
 
+  sampled <- !is.null(raw_draws)
   normal_draws <- getFromNamespace("ctOptimNormalDraws", "ctsem")
   update_transformed <- getFromNamespace("ctOptimUpdateTransformed", "ctsem")
   if (is.null(raw_draws)) {
@@ -2246,6 +2255,8 @@ print.summary.ctmaJuliaFitStudy <- function(
     residualcov = !is.null(transformed_fit$stanfit$kalman),
     priorcheck = FALSE
   )
+  transformed_summary <- .ctmaPointSummary(transformed_summary,
+    transformed_fit,"auto",optimize=!sampled,priors=FALSE)
   attr(transformed_summary, "ctmaJulia_digits") <- as.integer(digits)[1L]
   list(
     draws = raw_draws,

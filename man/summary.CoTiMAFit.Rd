@@ -4,7 +4,7 @@
 \alias{summary.CoTiMAFit}
 \title{Summary method for CoTiMA fit objects}
 \usage{
-\method{summary}{CoTiMAFit}(object, ..., probs = c(0.025, 0.5, 0.975))
+\method{summary}{CoTiMAFit}(object, ..., probs = c(0.025, 0.5, 0.975), pointEstimate = NULL)
 }
 \arguments{
 \item{object}{A fitted object inheriting from class \code{"CoTiMAFit"}.}
@@ -13,6 +13,8 @@
 
 \item{probs}{Numeric vector containing the lower, median, and upper
 probabilities used for random-effects posterior summaries.}
+
+\item{pointEstimate}{NULL inherits the fit's policy. auto selects optimized mode for ML/MAP where available; mean selects earlier draw-mean reporting; mode requires optimized values.}
 }
 \value{
 For a conventional CoTiMA fit, the stored \code{object$summary} is printed
